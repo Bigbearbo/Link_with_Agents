@@ -30,3 +30,13 @@ venv/
 *.codex-bridge.cmd
 .DS_Store
 Thumbs.db
+
+# Local conversation context, personal instructions and exports
+memory/
+memories/
+attachments/
+exports/
+requirements*.json
+STATUS.md
+AGENTS.md
+CLAUDE.md
