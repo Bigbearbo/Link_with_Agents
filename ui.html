@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三方討論</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+:root{
+  --bg:#f4f2ee; --panel:#ffffff; --ink:#1d1b18; --muted:#7a756d; --line:#e4e0d8;
+  --me:#2f6fde; --me-bg:#e8f0fd; --claude:#c8643b; --claude-bg:#fbefe8; --codex:#0f9a74; --codex-bg:#e6f5f0;
+  --sys:#8a857c; --sys-bg:#efede8; --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04);
+  --font:"Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#17171a; --panel:#202024; --ink:#ecebe8; --muted:#9a968f; --line:#2f2f35;
+  --me:#7aa7ff; --me-bg:#1f2a40; --claude:#f0956b; --claude-bg:#3a261d; --codex:#4fd1a7; --codex-bg:#16332b;
+  --sys:#9a968f; --sys-bg:#26262b; --shadow:none; color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.rooms{display:flex;gap:6px;padding:8px 20px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+.rooms button{border-radius:999px;padding:4px 14px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.rooms button.sel{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.rooms .badge{width:7px;height:7px;border-radius:50%;background:var(--codex);display:inline-block}
+.rooms .badge.ap{background:var(--claude)}
+.rooms .new{font-size:11px;background:var(--me);color:#fff;border-radius:999px;padding:0 6px}
+header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.02em}
+.faces{display:flex;gap:4px}
+.face{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
+.f-me{background:var(--me)}.f-claude{background:var(--claude)}.f-codex{background:var(--codex)}
+.spacer{flex:1}
+.pill{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--sys-bg);color:var(--muted);white-space:nowrap}
+.pill.on{color:var(--codex)} .pill.warn{color:var(--claude)}
+.pill.busy{color:var(--ink)} .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:1px}
+.pill.busy .dot{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+main{flex:1;overflow-y:auto;padding:20px 16px 8px}
+.wrap{max-width:860px;margin:0 auto}
+.msg{display:flex;gap:10px;margin:0 0 14px;align-items:flex-start}
+.msg .face{flex:none;width:32px;height:32px;font-size:13px;margin-top:2px}
+.body{min-width:0;max-width:calc(100% - 42px)}
+.meta{font-size:12.5px;color:var(--muted);margin:0 0 3px 2px}
+.meta b{font-weight:650;margin-right:6px}
+.bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:9px 14px;box-shadow:var(--shadow);overflow-wrap:anywhere}
+.m-me{flex-direction:row-reverse}.m-me .meta{text-align:right}.m-me .bubble{background:var(--me-bg);border-color:transparent;border-radius:14px 4px 14px 14px}
+.m-claude .bubble{border-left:3px solid var(--claude)} .m-claude .meta b{color:var(--claude)}
+.m-codex .bubble{border-left:3px solid var(--codex)} .m-codex .meta b{color:var(--codex)}
+.m-me .meta b{color:var(--me)}
+.m-sys{justify-content:center}.m-sys .bubble{background:transparent;border:none;box-shadow:none;color:var(--sys);font-size:13px;padding:2px 8px;text-align:center}
+.bubble p{margin:.35em 0}.bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
+.bubble pre{background:var(--sys-bg);padding:10px;border-radius:8px;overflow-x:auto;font-size:13px}
+.bubble code{font-family:Consolas,"Cascadia Mono",monospace;font-size:.92em;background:var(--sys-bg);padding:1px 5px;border-radius:4px}
+.bubble pre code{background:none;padding:0}
+.bubble table{border-collapse:collapse;display:block;overflow-x:auto}.bubble td,.bubble th{border:1px solid var(--line);padding:4px 8px}
+.bubble ul,.bubble ol{padding-left:1.4em;margin:.35em 0}
+.empty{text-align:center;color:var(--muted);margin-top:18vh}
+.empty .big{font-size:20px;color:var(--ink);margin-bottom:6px}
+.thinking{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:13.5px;margin:4px 0 14px}
+.thinking .face{width:32px;height:32px;flex:none}
+.tbody{min-width:0;padding-top:5px}
+.steps{list-style:none;margin:6px 0 0;padding:6px 10px;border-left:2px solid var(--line);font-size:12.5px;font-family:Consolas,"Cascadia Mono",var(--font)}
+.steps li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.6}
+.steps li:last-child{opacity:1;color:var(--ink)}
+.queued{margin-top:6px;font-size:12.5px;color:var(--me)}
+.dots{display:inline-flex;gap:3px;margin-right:8px;vertical-align:2px}
+.dots i{width:5px;height:5px;border-radius:50%;background:currentColor;animation:pulse 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16px 14px}
+.composer{max-width:860px;margin:0 auto}
+.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;background:transparent}
+.seg button.sel{background:var(--ink);color:var(--panel)}
+button{font:inherit;font-size:13px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover{filter:brightness(.96)} button:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;resize:none;font:inherit;font-size:15px;line-height:1.5;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);min-height:46px;max-height:40vh;outline:none}
+textarea:focus{border-color:var(--me)}
+.send{background:var(--me);color:#fff;border:none;border-radius:12px;padding:0 18px;height:46px;font-size:15px;font-weight:600}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+.switch{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+.switch input{display:none}
+.track{width:34px;height:19px;border-radius:999px;background:var(--line);position:relative;transition:.15s}
+.track::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.switch input:checked+.track{background:var(--claude)}
+.switch input:checked+.track::after{left:17px}
+.switch.rw{color:var(--claude);font-weight:600}
+.approval{border:1px solid var(--claude);background:var(--claude-bg);border-radius:12px;padding:10px 14px;margin-bottom:10px}
+.approval ul{margin:6px 0 8px;padding-left:1.2em;font-family:Consolas,"Cascadia Mono",var(--font);font-size:13px;overflow-wrap:anywhere}
+.ap-btns{display:flex;gap:8px}
+.ap-btns .allow{background:var(--claude);color:#fff;border-color:transparent;font-weight:600}
+@media (max-width:600px){header{flex-wrap:wrap}.hint{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="faces"><div class="face f-me">你</div><div class="face f-claude">C</div><div class="face f-codex">X</div></div>
+  <h1>三方討論</h1>
+  <div class="spacer"></div>
+  <label class="switch" title="開啟後 Claude 與 Codex 可以改檔案、執行指令"><input type="checkbox" id="write"><span class="track"></span><span id="writeLbl">唯讀</span></label>
+  <span id="health" class="pill warn" hidden></span>
+  <span id="tg" class="pill"><span class="dot"></span>Telegram</span>
+  <span id="st" class="pill"><span class="dot"></span>連線中</span>
+</header>
+<nav id="rooms" class="rooms"></nav>
+<main id="main"><div class="wrap" id="list"></div></main>
+<footer><div class="composer">
+  <div id="approval" class="approval" hidden>
+    <div class="ap-title">🔐 <b id="apWho"></b> 想做一件跟安全有關的事，需要你同意：</div>
+    <ul id="apItems"></ul>
+    <div class="ap-btns"><button class="allow" id="apAllow">允許一次</button><button id="apDeny">拒絕</button></div>
+  </div>
+  <div class="tools">
+    <span class="seg" id="target">
+      <button data-t="both" class="sel">問兩位</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button>
+    </span>
+    <button id="order" title="切換誰先發言">Claude 先講</button>
+    <span class="spacer"></span>
+    <button id="more">讓他們繼續討論</button>
+    <select id="rounds" title="輪數"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+    <button id="stop">停止</button>
+    <button id="new">新討論</button>
+  </div>
+  <div class="row">
+    <textarea id="box" rows="1" placeholder="輸入訊息…（Enter 送出，Shift+Enter 換行）"></textarea>
+    <button class="send" id="send">送出</button>
+  </div>
+  <div class="hint">每個 Telegram 群組是一個獨立的房間：這裡打的字只進目前這個房間，也只轉貼到這個房間的群組。</div>
+</div></footer>
+<script>
+const KEY = new URLSearchParams(location.search).get("k") || "";
+const $ = s => document.querySelector(s);
+const list = $("#list"), main = $("#main"), box = $("#box");
+let total = 0, epoch = 0, target = "both", busy = false, confirmNew = 0;
+let room = (()=>{ try{ return localStorage.getItem("rt-room") || "main"; }catch(e){ return "main"; } })();
+const seenTotals = {};
+function switchRoom(id){
+  if(id === room) return;
+  room = id; total = 0; epoch = 0; list.innerHTML = "";
+  try{ localStorage.setItem("rt-room", id); }catch(e){}
+  $("#approval").hidden = true; $("#approval").dataset.id = "";
+  poll();
+}
+function renderRooms(rooms){
+  const nav = $("#rooms");
+  nav.hidden = rooms.length < 2;
+  nav.innerHTML = "";
+  for(const r of rooms){
+    const b = document.createElement("button");
+    if(r.id === room) seenTotals[r.id] = r.total;
+    const unread = r.id !== room && seenTotals[r.id] !== undefined && r.total > seenTotals[r.id];
+    if(seenTotals[r.id] === undefined) seenTotals[r.id] = r.total;
+    b.className = r.id === room ? "sel" : "";
+    b.innerHTML = `${r.busy ? '<span class="badge"></span>' : ""}${r.approval ? '<span class="badge ap"></span>' : ""}${esc(r.name)}${unread ? '<span class="new">新</span>' : ""}`;
+    b.title = r.linked ? "已連到 Telegram" : "沒有連到 Telegram";
+    b.onclick = () => switchRoom(r.id);
+    nav.appendChild(b);
+  }
+}
+const WHO = {
+  "使用者": {cls:"m-me", face:"f-me", ch:"你", name:"你"},
+  "Claude": {cls:"m-claude", face:"f-claude", ch:"C", name:"Claude"},
+  "Codex":  {cls:"m-codex", face:"f-codex", ch:"X", name:"Codex"},
+  "系統":   {cls:"m-sys"}
+};
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function md(t){
+  try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(t, {breaks:true})); }catch(e){}
+  return esc(t).replace(/\n/g,"<br>");
+}
+function render(m){
+  const w = WHO[m.who] || WHO["系統"];
+  const el = document.createElement("div");
+  el.className = "msg " + w.cls;
+  if(w.cls === "m-sys"){ el.innerHTML = `<div class="bubble">${esc(m.text)}</div>`; return el; }
+  const src = m.src === "Telegram" ? " · 來自 Telegram" : (m.src === "電腦" ? " · 電腦" : "");
+  el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="body">
+    <div class="meta"><b>${w.name}</b>${esc(m.time||"")}${src}</div>
+    <div class="bubble">${md(m.text)}</div></div>`;
+  return el;
+}
+function showEmpty(){
+  list.innerHTML = `<div class="empty"><div class="big">開始一段討論</div>
+    你說一句話，Claude 和 Codex 都會發表意見；右上角開關決定他們能不能改檔案。</div>`;
+}
+let thinkingEl = null;
+function setThinking(progress){
+  if(thinkingEl){ thinkingEl.remove(); thinkingEl = null; }
+  if(!progress || !progress.length) return;
+  thinkingEl = document.createElement("div");
+  for(const p of progress){
+    const w = WHO[p.who];
+    const mm = Math.floor(p.elapsed/60), ss = String(p.elapsed%60).padStart(2,"0");
+    const steps = (p.steps||[]).slice(-4).map(s => `<li>${esc(s)}</li>`).join("");
+    const el = document.createElement("div");
+    el.className = "thinking";
+    el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="tbody">
+      <div><span class="dots"><i></i><i></i><i></i></span>${w.name} 工作中 · ${mm}:${ss}</div>
+      ${steps ? `<ul class="steps">${steps}</ul>` : ""}
+      ${p.pending ? `<div class="queued">${w.name} 做完手上的事後，會再回應你的新訊息</div>` : ""}</div>`;
+    thinkingEl.appendChild(el);
+  }
+  list.appendChild(thinkingEl);
+}
+async function api(path, body){
+  const r = await fetch(path, {method: body ? "POST" : "GET", headers: {"X-Key": KEY, "Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : undefined});
+  if(!r.ok) throw new Error(r.status);
+  return r.json();
+}
+let pollSeq = 0;
+async function poll(){
+  const seq = ++pollSeq;
+  try{
+    const asked = room;
+    const d = await api(`/api/poll?room=${encodeURIComponent(room)}&since=${total}&epoch=${epoch}`);
+    if(asked !== room || seq !== pollSeq) return;  // 舊的回應（切換房間或重疊）直接丟掉
+    if(d.room !== room){ room = d.room; }
+    renderRooms(d.rooms);
+    const nearBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 120;
+    if(d.reset){ list.innerHTML = ""; total = 0; }
+    epoch = d.epoch;
+    if(thinkingEl){ thinkingEl.remove(); thinkingEl = null; }
+    if(d.total === 0 && !list.querySelector(".msg")) showEmpty();
+    else if(d.messages.length){ const e = list.querySelector(".empty"); if(e) e.remove(); }
+    for(const m of d.messages) list.appendChild(render(m));
+    total = d.start + d.messages.length;
+    busy = d.busy;
+    setThinking(d.progress);
+    const st = $("#st");
+    st.className = "pill" + (busy ? " busy" : " on");
+    st.lastChild.textContent = busy ? d.status : "就緒";
+    const tg = $("#tg"), t = d.telegram;
+    if(!t.ok){ tg.className = "pill warn"; tg.lastChild.textContent = "Telegram 連線中"; }
+    else if(!t.paired){ tg.className = "pill warn"; tg.lastChild.textContent = `Telegram 未配對：私訊 @${t.bot} 傳 /pair ${t.pair_code}`; }
+    else { tg.className = "pill on"; tg.lastChild.textContent = t.linked ? "本房已連到 Telegram" : "本房沒有連到 Telegram"; if(!t.linked) tg.className = "pill"; }
+    const w = $("#write"); w.checked = d.write;
+    $("#writeLbl").textContent = d.write ? "可寫檔" : "唯讀";
+    w.parentElement.classList.toggle("rw", d.write);
+    const bad = Object.entries(d.health || {}).filter(([k, v]) => !v.ok);
+    const hp = $("#health");
+    hp.hidden = !bad.length;
+    if(bad.length){ hp.textContent = "⚠ " + bad.map(([k, v]) => `${k}：${v.msg}`).join("；"); hp.title = hp.textContent; }
+    const ap = $("#approval");
+    if(d.approval){
+      if(ap.dataset.id !== d.approval.id){
+        ap.dataset.id = d.approval.id;
+        $("#apWho").textContent = d.approval.agent;
+        $("#apItems").innerHTML = d.approval.items.map(t => `<li>${esc(t)}</li>`).join("");
+      }
+      ap.hidden = false;
+    } else { ap.hidden = true; ap.dataset.id = ""; }
+    $("#order").textContent = d.order === "claude" ? "Claude 先講" : "Codex 先講";
+    $("#more").disabled = busy || d.total === 0;
+    $("#stop").disabled = !busy;
+    $("#new").disabled = busy;
+    if(d.messages.length && nearBottom) main.scrollTop = main.scrollHeight;
+  }catch(e){
+    const st = $("#st"); st.className = "pill warn"; st.lastChild.textContent = "中樞沒有回應（黑色視窗被關了嗎？）";
+  }
+}
+async function send(){
+  const text = box.value.trim();
+  if(!text) return;
+  box.value = ""; grow();
+  await api("/api/send", {text, target, room});
+  setTimeout(()=>main.scrollTop = main.scrollHeight, 300);
+}
+function grow(){ box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, innerHeight*0.4) + "px"; }
+box.addEventListener("input", grow);
+box.addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); send(); }
+});
+$("#send").onclick = send;
+document.querySelectorAll("#target button").forEach(b => b.onclick = () => {
+  target = b.dataset.t;
+  document.querySelectorAll("#target button").forEach(x => x.classList.toggle("sel", x === b));
+  box.focus();
+});
+$("#write").onchange = e => api("/api/write", {on: e.target.checked});
+$("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
+$("#apDeny").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: false, room}); };
+$("#order").onclick = () => api("/api/order", {room});
+$("#more").onclick = () => api("/api/more", {n: +$("#rounds").value, room});
+$("#stop").onclick = () => api("/api/stop", {room});
+$("#new").onclick = () => {
+  const b = $("#new");
+  if(Date.now() - confirmNew > 3000){ confirmNew = Date.now(); b.textContent = "再按一次確認"; setTimeout(()=>b.textContent="新討論", 3000); return; }
+  b.textContent = "新討論"; api("/api/new", {room});
+};
+async function loop(){ await poll(); setTimeout(loop, 1200); }
+loop(); box.focus();
+</script>
+</body>
+</html>

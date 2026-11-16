@@ -1,0 +1,32 @@
+# Private credentials and runtime identity
+secrets/
+*.dpapi
+*.key
+*.pem
+web-key.txt
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+
+# Chat history, room bindings, cursors and logs
+tg_state*.json
+state*.json
+logs/
+*.log
+*.jsonl
+
+# Local CLI configuration and generated artifacts
+.claude/
+.codex/
+.agents/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.tmp
+.publish/
+*.codex-bridge.cmd
+.DS_Store
+Thumbs.db
