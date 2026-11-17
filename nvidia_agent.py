@@ -29,6 +29,9 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 【列目錄】路徑            看資料夾裡有哪些檔
 【用量】                 你今天用了幾次、整體免費額度還剩多少
 【寫筆記】內容            記到你自己的 H:\\免費模型用\\筆記.md（下次可以讀回來，當你的長期記憶）
+你用哪個模型由你自己決定：OpenRouter 上任何 `:free` 結尾的免費模型都可以（例如 nvidia/…、meta-llama/…、qwen/…、deepseek/… 的 :free 版）。
+  把模型 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt），下一次呼叫生效；不是 :free 結尾或不寫，就用預設的 Nemotron。
+  不同題目可以換不同模型（例如寫程式、推理、長文），自己記在筆記裡哪個好用。
 【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work（只能寫這裡）
 【跑程式】檔名.py [參數]    在沙盒裡用 Python（有 numpy）跑你工作區的腳本，最多 3 分鐘，回傳輸出的最後 6000 字
   沙盒限制：只能寫 H:\\免費模型用、不能開子程序、不能連網、讀不到秘密檔；資源上限：記憶體 2GB、CPU 25%、3 分鐘。可以讀共用區和 H:\\Codex用 的資料來算。
@@ -38,7 +41,7 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 一輪最多查 {steps} 步，用完就必須發言；額度有限，夠回答就別多查。
 - 準備好發言時，**不要寫任何工具行**，直接寫你的發言（簡潔，盡量 12 行內，只說你自己的話）。
 - 不知道就說不知道，不要編造檔案內容或數字；引用要說出處（檔名或誰在幾點說的）。
-- 想跟 Claude 協調或請它代做（例如執行程式），發言裡寫 @Claude。
+- 想跟 Claude 協調或請它代做，**另起一行、以 @Claude 開頭**寫你的請求（只有行首的 @Claude 會叫醒它；句子中間提到不算）。
 - 你只能在沙盒裡跑自己工作區的 Python 腳本；系統指令、改別人的檔、啟停訓練都不行，需要就請 @Claude。別承諾做不到的事。
 - 跑出來的數字才算數；程式出錯就讀錯誤訊息修正再跑，不要假裝跑成功。
 - 說「誰做了什麼」之前要有出處：系統的「共用區有變動」通知裡，括號是該資料夾的負責人，不是發通知的人。
@@ -191,6 +194,20 @@ def web_search(q):
         return "網路搜尋失敗"
 
 
+MODEL_FILE = os.path.join(HOME, "模型.txt")
+FREE_MODEL = re.compile(r"[a-z0-9][\w.\-]*/[\w.\-]+:free")
+
+
+def chosen_model():
+    """它自己決定用哪個 OpenRouter 免費模型：寫在 H:\\免費模型用\\模型.txt 第一行（必須是 :free 結尾），
+    其他或不寫就用 worker 預設。worker 本身還會再核對免費目錄與零價格。"""
+    try:
+        first = open(MODEL_FILE, encoding="utf-8-sig").readline().strip()
+    except OSError:
+        return None
+    return first if FREE_MODEL.fullmatch(first) else None
+
+
 class NvidiaAgent(rt.Agent):
     @property
     def write(self):
@@ -212,8 +229,12 @@ class NvidiaAgent(rt.Agent):
             raise RuntimeError(f"輝達今天在討論房已用滿 {DAILY_SOFT} 次")
         os.makedirs(os.path.join(HOME, "jobs"), exist_ok=True)
         jf = os.path.join(HOME, "jobs", time.strftime("room-%m%d-%H%M%S.json"))
-        json.dump({"messages": messages, "max_tokens": 2048, "data_classification": "public_or_synthetic"},
-                  open(jf, "w", encoding="utf-8"), ensure_ascii=False)
+        spec = {"messages": messages, "max_tokens": 2048, "data_classification": "public_or_synthetic"}
+        model = chosen_model()
+        if model:
+            spec["model"] = model
+            self.step(f"模型：{model}")
+        json.dump(spec, open(jf, "w", encoding="utf-8"), ensure_ascii=False)
         worker = rt._paths().get("worker")
         for attempt in range(3):  # 只有 worker 被別人佔用（還沒送出）才等一下再試；其他錯誤不重送
             self.proc = subprocess.Popen(["python", "-B", worker, jf], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

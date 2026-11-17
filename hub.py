@@ -459,7 +459,7 @@ class Room:
 
     def auto_next(self, agent, said):
         """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。"""
-        if agent in (self.gemini, self.nvidia) and "@Claude" in (said or "") and not self.stop_flag \
+        if agent in (self.gemini, self.nvidia) and re.search(r"(?m)^\s*@Claude", said or "") and not self.stop_flag \
                 and not self.claude.busy:  # Gemini／輝達要跟 Claude 協調（例如載入規則）：點名就叫 Claude 回一次
             threading.Thread(target=lambda: self.chain([self.claude]), daemon=True).start()
         if self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
