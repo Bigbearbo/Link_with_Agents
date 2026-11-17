@@ -119,9 +119,9 @@ def read_inbox():
         sender = (meta.get("from") or "").strip()[:20]
         to = (meta.get("to") or "none").strip().lower()
         if not sep or not sender or to not in ("claude", "codex", "gemini", "nvidia", "both", "none"):
-            out.append((full, sender or "未知", "invalid", text[:300]))
+            out.append((full, sender or "未知", "invalid", text[:300], None))
         else:
-            out.append((full, sender, to, body.lstrip("-\n").strip()))
+            out.append((full, sender, to, body.lstrip("-\n").strip(), (meta.get("room") or "").strip() or None))
     return out
 
 

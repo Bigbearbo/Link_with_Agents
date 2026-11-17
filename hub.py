@@ -36,6 +36,8 @@ WEB_LIMIT = 150  # 網頁一次最多載入幾則（節省瀏覽器記憶體）
 ACK_DELAY = 60  # 工作超過這麼多秒，才先貼出第一句話
 MAIN = "main"
 SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
+SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 vs Gemini", "gemini"),
+              ("solo-dot", "我 vs Dot", "dot")]
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
@@ -91,6 +93,7 @@ class Room:
     def __init__(self, hub, rid, d):
         self.hub, self.id = hub, rid
         self.name = d.get("name") or "討論房"
+        self.solo = d.get("solo")  # 一對一房：gemini／nvidia／dot（只有網頁，不連 Telegram）
         self.chats = list(d.get("chats") or [])
         self.transcript = list(d.get("transcript") or [])
         self.epoch = int(d.get("epoch") or 1)
@@ -116,7 +119,7 @@ class Room:
                 "claude_session": self.claude.session, "claude_seen": self.claude.seen,
                 "codex_session": self.codex.session, "codex_seen": self.codex.seen,
                 "gemini_session": self.gemini.session, "gemini_seen": self.gemini.seen,
-                "claude_term_seen": self.term_seen, "auto": self.auto}
+                "claude_term_seen": self.term_seen, "auto": self.auto, "solo": self.solo}
 
     def write_log(self):
         if not self.transcript:
@@ -164,7 +167,8 @@ class Room:
             self.transcript.append(entry)
             idx = len(self.transcript) - 1
             self.hub.save()
-        if who != "Dot" and re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I):
+        if who != "Dot" and (re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I)
+                             or (self.solo == "dot" and who == "使用者" and kind != "note")):
             notify_dot(self.name, who, entry["time"], text)  # Dot 不在線：留一張點名單，Dot 巡檢時看到再回
         if src != "Telegram":
             label = (("主人（電腦）" + ("・只記下" if kind == "note" else "")) if who == "使用者"
@@ -191,6 +195,10 @@ class Room:
         """一般發言：Claude、Codex 先講，Gemini 最後（看得到前兩位的回答，負責補充與挑毛病）。
         互相討論群：只叫 Claude 當窗口，由它決定要不要 @ 別人（使用者 11-17：別一直叫醒快沒額度的 Codex）。
         Codex 週額度超速或快用完時，一般發言不叫它（點名還是會叫）。"""
+        if self.solo in ("gemini", "nvidia"):  # 一對一房：只叫那一位
+            return [getattr(self, self.solo)]
+        if self.solo == "dot":  # Dot 不在線：發言會自動留點名單，不叫任何 AI
+            return []
         if self.name == SHARED_ROOM_NAME:
             return [self.claude]
         seq = [a for a in self.order_both() if not (a is self.codex and codex_hot())]
@@ -594,6 +602,8 @@ class Hub:
                 s.pop(k, None)
             log("已升級成多房間格式。")
         s["rooms"].setdefault(MAIN, {"name": "主討論", "chats": []})
+        for rid, name, solo in SOLO_ROOMS:  # 使用者 11-17：我 vs 輝達／Gemini／Dot 的一對一視窗，不連 Telegram
+            s["rooms"].setdefault(rid, {"name": name, "chats": [], "solo": solo})
         self.rooms = {rid: Room(self, rid, d) for rid, d in s["rooms"].items()}
         self.save()
 
@@ -650,8 +660,9 @@ class Hub:
                         self.shared_room().notice("共用區有變動：\n" + sw.summarize(*batch))
                 sw.save_seen(seen_path, snap)
                 prev = snap
-                for path, sender, to, body in sw.read_inbox():
-                    room = self.shared_room()
+                for path, sender, to, body, want_room in sw.read_inbox():
+                    room = next((r for r in self.rooms.values() if want_room and want_room in (r.id, r.name)),
+                                None) or self.shared_room()  # 檔頭可寫 room: 指定房間（例如 我 vs Dot）
                     if room is None:
                         break
                     if to == "invalid":
@@ -1076,6 +1087,8 @@ if __name__ == "__main__":
             log(f"自我檢查 {k}：{'正常' if ok else '有問題 → ' + msg}")
     threading.Thread(target=run_check, daemon=True).start()
     for r in hub.rooms.values():  # 上次中斷或失敗、還沒回答的訊息：請沒回到的那位補答
+        if r.solo:  # 一對一房不自動補答（Gemini／輝達／Dot 都不在重開時補）
+            continue
         t = r.transcript
         last_user = max((i for i, m in enumerate(t) if m["who"] == "使用者" and m.get("kind") != "note"), default=None)
         if last_user is None:
