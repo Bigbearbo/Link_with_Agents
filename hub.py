@@ -6,6 +6,8 @@
 - Telegram 只聽配對過的主人；網頁只綁 127.0.0.1，且需金鑰（secrets/web-key.txt）。
 - 寫檔權限是全域設定；Claude 在可寫模式下用 auto 權限，安全相關動作要主人在該房間同意。
 """
+import http.client
+import glob
 import json
 import os
 import random
@@ -68,7 +70,7 @@ class Bot:
             except Exception:
                 data = {}
             raise RuntimeError(f"Telegram {method} 失敗：{data.get('description', e.code)}") from None
-        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+        except (urllib.error.URLError, socket.timeout, TimeoutError, OSError, http.client.HTTPException) as e:
             raise RuntimeError(f"Telegram {method} 連線失敗：{getattr(e, 'reason', e)}") from None
         if not data.get("ok"):
             raise RuntimeError(f"Telegram {method} 失敗：{data.get('description')}")
@@ -724,8 +726,8 @@ class Hub:
             try:
                 updates = self.bot.call("getUpdates", _http_timeout=60, **{
                     "offset": self.state["offset"], "timeout": 50, "allowed_updates": ["message"]})
-            except RuntimeError as e:
-                log(str(e))
+            except Exception as e:  # 包含 Telegram 斷線（RemoteDisconnected 等）：不能讓整個中樞當掉
+                log(f"Telegram 讀取失敗，5 秒後重試：{e}")
                 time.sleep(5)
                 continue
             for u in updates:
@@ -1156,6 +1158,20 @@ if __name__ == "__main__":
         for k, (ok, msg) in hub.health.items():
             log(f"自我檢查 {k}：{'正常' if ok else '有問題 → ' + msg}")
     threading.Thread(target=run_check, daemon=True).start()
+    # 中樞在等終端機 Claude 時當掉或重開：Claude 已經寫好的回覆還在 outbox，補貼回原房間（11-17 22:25 遺失事件）
+    for jf in glob.glob(os.path.join(HERE, "terminal", "inbox", "*.json")):
+        rid = os.path.basename(jf)[:-5]
+        out = os.path.join(HERE, "terminal", "outbox", rid + ".txt")
+        try:
+            req = json.load(open(jf, encoding="utf-8"))
+            r = next((x for x in hub.rooms.values() if x.name == req.get("room")), None)
+            if os.path.exists(out) and r:
+                r.add("Claude", open(out, encoding="utf-8").read().strip() + "\n\n（中樞重開前沒送出，補貼）", "回覆")
+                os.replace(out, out + ".done")
+                log(f"[{r.name}] 補貼終端機 Claude 的回覆 {rid}")
+            os.replace(jf, os.path.join(HERE, "terminal", "inbox", rid + ".handled"))
+        except Exception as e:
+            log(f"補貼終端機回覆失敗 {rid}：{e}")
     for r in hub.rooms.values():  # 上次中斷或失敗、還沒回答的訊息：請沒回到的那位補答
         if r.solo:  # 一對一房不自動補答（Gemini／輝達／Dot 都不在重開時補）
             continue
