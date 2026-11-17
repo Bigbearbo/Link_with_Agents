@@ -212,6 +212,17 @@ def web_search(q):
         return "網路搜尋失敗"
 
 
+RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-rules", "輝達.md")
+
+
+def big_brother_rules():
+    """大哥（Claude）維護的規則檔，每輪附在指引後面；輝達讀得到、改不到（不在它的可寫範圍）。"""
+    try:
+        return "\n\n【大哥給你的規則（必須遵守）】\n" + open(RULES_FILE, encoding="utf-8").read()[:6000] + "\n"
+    except OSError:
+        return ""
+
+
 MODEL_FILE = os.path.join(HOME, "模型.txt")
 FREE_MODEL = re.compile(r"[a-z0-9][\w.\-]*/[\w.\-]+:free")
 
@@ -401,7 +412,7 @@ class NvidiaAgent(rt.Agent):
         self._transcript = list(transcript)
         new = transcript[self.seen:][-8:]  # 只先給最近的新訊息；要更多它自己查
         body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)
-        return (GUIDE.format(steps=MAX_STEPS, topic=rt.RESEARCH_TOPIC or "（見使用者說明）") +f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
+        return (GUIDE.format(steps=MAX_STEPS, topic=rt.RESEARCH_TOPIC or "（見使用者說明）") + big_brother_rules() + f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
                 f"自從你上次發言後的新訊息（最多列最後 8 則；更早的請用工具查）：\n\n{body}\n\n現在輪到你（輝達）。")
 
     def _call(self, messages, model=None):
