@@ -420,7 +420,9 @@ class NvidiaAgent(rt.Agent):
             raise RuntimeError(f"輝達今天在討論房已用滿 {DAILY_SOFT} 次")
         os.makedirs(os.path.join(HOME, "jobs"), exist_ok=True)
         jf = os.path.join(HOME, "jobs", time.strftime("room-%m%d-%H%M%S.json"))
-        spec = {"messages": messages, "max_tokens": 2048, "data_classification": "public_or_synthetic"}
+        # 推理打開（worker 預設關；job 可用 reasoning_enabled 開），推理會吃輸出額度，所以上限拉到 4096
+        spec = {"messages": messages, "max_tokens": 4096, "data_classification": "public_or_synthetic",
+                "reasoning_enabled": True}
         model = model or getattr(self, "_force_model", None) or chosen_model()
         if model:
             spec["model"] = model
