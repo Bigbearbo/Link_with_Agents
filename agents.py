@@ -13,7 +13,7 @@ import subprocess
 import threading
 import time
 
-WORKDIR = r"H:\Codex用"
+WORKDIR = os.path.abspath(os.environ.get("LINK_WITH_WORKDIR", r"H:\Codex用"))  # 共用工作區；別台電腦用環境變數指定
 PROMPT_LIMIT = 60  # 一次最多帶給 agent 的新訊息數          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
