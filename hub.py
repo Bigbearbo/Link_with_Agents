@@ -35,6 +35,7 @@ PORT = 8765
 WEB_LIMIT = 150  # 網頁一次最多載入幾則（節省瀏覽器記憶體）
 ACK_DELAY = 60  # 工作超過這麼多秒，才先貼出第一句話
 MAIN = "main"
+SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
            "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n/more 2：讓他們再討論 2 輪\n"
@@ -588,7 +589,8 @@ class Hub:
 
     # ---------- 共用區 H:\Agent共用：新檔通知＋inbox 發言（不呼叫模型） ----------
     def shared_room(self):
-        rid = self.state.get("shared_room") or "g1004308131170"
+        rid = self.state.get("shared_room") or next(
+            (r.id for r in self.rooms.values() if r.name == SHARED_ROOM_NAME), None)
         return self.rooms.get(rid)
 
     def shared_loop(self):
