@@ -25,15 +25,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agents as rt  # noqa: E402
 from secret_store import load_token  # noqa: E402
+import terminal_bridge as tb  # noqa: E402
+import shared_watch as sw  # noqa: E402
 
 STATE = os.path.join(HERE, "tg_state.json")
 LOG_DIR = os.path.join(HERE, "logs")
 UI_FILE = os.path.join(HERE, "ui.html")
 PORT = 8765
+WEB_LIMIT = 150  # 網頁一次最多載入幾則（節省瀏覽器記憶體）
+ACK_DELAY = 60  # 工作超過這麼多秒，才先貼出第一句話
 MAIN = "main"
-ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "系統": "⚙️"}
-TG_HELP = ("直接說話：Claude 和 Codex 都會發表意見（每個群組是獨立的討論房）\n"
-           "/claude 問題、/codex 問題：只問一位\n/more 2：讓他們再討論 2 輪\n"
+SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
+ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
+TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
+           "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n/more 2：讓他們再討論 2 輪\n"
+           "/note 文字：只記下，不叫他們（下次叫時會一起看到）\n"
            "/order 換誰先講　/stop 中斷　/new 這個房間開新討論\n/write on 或 off：開關寫檔權限\n"
            "/allow、/deny：同意或拒絕安全相關請求\n/unbind 這個群組靜音　/bind 重新啟用")
 
@@ -65,8 +71,16 @@ class Bot:
         return data["result"]
 
     def send(self, chat_id, text):
+        first = None
         for i in range(0, max(len(text), 1), 4000):
-            self.call("sendMessage", chat_id=chat_id, text=text[i:i + 4000] or "（空白）")
+            r = self.call("sendMessage", chat_id=chat_id, text=text[i:i + 4000] or "（空白）")
+            first = first or (r or {}).get("message_id")
+        return first
+
+    def edit(self, chat_id, message_id, text):
+        self.call("editMessageText", chat_id=chat_id, message_id=message_id, text=text[:4000])
+        if len(text) > 4000:  # Telegram 單則上限 4096：超過的部分另發新訊息，不要截掉
+            self.send(chat_id, text[4000:])
 
 
 class Room:
@@ -84,13 +98,22 @@ class Room:
         self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
         self.claude.session, self.claude.seen = d.get("claude_session"), int(d.get("claude_seen") or 0)
         self.codex.session, self.codex.seen = d.get("codex_session"), int(d.get("codex_seen") or 0)
+        self.gemini = rt.GeminiAgent("Gemini")
+        self.gemini.session, self.gemini.seen = d.get("gemini_session"), int(d.get("gemini_seen") or 0)
+        self.nvidia = rt.NvidiaAgent("輝達")  # 沒有對話記憶，每次帶最近 60 則；只有點名才回
+        # 終端機 Claude 讀到哪；第一次接手時只給最近幾則，舊紀錄需要時再去讀檔
+        self.term_seen = int(d["claude_term_seen"]) if "claude_term_seen" in d else max(0, len(self.transcript) - 6)
+        self.auto = int(d.get("auto") or 0)  # 兩位自動輪流回應的上限（每個話題）
+        self.auto_left = 0
         self.stop_flag = False
 
     def dump(self):
         return {"name": self.name, "chats": self.chats, "transcript": self.transcript, "epoch": self.epoch,
                 "order": self.order, "approval": self.approval, "log_name": self.log_name,
                 "claude_session": self.claude.session, "claude_seen": self.claude.seen,
-                "codex_session": self.codex.session, "codex_seen": self.codex.seen}
+                "codex_session": self.codex.session, "codex_seen": self.codex.seen,
+                "gemini_session": self.gemini.session, "gemini_seen": self.gemini.seen,
+                "claude_term_seen": self.term_seen, "auto": self.auto}
 
     def write_log(self):
         if not self.transcript:
@@ -111,10 +134,12 @@ class Room:
         owner = self.hub.state.get("owner")
         return [owner] if (self.id == MAIN and owner) else []
 
-    def tg_broadcast(self, text):
+    def tg_broadcast(self, text, track=None):
         for cid in self.targets():
             try:
-                self.hub.bot.send(cid, text)
+                mid = self.hub.bot.send(cid, text)
+                if track is not None and mid:
+                    track[cid] = mid
             except Exception as e:
                 log(f"[{self.name}] 轉發到 Telegram 失敗：{e}")
 
@@ -126,29 +151,48 @@ class Room:
                 pass
 
     # ---------- 紀錄 ----------
-    def add(self, who, text, src):
-        """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。"""
+    def add(self, who, text, src, kind=None, track=None):
+        """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
+        kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
+        entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
+        if kind:
+            entry["kind"] = kind
         with self.hub.lock:
-            self.transcript.append({"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")})
+            self.transcript.append(entry)
+            idx = len(self.transcript) - 1
             self.hub.save()
         if src != "Telegram":
-            label = "主人（電腦）" if who == "使用者" else who
-            threading.Thread(target=self.tg_broadcast, args=(f"{ICON.get(who, '')} {label}\n\n{text}",),
-                             daemon=True).start()
+            label = (("主人（電腦）" + ("・只記下" if kind == "note" else "")) if who == "使用者"
+                     else who + ("（完成回報）" if kind == "report" else ""))
+            tg_text = f"{ICON.get(who, '')} {label}\n\n{text}"
+            if track is not None:
+                track["_header"] = tg_text
+                self.tg_broadcast(tg_text, track)  # 要拿到訊息編號，同步送
+            else:
+                threading.Thread(target=self.tg_broadcast, args=(tg_text,), daemon=True).start()
+        return idx
 
     def notice(self, text):
         self.add("系統", text, "系統")
 
     # ---------- 狀態 ----------
     def agents(self):
-        return (self.claude, self.codex)
+        return (self.claude, self.codex, self.gemini, self.nvidia)
 
     def order_both(self):
         return [self.claude, self.codex] if self.order == "claude" else [self.codex, self.claude]
 
+    def order_all(self):
+        """一般發言：Claude、Codex 先講，Gemini 最後（看得到前兩位的回答，負責補充與挑毛病）。"""
+        return self.order_both() + [self.gemini]
+
+    def seq_for(self, target):
+        return {"both": self.order_all(), "all": self.order_all(), "claude": [self.claude],
+                "codex": [self.codex], "gemini": [self.gemini], "nvidia": [self.nvidia]}.get(target, self.order_all())
+
     @property
     def busy(self):
-        return self.claude.busy or self.codex.busy
+        return any(a.busy for a in self.agents())
 
     @property
     def status(self):
@@ -156,12 +200,70 @@ class Room:
         return "、".join(active) + " 工作中…" if active else "閒置"
 
     # ---------- 操作 ----------
+    def note(self, text, src):
+        """只記下：存進討論，不叫任何人。下次有人被叫時會一起看到。"""
+        self.add("使用者", text, src, kind="note")
+
     def user_says(self, text, src, target="both"):
-        if target in ("claude", "codex"):  # 標記只問誰，另一位之後讀到記錄才不會搞錯
-            text = f"（只問 {'Claude' if target == 'claude' else 'Codex'}）{text}"
+        if target == "both":  # 文字裡點名：「@Gemini …」或開頭寫「（只問 Gemini）」
+            m = re.match(r"\s*(?:@|（只問\s*)(claude|codex|gemini|nvidia|輝達)(?![A-Za-z])[）)]?\s*", text, re.I)
+            if m:
+                target, text = m.group(1).lower(), text[m.end():]
+                target = "nvidia" if target == "輝達" else target
+        if target in ("claude", "codex", "gemini", "nvidia"):  # 標記只問誰，其他人之後讀到記錄才不會搞錯
+            text = f"（只問 {'輝達' if target == 'nvidia' else target.capitalize()}）{text}"
         self.add("使用者", text, src)
+        self.auto_left = self.auto
+        for a in self.agents():
+            if a.busy and getattr(a, "report_progress", None):
+                threading.Thread(target=a.report_progress, daemon=True).start()
         self.stop_flag = False
-        self.chain({"both": self.order_both(), "claude": [self.claude], "codex": [self.codex]}[target])
+        seq = self.seq_for(target)
+        for a in seq:
+            if a.busy and not self.start_side(a):
+                a.pending = True  # 分身也在忙：等手上的事做完再回
+        self.chain([a for a in seq if not a.busy])
+
+    # ---------- 分身：主線在忙時，先回答新問題（只讀、不搶主線的對話） ----------
+    def start_side(self, agent):
+        if agent.side is not None or agent in (self.gemini, self.nvidia):  # Gemini 沒有分身：忙的話做完再回
+            return False
+        terminal = agent is self.claude and tb.terminal_alive()
+        if not terminal and not agent.session:
+            return False
+        side = (rt.ClaudeAgent if agent is self.claude else rt.CodexAgent)(agent.name)
+        side.fork_from, side.write = agent.session, False
+        agent.side = side
+        with self.hub.lock:
+            snapshot = list(self.transcript)
+        start = self.term_seen if terminal else agent.seen
+        new = [m for m in snapshot[start:] if m["who"] != agent.name]
+        body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)
+        head = ("（你是分身：主線的你還在處理先前的工作。下面的新訊息，能直接回答的就回答；"
+                "需要改檔、跑指令或要很久的，簡短說明「等手上的事做完再處理」，不要動手。"
+                "不用回應主線正在做的那件事。）\n\n")
+
+        def run():
+            try:
+                if terminal:
+                    reply = tb.ask_terminal(self.name, f"（房間「{self.name}」｜主線工作中，這是插進來的新訊息）\n\n" + body,
+                                            lambda: self.stop_flag)
+                else:
+                    reply = side.run(head + body + f"\n\n現在輪到你（{agent.name}）發言。")
+                    reply = (side.said[-1] if side.said else reply or "").strip()
+                if reply:
+                    self.add(agent.name, reply, "回覆", kind="side")
+                    log(f"[{self.name}] {agent.name} 分身先回答了新訊息")
+                else:
+                    agent.pending = True
+            except Exception as e:
+                log(f"[{self.name}] {agent.name} 分身失敗：{e}")
+                agent.pending = True  # 分身不行，就等主線做完再回
+            finally:
+                agent.side = None
+        threading.Thread(target=run, daemon=True).start()
+        log(f"[{self.name}] {agent.name} 在忙，開分身先回答新訊息")
+        return True
 
     def more(self, n):
         if self.busy or not self.transcript:
@@ -180,6 +282,8 @@ class Room:
             return False
         with self.hub.lock:
             self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
+            self.gemini = rt.GeminiAgent("Gemini")
+            self.nvidia = rt.NvidiaAgent("輝達")
             self.transcript, self.approval, self.log_name = [], None, None
             self.epoch += 1
             self.hub.save()
@@ -204,8 +308,7 @@ class Room:
             agent, rest = seq[0], seq[1:]
             with self.hub.lock:
                 if agent.busy:
-                    agent.pending = True
-                    seq = rest
+                    seq = rest  # 已經在做了（例如自動輪流已叫起它），不重複
                     continue
                 agent.busy = True
             threading.Thread(target=self.agent_loop, args=(agent, lambda r=rest: self.chain(r)),
@@ -230,31 +333,148 @@ class Room:
             elif then:
                 then()
 
+    def ask_terminal(self, agent, snapshot):
+        """Claude 的回合先交給終端機那個 Claude Code；不在線或逾時回傳 None（改用備援）。"""
+        if agent is not self.claude or not tb.terminal_alive():
+            return None
+        new = [m for m in snapshot[self.term_seen:] if m["who"] != "Claude"]
+        if len(new) > rt.PROMPT_LIMIT:  # 太久沒輪到：只帶最近幾則，跟其他 AI 一樣
+            skipped, new = len(new) - rt.PROMPT_LIMIT, new[-rt.PROMPT_LIMIT:]
+            new.insert(0, {"who": "系統", "time": "", "text": f"（較早的 {skipped} 則省略；需要的話用 H:\\Claude用\\三方討論\\search.py 搜尋）"})
+        body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new) or "（沒有新發言，請針對目前討論補充或回應。）"
+        perm = "可寫" if self.hub.state.get("write_mode") else "唯讀"
+        body = (f"（房間「{self.name}」｜現在 {time.strftime('%m-%d %H:%M')}｜目前權限：{perm}｜回覆會以 Claude 身分貼到此房間的網頁與 Telegram 群組）\n\n"
+                + body)
+        agent.steps, agent.started = ["交給終端機的 Claude…"], time.time()
+        log(f"[{self.name}] 交給終端機 Claude")
+
+        def waiting(sec):
+            agent.steps[-1:] = [f"等終端機的 Claude 回覆（{sec // 60}:{sec % 60:02d}）"]
+        reply = tb.ask_terminal(self.name, body, lambda: self.stop_flag, waiting)
+        if reply is not None:
+            self.term_seen = len(snapshot)
+        return reply
+
     def run_turn(self, agent):
         threading.Thread(target=self.typing, daemon=True).start()
         with self.hub.lock:
             snapshot = list(self.transcript)
+        reply = self.ask_terminal(agent, snapshot)
+        if reply is not None:
+            agent.started = None
+            self.add(agent.name, reply, "回覆")
+            log(f"[{self.name}] 終端機 Claude 已回覆")
+            self.auto_next(agent, reply)
+            return
+        if self.stop_flag:
+            return
+        if agent is self.claude and tb.terminal_alive():
+            self.notice("終端機的 Claude 沒有及時回覆，這輪改由備援 Claude 回答。")
         agent.write = bool(self.hub.state.get("write_mode"))
         prompt = agent.build_prompt(snapshot)
         if agent.session is None and self.id != MAIN:
             prompt = f"（這是「{self.name}」討論房，和其他房間的討論互相獨立。）\n" + prompt
         log(f"[{self.name}] {agent.name} 開始工作…")
         t0 = time.time()
+        src = "備援" if agent is self.claude else "回覆"
+        # 每輪最多兩則：第一句話馬上貼出當「回覆」，中途的話只更新進度，做完再一次「完成回報」
+        live = {"idx": None, "text": None, "last": None, "tg": {}, "done": False}
+
+        def post_first():
+            if live["idx"] is None and live["text"] and not live["done"]:
+                live["idx"] = self.add(agent.name, live["text"], src, track=live["tg"])
+                agent.anchor = live["idx"]
+
+        def on_say(text):
+            if live["text"] is None:
+                live["text"] = text
+                if time.time() - t0 >= ACK_DELAY:
+                    post_first()
+            else:
+                live["last"] = text
+            agent.step("說：" + text)
+        agent.on_say = on_say
+
+        def delayed_ack():  # 做很久才先貼第一句，讓主人知道在忙；快的話不用刻意報「收到」
+            for _ in range(ACK_DELAY):
+                if live["done"]:
+                    return
+                time.sleep(1)
+            post_first()
+        threading.Thread(target=delayed_ack, daemon=True).start()
+
+        def tg_progress(final=None):
+            header = live["tg"].get("_header")
+            if not header:
+                return
+            if final:
+                tail = final
+            else:
+                sec = int(time.time() - t0)
+                tail = f"⏳ 還在處理這件：已 {sec // 60}:{sec % 60:02d}｜最新：{agent.steps[-1] if agent.steps else '…'}"
+            for cid, mid in list(live["tg"].items()):
+                if cid == "_header":
+                    continue
+                try:
+                    self.hub.bot.edit(cid, mid, f"{header}\n\n{tail}")
+                except Exception:
+                    pass
+
+        agent.report_progress = tg_progress  # 只有主人又傳新訊息時才更新上一件事的進度
         try:
             reply = agent.run(prompt)
         except Exception as e:
+            live["done"] = True
+            if live["idx"] is not None:
+                agent.seen = len(snapshot)  # 已經說出口的話保留，不算白講
+                tg_progress("⚠️ 這輪中途失敗")
             if not self.stop_flag:
                 log(f"[{self.name}] {agent.name} 失敗：{e}")
-                self.notice(f"{agent.name} 失敗：{str(e)[:500]}")
+                extra = f"\n最後說到：{live['last'][:300]}" if live["last"] else ""
+                self.notice(f"{agent.name} 這輪中途失敗：{str(e)[:400]}{extra}")
             return
         finally:
+            live["done"] = True
             agent.started = None
+            agent.on_say = None
+            agent.anchor = None
+            agent.report_progress = None
         agent.seen = len(snapshot)  # 自己的發言會被過濾；途中新增的訊息下次看得到
         agent.extra_allow = []      # 允許一次：用完即清
-        self.add(agent.name, reply, "回覆")
+        if live["idx"] is None:
+            # 很快就做完（或沒有中途說話）：只貼一則，就是最後的結論
+            final = (live["last"] or live["text"] or reply or "").strip()
+            if final:
+                self.add(agent.name, final, src)
+        else:
+            tg_progress(f"✅ 已完成（{int(time.time() - t0) // 60}:{int(time.time() - t0) % 60:02d}）")
+            # 完成回報只取「最後說的那一段」；Codex 的 reply 是所有段落串起來的全文，不能整份再貼一次
+            final = (live["last"] or "").strip()
+            if final and final != (live["text"] or "").strip():
+                self.add(agent.name, final, src, kind="report")
         log(f"[{self.name}] {agent.name} 完成（{time.time() - t0:.0f} 秒）")
         if getattr(agent, "denials", None):
             self.request_approval(agent)
+        self.auto_next(agent, (live["last"] or live["text"] or reply or ""))
+
+    def auto_next(self, agent, said):
+        """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。"""
+        if agent in (self.gemini, self.nvidia) and "@Claude" in (said or "") and not self.stop_flag \
+                and not self.claude.busy:  # Gemini／輝達要跟 Claude 協調（例如載入規則）：點名就叫 Claude 回一次
+            threading.Thread(target=lambda: self.chain([self.claude]), daemon=True).start()
+        if self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
+            return
+        if agent in (self.gemini, self.nvidia):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
+            return
+        if "【討論結束】" in said:
+            self.auto_left = 0
+            return
+        self.auto_left -= 1
+        other = self.codex if agent is self.claude else self.claude
+        if other.busy:
+            return
+        log(f"[{self.name}] 自動輪流：換 {other.name} 回應（剩 {self.auto_left} 輪）")
+        threading.Thread(target=lambda: self.chain([other]), daemon=True).start()
 
     # ---------- 安全相關動作：請主人同意 ----------
     def request_approval(self, agent):
@@ -293,10 +513,13 @@ class Room:
         t = self.transcript
         reset = epoch != self.epoch
         start = 0 if reset else max(0, min(since, len(t)))
+        if start == 0:  # 剛打開或切房：網頁只載入最近 WEB_LIMIT 則，舊的看 logs/*.md
+            start = max(0, len(t) - WEB_LIMIT)
         return {"room": self.id, "epoch": self.epoch, "reset": reset, "start": start, "messages": t[start:],
                 "total": len(t), "busy": self.busy, "status": self.status, "order": self.order,
                 "approval": self.approval,
                 "progress": [{"who": a.name, "steps": list(a.steps), "pending": a.pending,
+                              "anchor": getattr(a, "anchor", None),
                               "elapsed": int(time.time() - (a.started or time.time()))}
                              for a in self.agents() if a.busy]}
 
@@ -363,6 +586,51 @@ class Hub:
             self.save()
             log(f"新增討論房：{title or rid}")
             return self.rooms[rid]
+
+    # ---------- 共用區 H:\Agent共用：新檔通知＋inbox 發言（不呼叫模型） ----------
+    def shared_room(self):
+        rid = self.state.get("shared_room") or next(
+            (r.id for r in self.rooms.values() if r.name == SHARED_ROOM_NAME), None)
+        return self.rooms.get(rid)
+
+    def shared_loop(self):
+        seen_path = os.path.join(HERE, "shared_seen.json")
+        prev = sw.load_seen(seen_path)
+        first = prev is None
+        throttle = sw.Throttle()  # 通知規則見 H:\Agent共用\通知規則.txt
+        while True:
+            try:
+                snap, added, changed = sw.scan(prev or {})
+                if first:
+                    log(f"共用區基準：{len(snap)} 個檔（第一次掃描不通知）")
+                    first = False
+                else:
+                    throttle.feed(added, changed)
+                    batch = throttle.ready()
+                    if batch and self.shared_room():
+                        self.shared_room().notice("共用區有變動：\n" + sw.summarize(*batch))
+                sw.save_seen(seen_path, snap)
+                prev = snap
+                for path, sender, to, body in sw.read_inbox():
+                    room = self.shared_room()
+                    if room is None:
+                        break
+                    if to == "invalid":
+                        room.notice(f"inbox 收到格式不對的檔（{os.path.basename(path)}），已移到 inbox/rejected/。"
+                                    "開頭要有 from:、to:（claude／codex／both／none）、再一行 ---")
+                        sw.archive(path, ok=False)
+                        continue
+                    log(f"inbox：{sender} → {to}")
+                    room.add(sender, body, "共用區")
+                    sw.archive(path)
+                    if to != "none":
+                        room.auto_left = room.auto
+                        room.stop_flag = False
+                        seq = room.seq_for(to)
+                        threading.Thread(target=lambda q=seq, r=room: r.chain(q), daemon=True).start()
+            except Exception as e:
+                log(f"共用區監看錯誤：{e}")
+            time.sleep(30)
 
     def set_write(self, on):
         on = bool(on)
@@ -484,9 +752,21 @@ class Hub:
             self.bot.send(cid, f"⚙️ 改成 {'Claude' if o == 'claude' else 'Codex'} 先講。")
         elif word == "/more":
             room.more(int(arg) if arg.isdigit() else 1)
-        elif word in ("/claude", "/codex"):
+        elif word in ("/claude", "/codex", "/gemini", "/nvidia"):
             if arg:
                 room.user_says(arg, "Telegram", word[1:])
+        elif word == "/auto":
+            n = int(arg) if arg.isdigit() else None
+            if n is None:
+                self.bot.send(cid, f"⚙️ 這個房間自動輪流上限：{room.auto} 輪（0 表示只有被點名才回）。用 /auto 3 設定。")
+            else:
+                with self.lock:
+                    room.auto = max(0, min(10, n))
+                    self.save()
+                self.bot.send(cid, f"⚙️ 這個房間改成自動輪流最多 {room.auto} 輪。")
+        elif word == "/note":
+            if arg:
+                room.note(arg, "Telegram")
         elif word in ("/help", "/start"):
             self.bot.send(cid, TG_HELP)
         elif word:
@@ -504,6 +784,11 @@ class Hub:
                           for x in self.rooms.values()]
             d["write"] = bool(self.state.get("write_mode"))
             d["health"] = {k: {"ok": v[0], "msg": v[1]} for k, v in self.health.items()}
+            d["terminal"] = tb.terminal_alive()
+            try:  # 網頁版本：ui.html 改過就變，頁面比對後顯示「有更新」按鈕
+                d["ui_ver"] = int(os.path.getmtime(UI_FILE))
+            except OSError:
+                d["ui_ver"] = 0
             d["telegram"] = {"ok": self.tg_ok, "paired": bool(self.state["owner"]), "pair_code": self.pair_code,
                              "bot": getattr(self, "username", None), "linked": bool(r.targets())}
             return d
@@ -545,6 +830,10 @@ def make_handler(hub):
                     return self._json({"error": "forbidden"}, 403)
                 self._json(hub.snapshot(q.get("room", [MAIN])[0], int(q.get("since", ["0"])[0]),
                                         int(q.get("epoch", ["0"])[0])))
+            elif u.path == "/api/usage":
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                self._json(usage_summary())
             elif u.path == "/ping":
                 self._json({"app": "roundtable-hub"})
             else:
@@ -562,8 +851,10 @@ def make_handler(hub):
             room = hub.room(data.get("room") or MAIN)
             if p == "/api/send":
                 text = (data.get("text") or "").strip()
-                if text:
-                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex") else "both")
+                if text and data.get("target") == "note":
+                    room.note(text, "電腦")
+                elif text:
+                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia") else "both")
                 return self._json({"ok": True})
             if p == "/api/more":
                 room.more(int(data.get("n") or 1))
@@ -575,6 +866,23 @@ def make_handler(hub):
                 return self._json({"ok": room.new_chat()})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦")})
+            if p in ("/api/claude_says", "/api/agent_says"):
+                # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
+                text = (data.get("text") or "").strip()
+                who = "Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude"
+                if not text:
+                    return self._json({"ok": False})
+                room.add(who, text, "App" if who == "Codex" else "回覆")
+                room.auto_left = room.auto
+                with hub.lock:
+                    if who == "Claude":
+                        room.term_seen = len(room.transcript)
+                    hub.save()
+                nxt = data.get("then")
+                if nxt in ("codex", "claude", "gemini", "nvidia", "both"):
+                    room.stop_flag = False
+                    room.chain(room.seq_for(nxt))
+                return self._json({"ok": True})
             if p == "/api/write":
                 return self._json({"write": hub.set_write(data.get("on"))})
             if p == "/api/order":
@@ -582,6 +890,59 @@ def make_handler(hub):
             self._json({"error": "not found"}, 404)
 
     return H
+
+
+def _usage_window(w, label=None):
+    """把各家用量檔的一個時間窗整理成網頁要的格式；沒資料回傳 None。"""
+    if not w or w.get("used") is None or w.get("available") is False:
+        return None
+    resets = str(w.get("resets") or "")
+    if "T" in resets:  # ISO 時間 → MM-DD HH:MM
+        resets = resets[5:16].replace("T", " ")
+    empty = str(w.get("empty_at") or "")
+    if "T" in empty:
+        empty = empty[5:16].replace("T", " ")
+    return {"label": label or w.get("label"), "used": float(w["used"]), "elapsed": w.get("elapsed"),
+            "state": w.get("state") or "", "resets": resets, "empty_at": empty}
+
+
+def usage_summary():
+    """網頁側邊用量表：Claude、Codex、Gemini 讀共用區的用量檔；輝達讀 OpenRouter worker 的當日計數。"""
+    out = []
+    for name, fn in (("Claude", "claude-用量.json"), ("Codex", "codex-用量.json"), ("Gemini", "gemini-用量.json")):
+        p = os.path.join(r"H:\Agent共用", fn)
+        try:
+            d = json.load(open(p, encoding="utf-8"))
+        except Exception:
+            out.append({"name": name, "missing": True})
+            continue
+        wins = [x for x in (_usage_window(d.get("five_hour"), "5小時"), _usage_window(d.get("seven_day"), "7天")) if x]
+        if name == "Gemini":
+            argon = ((d.get("其他組") or {}).get("Gemini 4 Argon") or {})
+            for v in argon.values():
+                x = _usage_window(v, "Argon 週")
+                if x:
+                    wins.append(x)
+        upd = str(d.get("更新") or "")
+        out.append({"name": name, "windows": wins, "verdict": d.get("判斷") or "",
+                    "updated": upd[5:16].replace("T", " ") if len(upd) >= 16 else upd,
+                    "age_min": int((time.time() - os.path.getmtime(p)) / 60)})
+    try:  # 輝達：worker 的 UTC 日計數（台北 08:00 換日），上限 900（已扣保留）
+        import datetime
+        paths = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
+        b = json.load(open(paths.get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
+        elapsed = (now.hour * 3600 + now.minute * 60 + now.second) / 864
+        pct = used / 9
+        state = "正常" if elapsed < 3 or pct <= elapsed else "略快" if pct <= elapsed * 1.2 else "超速"
+        out.append({"name": "輝達", "windows": [{"label": "今天", "used": round(pct, 1), "elapsed": round(elapsed, 1),
+                                                "state": state, "resets": "08:00", "empty_at": "",
+                                                "count": f"{used}/900"}],
+                    "verdict": f"今天 {used}/900 次（台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
+    except Exception:
+        out.append({"name": "輝達", "missing": True})
+    return {"agents": out, "time": time.strftime("%H:%M")}
 
 
 def web_key():
@@ -610,7 +971,8 @@ def already_running():
 
 
 if __name__ == "__main__":
-    os.system("title 三方討論中樞（關閉此視窗即停止）")
+    if sys.stdout and sys.stdout.isatty():  # 由看門狗無視窗執行時不要叫 cmd，免得跳出黑視窗
+        os.system("title 三方討論中樞（關閉此視窗即停止）")
     if already_running():
         print("三方討論中樞已經在執行了，幫你打開網頁。")
         webbrowser.open(f"http://127.0.0.1:{PORT}/?k={web_key()}")
@@ -631,6 +993,8 @@ if __name__ == "__main__":
     if "--write" in sys.argv:
         hub.set_write(True)
 
+    threading.Thread(target=hub.shared_loop, daemon=True).start()
+
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")
         hub.health = rt.self_check()
@@ -639,12 +1003,13 @@ if __name__ == "__main__":
     threading.Thread(target=run_check, daemon=True).start()
     for r in hub.rooms.values():  # 上次中斷或失敗、還沒回答的訊息：請沒回到的那位補答
         t = r.transcript
-        last_user = max((i for i, m in enumerate(t) if m["who"] == "使用者"), default=None)
+        last_user = max((i for i, m in enumerate(t) if m["who"] == "使用者" and m.get("kind") != "note"), default=None)
         if last_user is None:
             continue
         text = t[last_user]["text"]
         wanted = ([r.claude] if text.startswith("（只問 Claude）") else
-                  [r.codex] if text.startswith("（只問 Codex）") else r.order_both())
+                  [r.codex] if text.startswith("（只問 Codex）") else
+                  [] if text.startswith(("（只問 Gemini）", "（只問 輝達）")) else r.order_both())  # 重開時不叫 Gemini 補答
         answered = {m["who"] for m in t[last_user + 1:] if m["who"] in ("Claude", "Codex")}
         todo = [a for a in wanted if a.name not in answered]
         if todo:

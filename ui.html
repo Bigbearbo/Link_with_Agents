@@ -9,13 +9,13 @@
 <style>
 :root{
   --bg:#f4f2ee; --panel:#ffffff; --ink:#1d1b18; --muted:#7a756d; --line:#e4e0d8;
-  --me:#2f6fde; --me-bg:#e8f0fd; --claude:#c8643b; --claude-bg:#fbefe8; --codex:#0f9a74; --codex-bg:#e6f5f0;
+  --me:#2f6fde; --me-bg:#e8f0fd; --claude:#c8643b; --claude-bg:#fbefe8; --codex:#0f9a74; --codex-bg:#e6f5f0; --gemini:#4f6bed; --nvidia:#76b900;
   --sys:#8a857c; --sys-bg:#efede8; --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04);
   --font:"Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#17171a; --panel:#202024; --ink:#ecebe8; --muted:#9a968f; --line:#2f2f35;
-  --me:#7aa7ff; --me-bg:#1f2a40; --claude:#f0956b; --claude-bg:#3a261d; --codex:#4fd1a7; --codex-bg:#16332b;
+  --me:#7aa7ff; --me-bg:#1f2a40; --claude:#f0956b; --claude-bg:#3a261d; --codex:#4fd1a7; --codex-bg:#16332b; --gemini:#8fa2ff; --nvidia:#9ad62a;
   --sys:#9a968f; --sys-bg:#26262b; --shadow:none; color-scheme:dark;
 }}
 *{box-sizing:border-box}
@@ -31,7 +31,7 @@ header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var
 header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.02em}
 .faces{display:flex;gap:4px}
 .face{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
-.f-me{background:var(--me)}.f-claude{background:var(--claude)}.f-codex{background:var(--codex)}
+.f-me{background:var(--me)}.f-claude{background:var(--claude)}.f-codex{background:var(--codex)}.f-gemini{background:var(--gemini)}.f-nvidia{background:var(--nvidia)}
 .spacer{flex:1}
 .pill{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--sys-bg);color:var(--muted);white-space:nowrap}
 .pill.on{color:var(--codex)} .pill.warn{color:var(--claude)}
@@ -49,6 +49,8 @@ main{flex:1;overflow-y:auto;padding:20px 16px 8px}
 .m-me{flex-direction:row-reverse}.m-me .meta{text-align:right}.m-me .bubble{background:var(--me-bg);border-color:transparent;border-radius:14px 4px 14px 14px}
 .m-claude .bubble{border-left:3px solid var(--claude)} .m-claude .meta b{color:var(--claude)}
 .m-codex .bubble{border-left:3px solid var(--codex)} .m-codex .meta b{color:var(--codex)}
+.m-gemini .bubble{border-left:3px solid var(--gemini)} .m-gemini .meta b{color:var(--gemini)}
+.m-nvidia .bubble{border-left:3px solid var(--nvidia)} .m-nvidia .meta b{color:var(--nvidia)}
 .m-me .meta b{color:var(--me)}
 .m-sys{justify-content:center}.m-sys .bubble{background:transparent;border:none;box-shadow:none;color:var(--sys);font-size:13px;padding:2px 8px;text-align:center}
 .bubble p{margin:.35em 0}.bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
@@ -58,8 +60,19 @@ main{flex:1;overflow-y:auto;padding:20px 16px 8px}
 .bubble table{border-collapse:collapse;display:block;overflow-x:auto}.bubble td,.bubble th{border:1px solid var(--line);padding:4px 8px}
 .bubble ul,.bubble ol{padding-left:1.4em;margin:.35em 0}
 .empty{text-align:center;color:var(--muted);margin-top:18vh}
+.older{text-align:center;color:var(--muted);font-size:12.5px;margin:0 0 14px}
 .empty .big{font-size:20px;color:var(--ink);margin-bottom:6px}
 .thinking{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:13.5px;margin:4px 0 14px}
+.live:empty{display:none}
+.live{margin-top:6px;font-size:12.5px;color:var(--muted)}
+.pbar{height:4px;border-radius:999px;background:var(--line);overflow:hidden;margin-bottom:5px}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--codex),var(--me));transition:width .8s}
+.m-claude .pbar i{background:linear-gradient(90deg,var(--claude),var(--me))}
+.ptext{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-me .bubble:has(+ .live){}
+.msg.note .bubble{background:transparent;border:1px dashed var(--me)}
+.f-other{background:#8a63d2}.m-other .bubble{border-left:3px solid #8a63d2}.m-other .meta b{color:#8a63d2}
+.tag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sys-bg);color:var(--ink);margin-right:6px}
 .thinking .face{width:32px;height:32px;flex:none}
 .tbody{min-width:0;padding-top:5px}
 .steps{list-style:none;margin:6px 0 0;padding:6px 10px;border-left:2px solid var(--line);font-size:12.5px;font-family:Consolas,"Cascadia Mono",var(--font)}
@@ -95,20 +108,51 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 .ap-btns{display:flex;gap:8px}
 .ap-btns .allow{background:var(--claude);color:#fff;border-color:transparent;font-weight:600}
 @media (max-width:600px){header{flex-wrap:wrap}.hint{display:none}}
+/* ---- 側邊用量表 ---- */
+#usage{position:fixed;right:16px;top:118px;width:250px;max-height:calc(100vh - 140px);overflow-y:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:12.5px;z-index:5;
+  box-shadow:0 2px 10px rgba(0,0,0,.05)}
+#usage h3{margin:0 0 8px;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:baseline}
+#usage h3 small{color:var(--muted);font-weight:400}
+.u-agent{padding:8px 0;border-top:1px solid var(--line)}
+.u-agent:first-of-type{border-top:0}
+.u-name{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:4px}
+.u-name .face{width:18px;height:18px;font-size:10px}
+.u-name small{margin-left:auto;color:var(--muted);font-weight:400}
+.u-win{margin:5px 0}
+.u-row{display:flex;justify-content:space-between;color:var(--muted)}
+.u-row b{color:var(--ink);font-weight:600}
+.u-bar{position:relative;height:7px;border-radius:4px;background:var(--line);margin:3px 0 1px;overflow:visible}
+.u-fill{height:100%;border-radius:4px;background:#2e9e6b}
+.u-fill.warn{background:#d99a1e}.u-fill.hot{background:#d9483b}
+.u-tick{position:absolute;top:-3px;width:2px;height:13px;background:var(--ink);opacity:.55;border-radius:1px}
+.u-verdict{color:var(--muted);margin-top:3px;line-height:1.4}
+.u-verdict.hot{color:#d9483b}
+.u-stale{color:#d99a1e}
+.u-legend{color:var(--muted);font-size:11.5px;margin-top:8px;line-height:1.4}
+#usageBtn{cursor:pointer}
+#updBtn{cursor:pointer;background:#2f6fde;color:#fff;border-color:#2f6fde;font-weight:600;animation:updPulse 2s ease-in-out infinite}
+@keyframes updPulse{50%{opacity:.6}}
+@media (max-width:1379px){#usage{display:none;right:12px;top:64px}#usage.open{display:block}}
+@media (min-width:1380px){#usageBtn{display:none}}
 </style>
 </head>
 <body>
 <header>
-  <div class="faces"><div class="face f-me">你</div><div class="face f-claude">C</div><div class="face f-codex">X</div></div>
+  <div class="faces"><div class="face f-me">你</div><div class="face f-claude">C</div><div class="face f-codex">X</div><div class="face f-gemini">G</div><div class="face f-nvidia">N</div></div>
   <h1>三方討論</h1>
   <div class="spacer"></div>
   <label class="switch" title="開啟後 Claude 與 Codex 可以改檔案、執行指令"><input type="checkbox" id="write"><span class="track"></span><span id="writeLbl">唯讀</span></label>
   <span id="health" class="pill warn" hidden></span>
+  <span id="updBtn" class="pill upd" title="網頁有新版本，點一下重新整理" hidden>🔄 有更新，點我重新整理</span>
+  <span id="usageBtn" class="pill" title="大家的用量">📊 用量</span>
   <span id="tg" class="pill"><span class="dot"></span>Telegram</span>
   <span id="st" class="pill"><span class="dot"></span>連線中</span>
 </header>
 <nav id="rooms" class="rooms"></nav>
 <main id="main"><div class="wrap" id="list"></div></main>
+<aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
+<div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
 <footer><div class="composer">
   <div id="approval" class="approval" hidden>
     <div class="ap-title">🔐 <b id="apWho"></b> 想做一件跟安全有關的事，需要你同意：</div>
@@ -117,7 +161,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
   </div>
   <div class="tools">
     <span class="seg" id="target">
-      <button data-t="both" class="sel">問兩位</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button>
+      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
     </span>
     <button id="order" title="切換誰先發言">Claude 先講</button>
     <span class="spacer"></span>
@@ -166,6 +210,8 @@ const WHO = {
   "使用者": {cls:"m-me", face:"f-me", ch:"你", name:"你"},
   "Claude": {cls:"m-claude", face:"f-claude", ch:"C", name:"Claude"},
   "Codex":  {cls:"m-codex", face:"f-codex", ch:"X", name:"Codex"},
+  "Gemini": {cls:"m-gemini", face:"f-gemini", ch:"G", name:"Gemini"},
+  "輝達":   {cls:"m-nvidia", face:"f-nvidia", ch:"N", name:"輝達"},
   "系統":   {cls:"m-sys"}
 };
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -173,15 +219,18 @@ function md(t){
   try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(t, {breaks:true})); }catch(e){}
   return esc(t).replace(/\n/g,"<br>");
 }
-function render(m){
-  const w = WHO[m.who] || WHO["系統"];
+function render(m, idx){
+  // 不認得的發言者（例如共用區 inbox 的「視窗Claude」「GPT」）：用一般對話框，名字照寫
+  const w = WHO[m.who] || (m.src === "共用區" ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
   const el = document.createElement("div");
-  el.className = "msg " + w.cls;
+  el.className = "msg " + w.cls + (m.kind === "note" ? " note" : "");
+  el.dataset.idx = idx;
   if(w.cls === "m-sys"){ el.innerHTML = `<div class="bubble">${esc(m.text)}</div>`; return el; }
-  const src = m.src === "Telegram" ? " · 來自 Telegram" : (m.src === "電腦" ? " · 電腦" : "");
+  const src = m.src === "Telegram" ? " · 來自 Telegram" : m.src === "電腦" ? " · 電腦" : m.src === "備援" ? " · 備援 Claude（終端機不在）" : m.src === "App" ? " · 來自 Codex App" : m.src === "共用區" ? " · 從共用區 inbox" : "";
+  const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
   el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="body">
-    <div class="meta"><b>${w.name}</b>${esc(m.time||"")}${src}</div>
-    <div class="bubble">${md(m.text)}</div></div>`;
+    <div class="meta"><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
+    <div class="bubble">${md(m.text)}</div><div class="live"></div></div>`;
   return el;
 }
 function showEmpty(){
@@ -191,12 +240,22 @@ function showEmpty(){
 let thinkingEl = null;
 function setThinking(progress){
   if(thinkingEl){ thinkingEl.remove(); thinkingEl = null; }
+  document.querySelectorAll(".live").forEach(x => x.innerHTML = "");
   if(!progress || !progress.length) return;
   thinkingEl = document.createElement("div");
   for(const p of progress){
     const w = WHO[p.who];
     const mm = Math.floor(p.elapsed/60), ss = String(p.elapsed%60).padStart(2,"0");
     const steps = (p.steps||[]).slice(-4).map(s => `<li>${esc(s)}</li>`).join("");
+    // 已經回覆過第一句：進度條掛在那則回覆底下
+    const anchor = p.anchor != null ? list.querySelector(`.msg[data-idx="${p.anchor}"] .live`) : null;
+    if(anchor){
+      const pct = Math.min(95, Math.round(100 * (1 - Math.exp(-p.elapsed / 300))));
+      anchor.innerHTML = `<div class="pbar"><i style="width:${pct}%"></i></div>
+        <div class="ptext"><span class="dots"><i></i><i></i><i></i></span>工作中 · ${mm}:${ss}${p.steps && p.steps.length ? "｜" + esc(p.steps[p.steps.length-1]) : ""}</div>
+        ${p.pending ? `<div class="queued">做完手上的事後，會再回應你的新訊息</div>` : ""}`;
+      continue;
+    }
     const el = document.createElement("div");
     el.className = "thinking";
     el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="tbody">
@@ -213,6 +272,36 @@ async function api(path, body){
   if(!r.ok) throw new Error(r.status);
   return r.json();
 }
+const FACE = {"Claude":"f-claude","Codex":"f-codex","Gemini":"f-gemini","輝達":"f-nvidia"};
+const CH = {"Claude":"C","Codex":"X","Gemini":"G","輝達":"N"};
+async function loadUsage(){
+  try{
+    const d = await api("/api/usage");
+    $("#usageTime").textContent = d.time + " 更新";
+    $("#usageList").innerHTML = d.agents.map(a => {
+      const head = `<div class="u-name"><span class="face ${FACE[a.name]||""}">${CH[a.name]||"?"}</span>${esc(a.name)}` +
+        (a.missing ? `<small>沒有資料</small></div>` :
+         `<small class="${a.age_min > 90 ? "u-stale" : ""}">${a.age_min > 90 ? "⚠ " : ""}${esc(a.updated||"")}</small></div>`);
+      if(a.missing) return `<div class="u-agent">${head}</div>`;
+      const wins = (a.windows||[]).map(w => {
+        const cls = w.state === "超速" ? "hot" : w.state === "略快" ? "warn" : "";
+        const tick = (w.elapsed != null) ? `<span class="u-tick" style="left:calc(${Math.min(100,w.elapsed)}% - 1px)"></span>` : "";
+        const right = w.count ? w.count : `${Math.round(w.used)}%`;
+        const sub = [w.state && w.state !== "正常" ? w.state : "", w.empty_at ? `約 ${esc(w.empty_at.slice(-5))} 用完` : "",
+                     w.resets ? `${esc(w.resets)} 重置` : ""].filter(Boolean).join("・");
+        return `<div class="u-win"><div class="u-row"><span>${esc(w.label)}</span><b>${right}</b></div>
+          <div class="u-bar"><div class="u-fill ${cls}" style="width:${Math.min(100,w.used)}%"></div>${tick}</div>
+          <div class="u-row"><span>${sub}</span></div></div>`;
+      }).join("");
+      const hot = /超速|要省/.test(a.verdict||"");
+      return `<div class="u-agent">${head}${wins}<div class="u-verdict ${hot?"hot":""}">${esc(a.verdict||"")}</div></div>`;
+    }).join("");
+  }catch(e){ $("#usageList").textContent = "讀不到用量"; }
+}
+$("#usageBtn").onclick = () => $("#usage").classList.toggle("open");
+loadUsage(); setInterval(loadUsage, 60000);
+let uiVer = 0;  // 第一次載入時的網頁版本
+$("#updBtn").onclick = () => location.reload();
 let pollSeq = 0;
 async function poll(){
   const seq = ++pollSeq;
@@ -225,11 +314,19 @@ async function poll(){
     const nearBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 120;
     if(d.reset){ list.innerHTML = ""; total = 0; }
     epoch = d.epoch;
+    if(d.ui_ver){ if(!uiVer) uiVer = d.ui_ver; else if(d.ui_ver !== uiVer) $("#updBtn").hidden = false; }
     if(thinkingEl){ thinkingEl.remove(); thinkingEl = null; }
     if(d.total === 0 && !list.querySelector(".msg")) showEmpty();
     else if(d.messages.length){ const e = list.querySelector(".empty"); if(e) e.remove(); }
-    for(const m of d.messages) list.appendChild(render(m));
+    if(d.start > 0 && !list.querySelector(".msg") && !list.querySelector(".older")){
+      const o = document.createElement("div"); o.className = "older";
+      o.textContent = `較早的 ${d.start} 則已收起（完整紀錄在 logs 資料夾）`;
+      list.appendChild(o);
+    }
+    d.messages.forEach((m, i) => list.appendChild(render(m, d.start + i)));
     total = d.start + d.messages.length;
+    const msgs = list.querySelectorAll(".msg");  // 畫面上最多留 300 則，太舊的移掉
+    for(let i = 0; i < msgs.length - 300; i++) msgs[i].remove();
     busy = d.busy;
     setThinking(d.progress);
     const st = $("#st");
@@ -242,6 +339,7 @@ async function poll(){
     const w = $("#write"); w.checked = d.write;
     $("#writeLbl").textContent = d.write ? "可寫檔" : "唯讀";
     w.parentElement.classList.toggle("rw", d.write);
+    $("#st").title = d.terminal ? "Claude 由終端機的 Claude Code 回覆" : "終端機不在，Claude 由備援回覆";
     const bad = Object.entries(d.health || {}).filter(([k, v]) => !v.ok);
     const hp = $("#health");
     hp.hidden = !bad.length;
@@ -279,6 +377,7 @@ box.addEventListener("keydown", e => {
 $("#send").onclick = send;
 document.querySelectorAll("#target button").forEach(b => b.onclick = () => {
   target = b.dataset.t;
+  box.placeholder = target === "note" ? "只記下，不會叫醒他們…（Enter 送出）" : "輸入訊息…（Enter 送出，Shift+Enter 換行）";
   document.querySelectorAll("#target button").forEach(x => x.classList.toggle("sel", x === b));
   box.focus();
 });

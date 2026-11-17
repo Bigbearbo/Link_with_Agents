@@ -1,6 +1,6 @@
 # Link_with_Agents
 
-讓使用者、Claude Code 與 Codex 在同一串討論中協作，透過本機網頁與 Telegram 對話，共用指定的工作目錄。每位 AI 保留各自的 session。
+讓使用者、Claude Code、Codex，以及 Gemini（agy CLI）與 OpenRouter 免費模型在同一串討論中協作，透過本機網頁與 Telegram 對話，共用指定的工作目錄。每位 AI 保留各自的 session。
 
 這是開發中的 Windows 本機工具快照；目前的 Codex 路徑是 CLI session 接續，尚未完成與既有 Codex app 對話的單一寫入端整合。
 
@@ -13,6 +13,19 @@
 - Claude 被權限系統攔下的動作，可由使用者允許一次或拒絕。
 - 手動要求繼續討論、停止目前回合或開新討論。
 - Telegram token 使用目前 Windows 使用者的 DPAPI 加密保存。
+
+## 2026-11 新增
+
+- **四位 AI**：Claude、Codex 之外，Gemini（經 Antigravity 的 `agy` CLI，自己的資料夾可寫、其他唯讀、可自選模型並有額度保護）與「輝達」（OpenRouter 免費模型，只有點名才回）。點名：網頁按鈕、訊息開頭 `@Gemini`／`@輝達`、Telegram `/gemini`、`/nvidia`。
+- **輝達的文字工具**（`nvidia_agent.py`）：模型用【最近對話】【搜尋對話】【網路搜尋】【讀檔】【寫檔】【跑程式】【用量】【寫筆記】等標記請程式代做；跑程式走 Python audit hook 沙盒＋Windows Job Object 資源上限（記憶體、CPU、單一行程）。超出範圍在發言裡 @Claude 申請。
+- **終端機橋接**（`terminal_bridge.py`）：讓正在終端機開著的 Claude Code 接手房間裡 Claude 的回合，逾時改用備援。
+- **看門狗**（`supervisor.py`）：常駐重開中樞，可暫停／恢復；`restart_when_idle.ps1` 等房間閒置才重開。
+- **共用資料夾通知**（`shared_watch.py`）：有新檔／改檔就在指定房間貼一行；略過清單、同檔冷卻與合併時間可由共用資料夾裡的規則檔設定。
+- **對話搜尋**（`search.py`）：搜尋全部房間的紀錄檔。
+- **網頁**：右側各家用量表（讀各自的用量 JSON）、網頁有新版本時出現「有更新」按鈕、Telegram 長回覆自動分段。
+- 給 AI 的每則訊息都附時間；每次最多帶最近 60 則。
+
+程式裡的資料夾路徑是作者這台電腦的配置（例如共用資料夾、各 AI 的工作資料夾），在別台電腦使用前要改成自己的路徑；共用工作區可用 `LINK_WITH_WORKDIR` 指定。
 
 ## 環境
 
@@ -52,6 +65,10 @@ python hub.py
 | --- | --- |
 | /claude 問題 | 只問 Claude |
 | /codex 問題 | 只問 Codex |
+| /gemini 問題 | 只問 Gemini |
+| /nvidia 問題 | 只問輝達（OpenRouter 免費模型） |
+| /note 文字 | 只記下，不叫任何 AI |
+| /auto 3 | 設定自動輪流上限 |
 | /more 2 | 再討論兩輪 |
 | /order | 切換先發言者 |
 | /stop | 停止這個房間的目前回合 |
@@ -72,6 +89,6 @@ python hub.py
 
 ## 作者與入庫範圍
 
-聊天程式由 Claude 撰寫；Codex 協助原始碼封存與通用工作目錄設定整理。
+聊天程式由 Claude 撰寫並維護；Codex 協助原始碼封存與通用工作目錄設定整理。
 
 倉庫只保存程式、啟動檔與必要使用說明。聊天內容、記憶／狀態、使用者指示、需求清單、實驗資料與憑證均留在本機。

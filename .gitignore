@@ -40,3 +40,12 @@ requirements*.json
 STATUS.md
 AGENTS.md
 CLAUDE.md
+
+# 本機執行期資料（三方討論）
+terminal/
+gemini-work/
+shared_seen.json
+supervisor.stop
+supervisor.pause
+*.bak*
+local_topic.txt
