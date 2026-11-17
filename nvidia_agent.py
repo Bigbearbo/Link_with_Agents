@@ -17,7 +17,9 @@ READ_ROOTS = [r"H:\Agent共用", r"H:\Codex用", r"H:\免費模型用", r"H:\Gem
 BLOCK = ("secret", "token", "tg_state", ".dpapi", "web-key", "credential", "password", "金鑰")
 MAX_STEPS = 6
 READ_LIMIT = 8000
-DAILY_SOFT = 300  # 輝達自己在討論房一天最多用幾次（worker 另有全體 900／保留 100）
+AUTO_DAILY = 450    # 自主時段一天最多幾次（11-18 07:05 輝達提、Gemini 附議、使用者同意：自主 450／手動 150）
+MANUAL_DAILY = 150  # 被點名、使用者手動叫的份，自主跑滿也不會被佔走（worker 另有全體 900／保留 100）
+DAILY_SOFT = AUTO_DAILY + MANUAL_DAILY
 
 GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度），多方討論房裡的 AI 參與者（其他是使用者、Claude、Codex、Gemini）。
 研究主題：{topic}。用繁體中文。
@@ -115,29 +117,32 @@ def _allowed(path):
     return any(p.lower().startswith(os.path.realpath(r).lower()) for r in READ_ROOTS)
 
 
-def _today_calls():
+def _today_calls(kind=None):
+    """今天的呼叫次數；kind="auto"／"manual" 只算那一種（舊紀錄沒標的算手動）。"""
     d, n = time.strftime("%Y-%m-%d"), 0
     try:
         for line in open(CALLS, encoding="utf-8"):
-            n += line.startswith('{"date": "' + d)
+            if line.startswith('{"date": "' + d):
+                n += kind is None or (('"kind": "auto"' in line) == (kind == "auto"))
     except OSError:
         pass
     return n
 
 
-def _log_call(ok, requested=None, actual=None):
+def _log_call(ok, requested=None, actual=None, kind="manual"):
     """每次呼叫記一行：要求的模型、實際回傳的模型、是否退回預設（Codex 11-17：評測不能把預設模型的答案算到指定模型）。"""
     os.makedirs(HOME, exist_ok=True)
     with open(CALLS, "a", encoding="utf-8") as f:
         f.write(json.dumps({"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"), "ok": ok,
-                            "requested": requested or "（預設）", "actual": actual,
+                            "requested": requested or "（預設）", "actual": actual, "kind": kind,
                             "fallback": bool(requested and actual and not str(actual).startswith(requested.split(":")[0]))},
                            ensure_ascii=False) + "\n")
 
 
 def usage_text():
     used = _today_calls()
-    txt = f"你今天在討論房用了 {used} 次（自訂上限 {DAILY_SOFT}）。"
+    txt = (f"你今天在討論房用了 {used} 次（自主 {_today_calls('auto')}/{AUTO_DAILY}、"
+           f"點名 {_today_calls('manual')}/{MANUAL_DAILY}）。")
     try:
         b = json.load(open(rt._paths().get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
         utc = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
@@ -419,8 +424,10 @@ class NvidiaAgent(rt.Agent):
                 f"自從你上次發言後的新訊息（最多列最後 8 則；更早的請用工具查）：\n\n{body}\n\n現在輪到你（輝達）。")
 
     def _call(self, messages, model=None):
-        if _today_calls() >= DAILY_SOFT:
-            raise RuntimeError(f"輝達今天在討論房已用滿 {DAILY_SOFT} 次")
+        kind = "auto" if getattr(self, "_auto", False) else "manual"
+        cap = AUTO_DAILY if kind == "auto" else MANUAL_DAILY
+        if _today_calls(kind) >= cap:
+            raise RuntimeError(f"輝達今天{'自主' if kind == 'auto' else '點名'}的份已用滿 {cap} 次")
         os.makedirs(os.path.join(HOME, "jobs"), exist_ok=True)
         jf = os.path.join(HOME, "jobs", time.strftime("room-%m%d-%H%M%S.json"))
         # 推理打開（worker 預設關；job 可用 reasoning_enabled 開），推理會吃輸出額度，所以上限拉到 4096
@@ -446,7 +453,7 @@ class NvidiaAgent(rt.Agent):
         try:
             info = json.loads(out.strip().splitlines()[-1])
         except Exception:
-            _log_call(False)
+            _log_call(False, kind=kind)
             raise RuntimeError(f"輝達 worker 沒有正常回覆：{(err or out)[-300:]}")
         text, actual = "", None
         if info.get("result_path"):
@@ -454,7 +461,7 @@ class NvidiaAgent(rt.Agent):
             ch = (rec.get("response") or {}).get("choices") or [{}]
             text = (ch[0].get("message", {}).get("content") or "").strip()
             actual = (rec.get("response") or {}).get("model") or rec.get("model")
-        _log_call(bool(info.get("success") and text), spec.get("model"), actual)
+        _log_call(bool(info.get("success") and text), spec.get("model"), actual, kind=kind)
         self.last_model = actual
         if not info.get("success") or not text:
             raise RuntimeError(f"輝達呼叫失敗：{str(info.get('error'))[:300]}")
@@ -467,7 +474,8 @@ class NvidiaAgent(rt.Agent):
         if self._force_model:
             prompt += review_note()
         messages = [{"role": "user", "content": prompt}]
-        limit = 12 if "自主工作時段" in prompt else MAX_STEPS  # 自主時段一輪可以多走幾步
+        self._auto = "自主工作時段" in prompt
+        limit = 12 if self._auto else MAX_STEPS  # 自主時段一輪可以多走幾步
         for step in range(limit + 1):
             self.step("輝達思考中" if step == 0 else f"輝達第 {step + 1} 步")
             text = self._call(messages)
