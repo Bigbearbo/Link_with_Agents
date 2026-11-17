@@ -513,6 +513,9 @@ class Room:
             a = names[m.group(1).lower()]
             if a is not agent and a not in called:
                 called.append(a)
+        if self.claude in called and claude_hot():  # 使用者 11-18：Claude 主持兩個 agent，額度要留著；AI 點名不叫醒 Claude
+            called.remove(self.claude)
+            self.notice("Claude 的 5 小時額度吃緊，AI 之間點名 @Claude 先不叫醒（使用者直接問照常）；請把需求寫清楚，額度恢復後處理。")
         if called and not self.stop_flag:
             if self.hops >= MAX_HOPS:
                 self.notice(f"AI 之間的接力已達上限（{MAX_HOPS} 次），等使用者下一則訊息再繼續。")
@@ -1035,6 +1038,17 @@ def notify_dot(room, who, when, text):
         os.replace(tmp, os.path.join(d, name))
     except OSError as e:
         log(f"給 Dot 的點名單寫入失敗：{e}")
+
+
+def claude_hot():
+    """Claude（終端機主持人）5 小時用量 ≥75% 或速度 >1.5、或週用量 ≥95%：AI 之間的點名不叫醒它，留額度給使用者。"""
+    try:
+        d = json.load(open(r"H:\Agent共用\claude-用量.json", encoding="utf-8"))
+        h5, wk = d.get("five_hour") or {}, d.get("seven_day") or {}
+        return (h5.get("used", 0) >= 75 or (h5.get("speed") or 0) > 1.5 and h5.get("used", 0) >= 50
+                or wk.get("used", 0) >= 95)
+    except Exception:
+        return False
 
 
 _codex_hot_cache = {"t": 0, "v": False}
