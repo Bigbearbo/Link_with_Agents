@@ -223,7 +223,7 @@ class Room:
         """只記下：存進討論，不叫任何人。下次有人被叫時會一起看到。"""
         self.add("使用者", text, src, kind="note")
 
-    def user_says(self, text, src, target="both"):
+    def user_says(self, text, src, target="both", members=None):
         picked = []  # 開頭連續點名＝串接：「@Gemini @輝達 …」依序回答，後面的看得到前面的回答；@all／@大家＝四位
         if target == "both":  # 也接受開頭寫「（只問 Gemini）」
             while True:
@@ -236,10 +236,17 @@ class Room:
                 picked += ["claude", "codex", "gemini", "nvidia"] if k == "all" else [k]
                 text = text[m.end():]
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
+            if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
+                picked = [m for m in ("claude", "codex", "gemini", "nvidia", "dot") if m in members]
+                if "codex" in picked and len(picked) > 1 and codex_hot():
+                    picked.remove("codex")  # Codex 額度吃緊：群聊略過它（要問它請按「只問 Codex」）
+                if not picked:
+                    picked = ["claude"]
             if len(picked) == 1:
                 target = picked[0]
         names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "dot": "Dot"}
-        if len(picked) > 1:  # 標記請誰、照什麼順序，大家讀到記錄才不會搞錯
+        if len(picked) > 1 and not (members is not None and picked in (["claude", "codex", "gemini"], ["claude", "gemini"])):
+            # 標記請誰、照什麼順序，大家讀到記錄才不會搞錯（網頁預設名單就不加標記，免得每則都一長串）
             text = f"（請 {'→'.join(names[p] for p in picked)} 依序回答）{text}"
         elif target in names:  # 標記只問誰，其他人之後讀到記錄才不會搞錯
             text = f"（只問 {names[target]}）{text}"
@@ -250,7 +257,9 @@ class Room:
             if a.busy and getattr(a, "report_progress", None):
                 threading.Thread(target=a.report_progress, daemon=True).start()
         self.stop_flag = False
-        seq = [self.seq_for(p)[0] for p in picked] if len(picked) > 1 else self.seq_for(target)
+        if "dot" in picked and len(picked) > 1:
+            notify_dot(self.name, "使用者", time.strftime("%m-%d %H:%M"), text)  # 群聊名單有 Dot：留點名單
+        seq = [a for p in picked for a in self.seq_for(p)] if len(picked) > 1 else self.seq_for(target)
         for a in seq:
             if a.busy and not self.start_side(a):
                 a.pending = True  # 分身也在忙：等手上的事做完再回
@@ -905,7 +914,9 @@ def make_handler(hub):
                 if text and data.get("target") == "note":
                     room.note(text, "電腦")
                 elif text:
-                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "dot") else "both")
+                    mem = data.get("members")
+                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "dot") else "both",
+                                   members=[m for m in mem if isinstance(m, str)] if isinstance(mem, list) else None)
                 return self._json({"ok": True})
             if p == "/api/more":
                 room.more(int(data.get("n") or 1))

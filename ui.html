@@ -88,6 +88,9 @@ footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16p
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{border:none;border-radius:0;background:transparent}
 .seg button.sel{background:var(--ink);color:var(--panel)}
+.seg button.skip{padding:0 6px;font-size:11px;color:var(--muted);border-left:1px dashed var(--line);min-width:0}
+.seg button.skip.off{text-decoration:line-through;opacity:.55}
+.seg button.skip:not(.off){color:#2e9e6b;font-weight:600}
 button{font:inherit;font-size:13px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
 button:hover{filter:brightness(.96)} button:disabled{opacity:.45;cursor:default}
 .row{display:flex;gap:8px;align-items:flex-end}
@@ -370,7 +373,7 @@ async function send(){
   const text = box.value.trim();
   if(!text) return;
   box.value = ""; grow();
-  await api("/api/send", {text, target, room});
+  await api("/api/send", {text, target, room, members: groupMembers()});
   setTimeout(()=>main.scrollTop = main.scrollHeight, 300);
 }
 function grow(){ box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, innerHeight*0.4) + "px"; }
@@ -383,11 +386,38 @@ function pickTarget(t){  // 程式切換下方按鈕（一對一房預設選那�
   const b = document.querySelector(`#target button[data-t="${t}"]`);
   if(b) b.onclick();
 }
-let soloSetFor = null;  // 這個房間已經套用過預設對象，就不再蓋掉使用者自己的選擇
-document.querySelectorAll("#target button").forEach(b => b.onclick = () => {
+let soloSetFor = null;
+// 「群聊」名單：每個「只問 X」右邊的小按鈕決定 X 在不在「問大家」裡（存在這台瀏覽器）
+const GROUP_ORDER = ["claude", "codex", "gemini", "nvidia", "dot"];
+const GROUP_NAME = {claude:"Claude", codex:"Codex", gemini:"Gemini", nvidia:"輝達", dot:"Dot"};
+let group = {claude:true, codex:true, gemini:true, nvidia:false, dot:false};
+try{ Object.assign(group, JSON.parse(localStorage.getItem("rt-group") || "{}")); }catch(e){}
+function groupMembers(){ return GROUP_ORDER.filter(k => group[k]); }
+function renderGroup(){
+  document.querySelectorAll("#target button.skip").forEach(s => {
+    const k = s.dataset.a, on = group[k];
+    s.classList.toggle("off", !on);
+    s.textContent = on ? "群" : "略";
+    s.title = on ? `${GROUP_NAME[k]} 在「問大家」名單裡；點一下改成群聊跳過` : `群聊跳過 ${GROUP_NAME[k]}；點一下加回「問大家」`;
+  });
+  const all = document.querySelector('#target button[data-t="both"]');
+  const names = groupMembers().map(k => GROUP_NAME[k]);
+  if(all){ all.textContent = `問大家（${names.length}）`; all.title = "會問：" + (names.join("、") || "（沒人，改問 Claude）"); }
+}
+for(const k of GROUP_ORDER){
+  const b = document.querySelector(`#target button[data-t="${k}"]`);
+  if(!b) continue;
+  const s = document.createElement("button");
+  s.className = "skip"; s.dataset.a = k;
+  s.onclick = e => { e.stopPropagation(); group[k] = !group[k];
+    try{ localStorage.setItem("rt-group", JSON.stringify(group)); }catch(err){} renderGroup(); };
+  b.after(s);
+}
+renderGroup();  // 這個房間已經套用過預設對象，就不再蓋掉使用者自己的選擇
+document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = () => {
   target = b.dataset.t;
   box.placeholder = target === "note" ? "只記下，不會叫醒他們…（Enter 送出）" : "輸入訊息…（Enter 送出，Shift+Enter 換行）";
-  document.querySelectorAll("#target button").forEach(x => x.classList.toggle("sel", x === b));
+  document.querySelectorAll("#target button:not(.skip)").forEach(x => x.classList.toggle("sel", x === b));
   box.focus();
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
