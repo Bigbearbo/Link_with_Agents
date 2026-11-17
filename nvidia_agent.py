@@ -39,7 +39,8 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 你的本體目前是 NVIDIA 系列（讓位後會換成接任那一家）：平常用同一家的 :free 模型。要換同家的其他型號，把 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt）；
   只接受本體那一家、:free 結尾，其他或不寫就用預設。不管底層換成哪個型號，你的名字都叫「輝達」。
   每次呼叫的「要求模型／實際回傳模型／是否退回預設」記在 H:\\免費模型用\\calls.jsonl，評估模型時以實際回傳的為準；單次成功只算候選經驗。
-【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work（只能寫這裡）
+【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work；要給大家看的成果可寫 H:\\Agent共用\\輝達\\（用完整路徑）
+【續寫】檔名.py           （同上，最後寫【/續寫】）接在檔案後面寫；長程式請分段：先【寫檔】前半、下一步【續寫】後半，免得回覆太長被截斷
 【跑程式】檔名.py [參數]    在沙盒裡用 Python（有 numpy）跑你工作區的腳本，最多 3 分鐘，回傳輸出的最後 6000 字
 跟 Gemini 合作：Gemini 能讀你的 H:\\免費模型用、你能讀它的 H:\\Gemini用；它不能跑程式但網路搜尋、長文閱讀強——要它查格式、找資料就在發言裡寫一行開頭的 @Gemini；它寫在 H:\\Gemini用 的程式或規格，你可以讀過再用【寫檔】【跑程式】驗證。
   沙盒限制：只能寫 H:\\免費模型用、不能開子程序、不能連網、讀不到秘密檔；資源上限：記憶體 2GB、CPU 25%、3 分鐘。可以讀共用區和 H:\\Codex用 的資料來算。
@@ -61,7 +62,10 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 """
 
 TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位|續任|收回)】[ \t]*([^【\n]*)")
-WRITE_RE = re.compile(r"【寫檔】[ \t]*([^\n【]+)\n(.*?)\n?【/寫檔】", re.S)
+WRITE_RE = re.compile(r"【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*?)\n?【/\1】", re.S)
+# 回覆被輸出上限截斷時【寫檔】沒有收尾：先存已寫的部分，請它用【續寫】接下去（11-18 07:18 它把半截程式貼到房間）
+OPEN_RE = re.compile(r"【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*)\Z", re.S)
+SHARED_OUT = r"H:\Agent共用\輝達"  # 輝達在共用區自己的子資料夾（使用者 11-18 07:18 同意）
 WORK = os.path.join(HOME, "work")
 SANDBOX = os.path.join(HOME, ".sandbox", "run.py")
 SANDBOX_PY = r"D:\GPT-Cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"  # 有 numpy
@@ -69,16 +73,20 @@ SANDBOX_PY = r"D:\GPT-Cache\codex-runtimes\codex-primary-runtime\dependencies\py
 
 def _in_work(name):
     p = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
-    return p if p.lower().startswith(os.path.realpath(HOME).lower() + os.sep) else None
+    for root in (HOME, SHARED_OUT):
+        if p.lower().startswith(os.path.realpath(root).lower() + os.sep):
+            return p
+    return None
 
 
-def write_file(name, content):
+def write_file(name, content, append=False):
     p = _in_work(name)
     if not p:
-        return f"不能寫：{name}（只能寫 H:\\免費模型用 裡）"
+        return f"不能寫：{name}（只能寫 H:\\免費模型用 和 H:\\Agent共用\\輝達 裡）"
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    open(p, "w", encoding="utf-8").write(content)
-    return f"已寫入 {p}（{len(content)} 字）"
+    with open(p, "a" if append else "w", encoding="utf-8") as f:
+        f.write(content + "\n")
+    return f"已{'續寫' if append else '寫入'} {p}（這次 {len(content)} 字，檔案共 {os.path.getsize(p)} 位元組）"
 
 
 def run_script(arg):
@@ -480,16 +488,24 @@ class NvidiaAgent(rt.Agent):
             self.step("輝達思考中" if step == 0 else f"輝達第 {step + 1} 步")
             text = self._call(messages)
             writes = WRITE_RE.findall(text)[:3]
-            tools = TOOL_RE.findall(WRITE_RE.sub("", text))[:3]
+            cut = False
+            if not writes:
+                m = OPEN_RE.search(text)
+                if m and step < limit:  # 寫到一半被截斷：存下已寫的部分，提醒用【續寫】接下去
+                    writes, cut = [m.groups()], True
+            tools = [] if cut else TOOL_RE.findall(WRITE_RE.sub("", text))[:3]
             if not (tools or writes) or step == limit:
                 final = TOOL_RE.sub("", WRITE_RE.sub("", text)).strip() if (tools or writes) else text
                 final = final or "（我查完了資料但沒有整理出發言。）"
                 self.say(final)
                 return final
             results = []
-            for name, content in writes:  # 先寫檔，同一則裡的【跑程式】才跑得到新內容
-                self.step(f"寫檔：{name[:40]}")
-                results.append(f"【寫檔】{name}（已執行）\n{write_file(name, content)}")
+            for tag, name, content in writes:  # 先寫檔，同一則裡的【跑程式】才跑得到新內容
+                self.step(f"{tag}：{name[:40]}")
+                results.append(f"【{tag}】{name}（已執行）\n{write_file(name, content, append=(tag == '續寫'))}")
+            if cut:
+                results.append("⚠ 你的回覆太長被截斷了：上面這個檔只存到截斷處。請用【續寫】同一個檔名 接著從斷掉的地方寫"
+                               "（不要重寫前面），最後記得【/續寫】收尾；長程式分幾段寫。")
             for kind, arg in tools:
                 self.step(f"{kind}：{arg[:40]}")
                 try:
