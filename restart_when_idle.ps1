@@ -6,6 +6,11 @@ function Test-Busy {
         $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($h.ProcessId)" | Where-Object { $_.Name -match 'claude|codex|agy|antigravity|python' }  # 11-18：漏算 Gemini（agy）、輝達（python worker），重開時把它們砍斷了
         if ($kids) { return $true }
     }
+    # 還在等終端機 Claude 回覆的接力（inbox 有、outbox 還沒有）也算忙：重開會把後面的 Gemini、輝達接力弄丟
+    foreach ($f in @(Get-ChildItem (Join-Path $PSScriptRoot 'terminal\inbox') -Filter *.json -ErrorAction SilentlyContinue)) {
+        $o = Join-Path $PSScriptRoot ("terminal\outbox\" + $f.BaseName + ".txt")
+        if (-not (Test-Path $o) -and -not (Test-Path ($o + ".done"))) { return $true }
+    }
     return $false
 }
 while ($true) {
