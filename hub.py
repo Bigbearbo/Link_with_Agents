@@ -1047,7 +1047,7 @@ def codex_hot():
     v = False
     try:
         w = json.load(open(r"H:\Agent共用\codex-用量.json", encoding="utf-8")).get("seven_day") or {}
-        v = w.get("state") == "超速" or float(w.get("used") or 0) >= 85
+        v = float(w.get("used") or 0) >= 98  # 使用者 11-18：Codex 是 Pro，96% 還能說話；只有幾乎用完才在群聊自動略過
     except Exception:
         pass
     _codex_hot_cache.update(t=time.time(), v=v)
