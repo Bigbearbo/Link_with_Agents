@@ -954,6 +954,61 @@ def make_handler(hub):
     return H
 
 
+# ---------- 自主工作時段（使用者 11-17：讓輝達、Gemini 像正常 agent 一樣自己持續做事） ----------
+AUTO_AGENTS = [  # (房間 id, agent 屬性, 目標檔, 間隔秒)
+    ("solo-nvidia", "nvidia", r"H:\免費模型用\目標.md", 30 * 60),
+    ("solo-gemini", "gemini", r"H:\Gemini用\目標.md", 60 * 60),
+]
+AUTO_PROMPT = ("⏰ 自主工作時段：請讀你的目標檔 {goal}，做「下一步」→ 驗證（能跑程式就跑、能讀檔核對就核對）→ "
+               "更新目標檔（狀態、下一步、完成標準、需要誰驗證）→ 在這裡用幾行回報做了什麼、驗證結果、下一步。"
+               "沒驗證的不要說成結論；全部完成或卡住就把目標檔第一行改成「狀態：暫停」並說明原因；需要權限或執行環境才 @Claude。")
+
+
+def _auto_budget_ok(kind):
+    """用量照時間比例：用得比時間快就跳過這一輪。"""
+    try:
+        if kind == "nvidia":
+            import datetime
+            b = json.load(open(json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))["budget"],
+                               encoding="utf-8"))
+            now = datetime.datetime.now(datetime.timezone.utc)
+            used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
+            frac = (now.hour * 3600 + now.minute * 60) / 86400
+            return used < 900 * max(frac, 0.05) * 0.8  # 留兩成給其他人與點名
+        u = json.load(open(r"H:\Agent共用\gemini-用量.json", encoding="utf-8"))
+        h5, wk = u.get("five_hour") or {}, u.get("seven_day") or {}
+        return h5.get("used", 0) < 60 and wk.get("state") != "超速" and wk.get("used", 0) < 80
+    except Exception:
+        return False
+
+
+def auto_loop(hub):
+    last = {}
+    time.sleep(120)
+    while True:
+        for rid, attr, goal, every in AUTO_AGENTS:
+            try:
+                room = hub.rooms.get(rid)
+                if not room or time.time() - last.get(rid, 0) < every:
+                    continue
+                if not os.path.exists(goal):
+                    continue
+                head = open(goal, encoding="utf-8", errors="replace").read(200)
+                if "狀態：進行中" not in head and "狀態:進行中" not in head:
+                    continue
+                agent = getattr(room, attr)
+                if room.busy or agent.busy or not _auto_budget_ok(attr):
+                    continue
+                last[rid] = time.time()
+                room.stop_flag = False
+                room.notice(AUTO_PROMPT.format(goal=goal))
+                log(f"[{room.name}] 自主工作時段：叫 {agent.name}")
+                threading.Thread(target=lambda r=room, a=agent: r.chain([a]), daemon=True).start()
+            except Exception as e:
+                log(f"自主工作時段錯誤（{rid}）：{e}")
+        time.sleep(60)
+
+
 DOT_DIR = r"H:\Agent共用\給Dot"
 
 
@@ -1091,6 +1146,7 @@ if __name__ == "__main__":
         hub.set_write(True)
 
     threading.Thread(target=hub.shared_loop, daemon=True).start()
+    threading.Thread(target=auto_loop, args=(hub,), daemon=True).start()
 
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")

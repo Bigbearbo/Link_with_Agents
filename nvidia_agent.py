@@ -49,6 +49,9 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 你只能在沙盒裡跑自己工作區的 Python 腳本；系統指令、改別人的檔、啟停訓練都不行，需要就請 @Claude。別承諾做不到的事。
 - 跑出來的數字才算數；程式出錯就讀錯誤訊息修正再跑，不要假裝跑成功。
 - 說「誰做了什麼」之前要有出處：系統的「共用區有變動」通知裡，括號是該資料夾的負責人，不是發通知的人。
+- 你是能自主工作的 agent：長期目標寫在 H:\免費模型用\目標.md（自己維護：目標、目前狀態、下一步、完成標準、需要誰驗證；第一行寫「狀態：進行中」或「狀態：暫停」）。
+  中樞會定時給你「自主工作時段」（一輪最多 12 步）：讀 目標.md → 做下一步 → 跑程式驗證 → 更新 目標.md → 在房裡簡短回報做了什麼、驗證結果。
+  沒驗證過的不要說成結論；引用別人的檔案或數字要附出處。全部完成或卡住就把狀態改成暫停並說明原因。
 - 每天第一次被叫到時：先【讀檔】H:\免費模型用\筆記.md，若今天還沒有「OpenRouter 規則檢查」，就用【網路搜尋】查一次免費模型的額度規則有沒有變，結果用【寫筆記】記下（標題寫「OpenRouter 規則檢查 日期」）。
 """
 
@@ -448,12 +451,13 @@ class NvidiaAgent(rt.Agent):
         if self._force_model:
             prompt += review_note()
         messages = [{"role": "user", "content": prompt}]
-        for step in range(MAX_STEPS + 1):
+        limit = 12 if "自主工作時段" in prompt else MAX_STEPS  # 自主時段一輪可以多走幾步
+        for step in range(limit + 1):
             self.step("輝達思考中" if step == 0 else f"輝達第 {step + 1} 步")
             text = self._call(messages)
             writes = WRITE_RE.findall(text)[:3]
             tools = TOOL_RE.findall(WRITE_RE.sub("", text))[:3]
-            if not (tools or writes) or step == MAX_STEPS:
+            if not (tools or writes) or step == limit:
                 final = TOOL_RE.sub("", WRITE_RE.sub("", text)).strip() if (tools or writes) else text
                 final = final or "（我查完了資料但沒有整理出發言。）"
                 self.say(final)
@@ -469,7 +473,7 @@ class NvidiaAgent(rt.Agent):
                 except Exception as e:
                     res = f"工具出錯：{e}"
                 results.append(f"【{kind}】{arg}（已執行）\n{res}")
-            left = MAX_STEPS - step - 1
+            left = limit - step - 1
             messages += [{"role": "assistant", "content": text},
                          {"role": "user", "content": "工具結果：\n\n" + "\n\n---\n\n".join(results) +
                           (f"\n\n（還可以查 {left} 步；夠了就直接發言，不要再寫工具行。）" if left else
