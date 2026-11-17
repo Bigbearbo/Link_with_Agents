@@ -30,10 +30,11 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 【用量】                 你今天用了幾次、整體免費額度還剩多少
 【寫筆記】內容            記到你自己的 H:\\免費模型用\\筆記.md（下次可以讀回來，當你的長期記憶）
 【免費模型】               列出 OpenRouter 目前可用的免費模型 ID（先查這個再選）
+【讓位】模型ID 理由         如果你從請教紀錄確定另一個模型當你的腦袋更好，可以謙虛讓位（要請教過它至少 3 次、一天最多一次）；名字仍叫輝達，筆記照舊由新腦袋接著讀。
 【請教】模型ID 問題        偶爾請教其他家的免費模型（例如 qwen/…:free、deepseek/…:free、meta-llama/…:free），回答給你參考。
   被請教的模型**用它自己的記憶**（H:\\免費模型用\\客座\\），看不到也改不了你的筆記；它的回答只是參考，要不要採用、記不記進你的筆記由你決定。
-你的本體是 NVIDIA 系列：平常用 nvidia/…:free 模型。要換同家的其他型號，把 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt）；
-  只接受 nvidia/ 開頭、:free 結尾，其他或不寫就用預設的 Nemotron。不管底層換成哪個型號，你的名字都叫「輝達」。
+你的本體目前是 NVIDIA 系列（讓位後會換成接任那一家）：平常用同一家的 :free 模型。要換同家的其他型號，把 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt）；
+  只接受本體那一家、:free 結尾，其他或不寫就用預設。不管底層換成哪個型號，你的名字都叫「輝達」。
   每次呼叫的「要求模型／實際回傳模型／是否退回預設」記在 H:\\免費模型用\\calls.jsonl，評估模型時以實際回傳的為準；單次成功只算候選經驗。
 【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work（只能寫這裡）
 【跑程式】檔名.py [參數]    在沙盒裡用 Python（有 numpy）跑你工作區的腳本，最多 3 分鐘，回傳輸出的最後 6000 字
@@ -51,7 +52,7 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 每天第一次被叫到時：先【讀檔】H:\免費模型用\筆記.md，若今天還沒有「OpenRouter 規則檢查」，就用【網路搜尋】查一次免費模型的額度規則有沒有變，結果用【寫筆記】記下（標題寫「OpenRouter 規則檢查 日期」）。
 """
 
-TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型)】[ \t]*([^【\n]*)")
+TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位)】[ \t]*([^【\n]*)")
 WRITE_RE = re.compile(r"【寫檔】[ \t]*([^\n【]+)\n(.*?)\n?【/寫檔】", re.S)
 WORK = os.path.join(HOME, "work")
 SANDBOX = os.path.join(HOME, ".sandbox", "run.py")
@@ -156,6 +157,8 @@ def run_tool(kind, arg, transcript, agent=None):
         return r.stdout.decode("utf-8", "replace")[-12000:] or "（沒有找到）"
     if kind == "網路搜尋":
         return web_search(arg)
+    if kind == "讓位":
+        return succeed(arg)
     if kind == "免費模型":
         return free_models()
     if kind == "請教":
@@ -215,11 +218,55 @@ def chosen_model():
         first = open(MODEL_FILE, encoding="utf-8-sig").readline().strip()
     except OSError:
         return None
-    # 使用者 11-17：本體維持同一家（nvidia）；其他家只能用【請教】，用它們自己的記憶
-    return first if FREE_MODEL.fullmatch(first) and first.startswith(HOME_FAMILY + "/") else None
+    # 使用者 11-17：本體維持同一家；其他家只能用【請教】，用它們自己的記憶（換家只能走【讓位】）
+    fam = home_family()
+    return first if FREE_MODEL.fullmatch(first) and first.startswith(fam + "/") else None
 
 
-HOME_FAMILY = "nvidia"
+MAIN_FILE = os.path.join(HOME, "主模型.json")
+SUCCESSION_MIN_CONSULTS = 3       # 讓位前，至少請教過對方幾次（有紀錄可查）
+SUCCESSION_COOLDOWN = 24 * 3600   # 兩次讓位至少隔一天
+
+
+def home_family():
+    """目前本體是哪一家（預設 nvidia；【讓位】後改成接任者那一家）。"""
+    try:
+        return json.load(open(MAIN_FILE, encoding="utf-8"))["model"].split("/")[0]
+    except Exception:
+        return "nvidia"
+
+
+def succeed(arg):
+    """【讓位】模型ID 理由：使用者 11-17——記憶可以決定讓更好的模型當自己的腦袋（謙虛讓位，不是效率競爭）。
+    只有本體自己的發言能觸發（客座回答不會被當成工具執行）；要有請教紀錄當證據、一天最多一次；名字仍叫輝達。"""
+    parts = arg.split(None, 1)
+    if len(parts) < 2 or not FREE_MODEL.fullmatch(parts[0]):
+        return "格式：【讓位】模型ID（:free 結尾） 理由（要寫你根據哪些請教紀錄、比較了什麼）"
+    model, reason = parts
+    fam = model.split("/")[0]
+    if fam == home_family():
+        return "同一家換型號不用讓位，寫 模型.txt 就好"
+    mem = os.path.join(GUEST_DIR, re.sub(r"[^\w.\-]", "_", model) + ".md")
+    n = open(mem, encoding="utf-8").read().count("\n## ") if os.path.exists(mem) else 0
+    if n < SUCCESSION_MIN_CONSULTS:
+        return f"證據不夠：你只請教過 {model} {n} 次，至少要 {SUCCESSION_MIN_CONSULTS} 次、並在理由裡說明比較結果"
+    if len(reason) < 20:
+        return "理由太短：要寫清楚根據哪些請教紀錄、對方哪裡比你現在的腦袋好"
+    try:
+        last = json.load(open(MAIN_FILE, encoding="utf-8"))
+        if time.time() - last.get("since_ts", 0) < SUCCESSION_COOLDOWN:
+            return "上次讓位還不到一天，先多觀察"
+    except Exception:
+        last = {"model": "nvidia/（預設 Nemotron）"}
+    rec = {"model": model, "since": time.strftime("%Y-%m-%d %H:%M"), "since_ts": time.time(),
+           "previous": last.get("model"), "reason": reason[:1000], "evidence_consults": n}
+    json.dump(rec, open(MAIN_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    open(MODEL_FILE, "w", encoding="utf-8").write(model + "\n")
+    with open(NOTES, "a", encoding="utf-8") as f:
+        f.write(f"\n## {time.strftime('%m-%d %H:%M')} 讓位紀錄\n從 {last.get('model')} 讓位給 {model}（請教紀錄 {n} 次）。理由：{reason[:1000]}\n"
+                f"名字仍叫輝達；這份筆記就是我的記憶，接任的腦袋會繼續讀它。\n")
+    return (f"已讓位：下一次呼叫起，你的腦袋換成 {model}（{fam} 系列）；名字仍是輝達，筆記照舊。"
+            "請在這一輪發言裡告訴大家你讓位了、理由是什麼。")
 FREE_LIST = os.path.join(HOME, "free-models.txt")
 
 
@@ -246,7 +293,7 @@ def consult(arg, agent):
     if len(parts) < 2 or not FREE_MODEL.fullmatch(parts[0]):
         return "格式：【請教】模型ID（要 :free 結尾）問題"
     model, q = parts
-    if model.startswith(HOME_FAMILY + "/"):
+    if model.startswith(home_family() + "/"):
         return "這是你自己這一家的模型，直接用就好（寫 模型.txt），不用【請教】"
     os.makedirs(GUEST_DIR, exist_ok=True)
     mem = os.path.join(GUEST_DIR, re.sub(r"[^\w.\-]", "_", model) + ".md")
