@@ -38,7 +38,8 @@ MAIN = "main"
 SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
-           "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n/more 2：讓他們再討論 2 輪\n"
+           "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n"
+           "開頭連續點名＝串接：@Gemini @輝達 問題（依序回答）；@all 或 @大家＝四位都回\n/more 2：讓他們再討論 2 輪\n"
            "/note 文字：只記下，不叫他們（下次叫時會一起看到）\n"
            "/order 換誰先講　/stop 中斷　/new 這個房間開新討論\n/write on 或 off：開關寫檔權限\n"
            "/allow、/deny：同意或拒絕安全相關請求\n/unbind 這個群組靜音　/bind 重新啟用")
@@ -205,20 +206,32 @@ class Room:
         self.add("使用者", text, src, kind="note")
 
     def user_says(self, text, src, target="both"):
-        if target == "both":  # 文字裡點名：「@Gemini …」或開頭寫「（只問 Gemini）」
-            m = re.match(r"\s*(?:@|（只問\s*)(claude|codex|gemini|nvidia|輝達)(?![A-Za-z])[）)]?\s*", text, re.I)
-            if m:
-                target, text = m.group(1).lower(), text[m.end():]
-                target = "nvidia" if target == "輝達" else target
-        if target in ("claude", "codex", "gemini", "nvidia"):  # 標記只問誰，其他人之後讀到記錄才不會搞錯
-            text = f"（只問 {'輝達' if target == 'nvidia' else target.capitalize()}）{text}"
+        picked = []  # 開頭連續點名＝串接：「@Gemini @輝達 …」依序回答，後面的看得到前面的回答；@all／@大家＝四位
+        if target == "both":  # 也接受開頭寫「（只問 Gemini）」
+            while True:
+                m = re.match(r"\s*(?:@|（只問\s*)(claude|codex|gemini|nvidia|輝達|all|大家|全部)(?![A-Za-z])[）)]?[\s,，、]*",
+                             text, re.I)
+                if not m:
+                    break
+                k = m.group(1).lower()
+                k = "nvidia" if k == "輝達" else "all" if k in ("大家", "全部") else k
+                picked += ["claude", "codex", "gemini", "nvidia"] if k == "all" else [k]
+                text = text[m.end():]
+            picked = list(dict.fromkeys(picked))  # 去重，保留順序
+            if len(picked) == 1:
+                target = picked[0]
+        names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達"}
+        if len(picked) > 1:  # 標記請誰、照什麼順序，大家讀到記錄才不會搞錯
+            text = f"（請 {'→'.join(names[p] for p in picked)} 依序回答）{text}"
+        elif target in names:  # 標記只問誰，其他人之後讀到記錄才不會搞錯
+            text = f"（只問 {names[target]}）{text}"
         self.add("使用者", text, src)
         self.auto_left = self.auto
         for a in self.agents():
             if a.busy and getattr(a, "report_progress", None):
                 threading.Thread(target=a.report_progress, daemon=True).start()
         self.stop_flag = False
-        seq = self.seq_for(target)
+        seq = [self.seq_for(p)[0] for p in picked] if len(picked) > 1 else self.seq_for(target)
         for a in seq:
             if a.busy and not self.start_side(a):
                 a.pending = True  # 分身也在忙：等手上的事做完再回
