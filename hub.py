@@ -989,11 +989,13 @@ def auto_loop(hub):
         for rid, attr, goal, every in AUTO_AGENTS:
             try:
                 room = hub.rooms.get(rid)
-                if not room or time.time() - last.get(rid, 0) < every:
+                if not room or not os.path.exists(goal):
                     continue
-                if not os.path.exists(goal):
+                head = open(goal, encoding="utf-8", errors="replace").read(400)
+                m = re.search(r"喚醒[間隔]*[：:]\s*(\d+)\s*分", head)  # agent 自己決定多久叫一次（10–240 分鐘）
+                gap = max(10, min(240, int(m.group(1)))) * 60 if m else every
+                if time.time() - last.get(rid, 0) < gap:
                     continue
-                head = open(goal, encoding="utf-8", errors="replace").read(200)
                 if "狀態：進行中" not in head and "狀態:進行中" not in head:
                     continue
                 agent = getattr(room, attr)
