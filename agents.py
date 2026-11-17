@@ -16,11 +16,16 @@ import time
 WORKDIR = os.path.abspath(os.environ.get("LINK_WITH_WORKDIR", r"H:\Codex用"))  # 共用工作區；別台電腦用環境變數指定
 PROMPT_LIMIT = 60  # 一次最多帶給 agent 的新訊息數          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+try:  # 研究主題寫在本機的 local_topic.txt（不進 git），給各 AI 的提示用
+    RESEARCH_TOPIC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_topic.txt"),
+                          encoding="utf-8").readline().strip()
+except OSError:
+    RESEARCH_TOPIC = ""
 
 PREAMBLE = (
     "【三方討論規則】你正在一個三方討論視窗裡，參與者：使用者、Claude（Anthropic 的 Claude Code）、"
     "Codex（OpenAI 的 Codex）。使用者可能用電腦網頁或手機 Telegram 發言，兩邊是同一串討論。\n"
-    f"- 實驗主工作區是 {WORKDIR}（倉鼠研究與小網路訓練）；D:\\Codex用 是唯讀備份，不要寫入。\n"
+    f"- 實驗主工作區是 {WORKDIR}" + (f"（{RESEARCH_TOPIC}）" if RESEARCH_TOPIC else "") + "；D:\\Codex用 是唯讀備份，不要寫入。\n"
     "{perm}"
     "- 用繁體中文回答，簡潔，盡量 15 行內，有根據時附檔案路徑。\n"
     "- 你會收到其他參與者的新發言，格式是【發言者｜時間】內容。可以同意、反駁或補充對方。\n"
@@ -416,7 +421,7 @@ NVIDIA_CONTEXT = 60          # 每次都帶最近幾則（它沒有對話記憶�
 NVIDIA_CHAR_LIMIT = 60000    # 太長就從舊的開始砍
 NVIDIA_ROLE = (
     "你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度），在一個多方討論房裡當第四位 AI 參與者"
-    "（其他是使用者、Claude、Codex、Gemini）。研究主題是倉鼠世界與螺旋語、小型神經網路的訓練與手填權重。\n"
+    "（其他是使用者、Claude、Codex、Gemini）。\n"
     "- 你只能看到下面附的對話文字，不能讀檔、不能執行程式、不能上網；不知道的就說不知道，不要編造檔案內容或數字。\n"
     "- 用繁體中文，簡潔，盡量 12 行內；只輸出你自己的發言，不要替別人說話。\n"
     "- 訊息開頭標「（只問 輝達）」是使用者點名你；你被叫到時就回答最後那個點名你的問題，其他內容當背景。\n\n")

@@ -19,7 +19,7 @@ READ_LIMIT = 8000
 DAILY_SOFT = 300  # 輝達自己在討論房一天最多用幾次（worker 另有全體 900／保留 100）
 
 GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度），多方討論房裡的 AI 參與者（其他是使用者、Claude、Codex、Gemini）。
-研究主題：倉鼠世界與螺旋語、小型神經網路的訓練與手填權重。用繁體中文。
+研究主題：{topic}。用繁體中文。
 
 你只能收發文字，但可以用「工具行」請程式幫你查資料。要用工具時，回覆裡**只寫工具行**（一行一個，最多 3 個），程式執行後把結果給你，你再決定繼續查還是發言：
 【最近對話】N            這個房間最近 N 則（N≤60）
@@ -204,7 +204,7 @@ class NvidiaAgent(rt.Agent):
         self._transcript = list(transcript)
         new = transcript[self.seen:][-8:]  # 只先給最近的新訊息；要更多它自己查
         body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)
-        return (GUIDE.format(steps=MAX_STEPS) + f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
+        return (GUIDE.format(steps=MAX_STEPS, topic=rt.RESEARCH_TOPIC or "（見使用者說明）") +f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
                 f"自從你上次發言後的新訊息（最多列最後 8 則；更早的請用工具查）：\n\n{body}\n\n現在輪到你（輝達）。")
 
     def _call(self, messages):

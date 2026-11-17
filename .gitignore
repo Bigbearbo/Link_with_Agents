@@ -12,3 +12,4 @@ supervisor.stop
 supervisor.pause
 *.bak*
 *.tmp
+local_topic.txt
