@@ -36,6 +36,7 @@ WEB_LIMIT = 150  # 網頁一次最多載入幾則（節省瀏覽器記憶體）
 ACK_DELAY = 60  # 工作超過這麼多秒，才先貼出第一句話
 MAIN = "main"
 SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
+MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
            "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n"
@@ -107,6 +108,7 @@ class Room:
         self.auto = int(d.get("auto") or 0)  # 兩位自動輪流回應的上限（每個話題）
         self.auto_left = 0
         self.stop_flag = False
+        self.hops = 0
 
     def dump(self):
         return {"name": self.name, "chats": self.chats, "transcript": self.transcript, "epoch": self.epoch,
@@ -184,8 +186,13 @@ class Room:
         return [self.claude, self.codex] if self.order == "claude" else [self.codex, self.claude]
 
     def order_all(self):
-        """一般發言：Claude、Codex 先講，Gemini 最後（看得到前兩位的回答，負責補充與挑毛病）。"""
-        return self.order_both() + [self.gemini]
+        """一般發言：Claude、Codex 先講，Gemini 最後（看得到前兩位的回答，負責補充與挑毛病）。
+        互相討論群：只叫 Claude 當窗口，由它決定要不要 @ 別人（使用者 11-17：別一直叫醒快沒額度的 Codex）。
+        Codex 週額度超速或快用完時，一般發言不叫它（點名還是會叫）。"""
+        if self.name == SHARED_ROOM_NAME:
+            return [self.claude]
+        seq = [a for a in self.order_both() if not (a is self.codex and codex_hot())]
+        return seq + [self.gemini]
 
     def seq_for(self, target):
         return {"both": self.order_all(), "all": self.order_all(), "claude": [self.claude],
@@ -227,6 +234,7 @@ class Room:
             text = f"（只問 {names[target]}）{text}"
         self.add("使用者", text, src)
         self.auto_left = self.auto
+        self.hops = 0  # 使用者每說一次話，AI 之間的點名接力重新計數
         for a in self.agents():
             if a.busy and getattr(a, "report_progress", None):
                 threading.Thread(target=a.report_progress, daemon=True).start()
@@ -472,9 +480,25 @@ class Room:
 
     def auto_next(self, agent, said):
         """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。"""
-        if agent in (self.gemini, self.nvidia) and re.search(r"(?m)^\s*@Claude", said or "") and not self.stop_flag \
-                and not self.claude.busy:  # Gemini／輝達要跟 Claude 協調（例如載入規則）：點名就叫 Claude 回一次
-            threading.Thread(target=lambda: self.chain([self.claude]), daemon=True).start()
+        # AI 之間自己決定對話對象：發言裡「行首」寫 @名字 就叫那位回一次（不叫自己；每則使用者訊息最多接力 MAX_HOPS 次）
+        names = {"claude": self.claude, "codex": self.codex, "gemini": self.gemini, "nvidia": self.nvidia,
+                 "輝達": self.nvidia}
+        called = []
+        for m in re.finditer(r"(?m)^\s*@(claude|codex|gemini|nvidia|輝達)(?![A-Za-z])", said or "", re.I):
+            a = names[m.group(1).lower()]
+            if a is not agent and a not in called:
+                called.append(a)
+        if called and not self.stop_flag:
+            if self.hops >= MAX_HOPS:
+                self.notice(f"AI 之間的接力已達上限（{MAX_HOPS} 次），等使用者下一則訊息再繼續。")
+            else:
+                self.hops += 1
+                log(f"[{self.name}] {agent.name} 點名：{'、'.join(a.name for a in called)}")
+                todo = [a for a in called if not a.busy]
+                for a in called:
+                    if a.busy:
+                        a.pending = True
+                threading.Thread(target=lambda q=todo: self.chain(q), daemon=True).start()
         if self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
             return
         if agent in (self.gemini, self.nvidia):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
@@ -484,7 +508,7 @@ class Room:
             return
         self.auto_left -= 1
         other = self.codex if agent is self.claude else self.claude
-        if other.busy:
+        if other.busy or (other is self.codex and codex_hot()):  # Codex 額度吃緊時不自動輪到它
             return
         log(f"[{self.name}] 自動輪流：換 {other.name} 回應（剩 {self.auto_left} 輪）")
         threading.Thread(target=lambda: self.chain([other]), daemon=True).start()
@@ -903,6 +927,23 @@ def make_handler(hub):
             self._json({"error": "not found"}, 404)
 
     return H
+
+
+_codex_hot_cache = {"t": 0, "v": False}
+
+
+def codex_hot():
+    """Codex 週額度超速或用了 85% 以上 → True（一般發言和自動輪流就不叫它；點名仍會叫）。讀檔結果快取 60 秒。"""
+    if time.time() - _codex_hot_cache["t"] < 60:
+        return _codex_hot_cache["v"]
+    v = False
+    try:
+        w = json.load(open(r"H:\Agent共用\codex-用量.json", encoding="utf-8")).get("seven_day") or {}
+        v = w.get("state") == "超速" or float(w.get("used") or 0) >= 85
+    except Exception:
+        pass
+    _codex_hot_cache.update(t=time.time(), v=v)
+    return v
 
 
 def _usage_window(w, label=None):
