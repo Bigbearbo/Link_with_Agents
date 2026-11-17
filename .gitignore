@@ -13,3 +13,4 @@ supervisor.pause
 *.bak*
 *.tmp
 local_topic.txt
+*.codex-bridge.cmd
