@@ -161,7 +161,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
   </div>
   <div class="tools">
     <span class="seg" id="target">
-      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
+      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
     </span>
     <button id="order" title="切換誰先發言">Claude 先講</button>
     <span class="spacer"></span>
@@ -311,6 +311,10 @@ async function poll(){
     if(asked !== room || seq !== pollSeq) return;  // 舊的回應（切換房間或重疊）直接丟掉
     if(d.room !== room){ room = d.room; }
     renderRooms(d.rooms);
+    if(soloSetFor !== room){  // 剛進這個房間：一對一房預設選那一位，其他房回到「問大家」
+      const me = (d.rooms||[]).find(r => r.id === room);
+      if(me){ pickTarget(me.solo || "both"); soloSetFor = room; box.blur(); }
+    }
     const nearBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 120;
     if(d.reset){ list.innerHTML = ""; total = 0; }
     epoch = d.epoch;
@@ -375,6 +379,11 @@ box.addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); send(); }
 });
 $("#send").onclick = send;
+function pickTarget(t){  // 程式切換下方按鈕（一對一房預設選那一位；之後照樣可以手動換）
+  const b = document.querySelector(`#target button[data-t="${t}"]`);
+  if(b) b.onclick();
+}
+let soloSetFor = null;  // 這個房間已經套用過預設對象，就不再蓋掉使用者自己的選擇
 document.querySelectorAll("#target button").forEach(b => b.onclick = () => {
   target = b.dataset.t;
   box.placeholder = target === "note" ? "只記下，不會叫醒他們…（Enter 送出）" : "輸入訊息…（Enter 送出，Shift+Enter 換行）";

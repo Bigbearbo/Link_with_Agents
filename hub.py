@@ -168,7 +168,7 @@ class Room:
             idx = len(self.transcript) - 1
             self.hub.save()
         if who != "Dot" and (re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I)
-                             or (self.solo == "dot" and who == "使用者" and kind != "note")):
+                             or (who == "使用者" and kind != "note" and (self.solo == "dot" or (text or "").startswith("（只問 Dot）")))):
             notify_dot(self.name, who, entry["time"], text)  # Dot 不在線：留一張點名單，Dot 巡檢時看到再回
         if src != "Telegram":
             label = (("主人（電腦）" + ("・只記下" if kind == "note" else "")) if who == "使用者"
@@ -206,7 +206,8 @@ class Room:
 
     def seq_for(self, target):
         return {"both": self.order_all(), "all": self.order_all(), "claude": [self.claude],
-                "codex": [self.codex], "gemini": [self.gemini], "nvidia": [self.nvidia]}.get(target, self.order_all())
+                "codex": [self.codex], "gemini": [self.gemini], "nvidia": [self.nvidia],
+                "dot": []}.get(target, self.order_all())  # dot：不叫 AI，只留點名單給 Dot
 
     @property
     def busy(self):
@@ -237,7 +238,7 @@ class Room:
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if len(picked) == 1:
                 target = picked[0]
-        names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達"}
+        names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "dot": "Dot"}
         if len(picked) > 1:  # 標記請誰、照什麼順序，大家讀到記錄才不會搞錯
             text = f"（請 {'→'.join(names[p] for p in picked)} 依序回答）{text}"
         elif target in names:  # 標記只問誰，其他人之後讀到記錄才不會搞錯
@@ -830,7 +831,7 @@ class Hub:
             r = self.room(rid)
             d = r.snapshot(since, epoch)
             d["rooms"] = [{"id": x.id, "name": x.name, "busy": x.busy, "total": len(x.transcript),
-                           "approval": bool(x.approval), "linked": bool(x.targets())}
+                           "approval": bool(x.approval), "linked": bool(x.targets()), "solo": x.solo}
                           for x in self.rooms.values()]
             d["write"] = bool(self.state.get("write_mode"))
             d["health"] = {k: {"ok": v[0], "msg": v[1]} for k, v in self.health.items()}
@@ -904,7 +905,7 @@ def make_handler(hub):
                 if text and data.get("target") == "note":
                     room.note(text, "電腦")
                 elif text:
-                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia") else "both")
+                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "dot") else "both")
                 return self._json({"ok": True})
             if p == "/api/more":
                 room.more(int(data.get("n") or 1))
