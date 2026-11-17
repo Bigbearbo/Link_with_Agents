@@ -583,7 +583,10 @@ class Room:
                 "progress": [{"who": a.name, "steps": list(a.steps), "pending": a.pending,
                               "anchor": getattr(a, "anchor", None),
                               "elapsed": int(time.time() - (a.started or time.time()))}
-                             for a in self.agents() if a.busy]}
+                             for a in self.agents() if a.busy]
+                            + [{"who": a.name, "label": f"{a.name}（分身）", "steps": list(a.side.steps), "pending": False,
+                                "anchor": None, "elapsed": int(time.time() - (a.side.started or time.time()))}
+                               for a in self.agents() if getattr(a, "side", None) is not None]}  # 分身在回答也要顯示「說話中」
 
 
 class Hub:

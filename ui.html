@@ -90,6 +90,7 @@ footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16p
 .seg button.sel{background:var(--ink);color:var(--panel)}
 .seg button.skip{padding:0 6px;font-size:11px;color:var(--muted);border-left:1px dashed var(--line);min-width:0}
 .seg button.skip{background:rgba(46,158,107,.16);color:#1f7a52;font-weight:600}
+#target.solo-mode button.skip{opacity:.35}  /* 選「只問 X」時群名單不生效，只是保留勾選 */
 .seg button.skip.off{background:rgba(128,128,128,.14);color:var(--muted);text-decoration:line-through;font-weight:400}
 @media (prefers-color-scheme:dark){.seg button.skip{background:rgba(79,209,167,.18);color:#7fe0bd}.seg button.skip.off{background:rgba(255,255,255,.06);color:var(--muted)}}
 button{font:inherit;font-size:13px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
@@ -263,7 +264,7 @@ function setThinking(progress){
     const el = document.createElement("div");
     el.className = "thinking";
     el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="tbody">
-      <div><span class="dots"><i></i><i></i><i></i></span>${w.name} 工作中 · ${mm}:${ss}</div>
+      <div><span class="dots"><i></i><i></i><i></i></span>${esc(p.label || w.name)} 工作中 · ${mm}:${ss}</div>
       ${steps ? `<ul class="steps">${steps}</ul>` : ""}
       ${p.pending ? `<div class="queued">${w.name} 做完手上的事後，會再回應你的新訊息</div>` : ""}</div>`;
     thinkingEl.appendChild(el);
@@ -417,6 +418,7 @@ for(const k of GROUP_ORDER){
 renderGroup();  // 這個房間已經套用過預設對象，就不再蓋掉使用者自己的選擇
 document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = () => {
   target = b.dataset.t;
+  $("#target").classList.toggle("solo-mode", target !== "both");
   box.placeholder = target === "note" ? "只記下，不會叫醒他們…（Enter 送出）" : "輸入訊息…（Enter 送出，Shift+Enter 換行）";
   document.querySelectorAll("#target button:not(.skip)").forEach(x => x.classList.toggle("sel", x === b));
   box.focus();
