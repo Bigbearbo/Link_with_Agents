@@ -404,7 +404,7 @@ def gemini_model():
 
 def refresh_gemini_usage():
     try:
-        subprocess.run(["python", "-B", r"H:\Agent共用i-call\gemini_usage.py"], capture_output=True,
+        subprocess.run(["python", "-B", r"H:\Agent共用\ai-call\gemini_usage.py"], capture_output=True,
                        timeout=150, creationflags=NO_WINDOW)
     except Exception:
         pass
