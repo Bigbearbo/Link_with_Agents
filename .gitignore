@@ -1,0 +1,14 @@
+# 只版控程式本身；對話內容、秘密、狀態、紀錄一律不進 git
+secrets/
+logs/
+terminal/
+gemini-work/
+__pycache__/
+*.pyc
+tg_state*.json
+shared_seen.json
+usage.jsonl
+supervisor.stop
+supervisor.pause
+*.bak*
+*.tmp
