@@ -29,10 +29,12 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 【列目錄】路徑            看資料夾裡有哪些檔
 【用量】                 你今天用了幾次、整體免費額度還剩多少
 【寫筆記】內容            記到你自己的 H:\\免費模型用\\筆記.md（下次可以讀回來，當你的長期記憶）
-你用哪個模型由你自己決定：OpenRouter 上任何 `:free` 結尾的免費模型都可以（例如 nvidia/…、meta-llama/…、qwen/…、deepseek/… 的 :free 版）。
-  把模型 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt），下一次呼叫生效；不是 :free 結尾或不寫，就用預設的 Nemotron。
-  不同題目可以換不同模型（例如寫程式、推理、長文），自己記在筆記裡哪個好用；筆記按模型分開，單次成功只算候選經驗。
-  每次呼叫的「要求模型／實際回傳模型／是否退回預設」記在 H:\免費模型用\calls.jsonl，評估模型時以實際回傳的為準。
+【免費模型】               列出 OpenRouter 目前可用的免費模型 ID（先查這個再選）
+【請教】模型ID 問題        偶爾請教其他家的免費模型（例如 qwen/…:free、deepseek/…:free、meta-llama/…:free），回答給你參考。
+  被請教的模型**用它自己的記憶**（H:\\免費模型用\\客座\\），看不到也改不了你的筆記；它的回答只是參考，要不要採用、記不記進你的筆記由你決定。
+你的本體是 NVIDIA 系列：平常用 nvidia/…:free 模型。要換同家的其他型號，把 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt）；
+  只接受 nvidia/ 開頭、:free 結尾，其他或不寫就用預設的 Nemotron。不管底層換成哪個型號，你的名字都叫「輝達」。
+  每次呼叫的「要求模型／實際回傳模型／是否退回預設」記在 H:\\免費模型用\\calls.jsonl，評估模型時以實際回傳的為準；單次成功只算候選經驗。
 【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work（只能寫這裡）
 【跑程式】檔名.py [參數]    在沙盒裡用 Python（有 numpy）跑你工作區的腳本，最多 3 分鐘，回傳輸出的最後 6000 字
   沙盒限制：只能寫 H:\\免費模型用、不能開子程序、不能連網、讀不到秘密檔；資源上限：記憶體 2GB、CPU 25%、3 分鐘。可以讀共用區和 H:\\Codex用 的資料來算。
@@ -49,7 +51,7 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 每天第一次被叫到時：先【讀檔】H:\免費模型用\筆記.md，若今天還沒有「OpenRouter 規則檢查」，就用【網路搜尋】查一次免費模型的額度規則有沒有變，結果用【寫筆記】記下（標題寫「OpenRouter 規則檢查 日期」）。
 """
 
-TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式)】[ \t]*([^【\n]*)")
+TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型)】[ \t]*([^【\n]*)")
 WRITE_RE = re.compile(r"【寫檔】[ \t]*([^\n【]+)\n(.*?)\n?【/寫檔】", re.S)
 WORK = os.path.join(HOME, "work")
 SANDBOX = os.path.join(HOME, ".sandbox", "run.py")
@@ -139,7 +141,7 @@ def usage_text():
     return txt
 
 
-def run_tool(kind, arg, transcript):
+def run_tool(kind, arg, transcript, agent=None):
     arg = arg.strip()
     if kind == "最近對話":
         n = max(1, min(60, int(re.sub(r"\D", "", arg) or 10)))
@@ -154,6 +156,10 @@ def run_tool(kind, arg, transcript):
         return r.stdout.decode("utf-8", "replace")[-12000:] or "（沒有找到）"
     if kind == "網路搜尋":
         return web_search(arg)
+    if kind == "免費模型":
+        return free_models()
+    if kind == "請教":
+        return consult(arg, agent)
     if kind == "跑程式":
         return run_script(arg)
     if kind == "讀檔":
@@ -209,7 +215,51 @@ def chosen_model():
         first = open(MODEL_FILE, encoding="utf-8-sig").readline().strip()
     except OSError:
         return None
-    return first if FREE_MODEL.fullmatch(first) else None
+    # 使用者 11-17：本體維持同一家（nvidia）；其他家只能用【請教】，用它們自己的記憶
+    return first if FREE_MODEL.fullmatch(first) and first.startswith(HOME_FAMILY + "/") else None
+
+
+HOME_FAMILY = "nvidia"
+FREE_LIST = os.path.join(HOME, "free-models.txt")
+
+
+def free_models():
+    """OpenRouter 公開目錄裡目前價格為 0 的 :free 模型（快取 6 小時，存 free-models.txt）。"""
+    if os.path.exists(FREE_LIST) and time.time() - os.path.getmtime(FREE_LIST) < 6 * 3600:
+        return open(FREE_LIST, encoding="utf-8").read()
+    import urllib.request
+    try:
+        d = json.load(urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=30))["data"]
+    except Exception as e:
+        return f"讀不到 OpenRouter 目錄：{e}"
+    ids = sorted(m["id"] for m in d if m["id"].endswith(":free")
+                 and all(float(v or 0) == 0 for v in (m.get("pricing") or {}).values()))
+    txt = f"（{time.strftime('%m-%d %H:%M')} 從 OpenRouter 公開目錄抓的，共 {len(ids)} 個）\n" + "\n".join(ids)
+    open(FREE_LIST, "w", encoding="utf-8").write(txt)
+    return txt
+GUEST_DIR = os.path.join(HOME, "客座")
+
+
+def consult(arg, agent):
+    """【請教】模型ID 問題：用別家免費模型回答一題；那個模型有自己的記憶檔（客座\\<模型>.md），碰不到輝達的筆記。"""
+    parts = arg.split(None, 1)
+    if len(parts) < 2 or not FREE_MODEL.fullmatch(parts[0]):
+        return "格式：【請教】模型ID（要 :free 結尾）問題"
+    model, q = parts
+    if model.startswith(HOME_FAMILY + "/"):
+        return "這是你自己這一家的模型，直接用就好（寫 模型.txt），不用【請教】"
+    os.makedirs(GUEST_DIR, exist_ok=True)
+    mem = os.path.join(GUEST_DIR, re.sub(r"[^\w.\-]", "_", model) + ".md")
+    past = open(mem, encoding="utf-8").read()[-4000:] if os.path.exists(mem) else ""
+    prompt = (f"你是被「輝達」（一個研究討論房裡的 AI）請教的客座模型。用繁體中文、簡潔回答。"
+              + (f"\n\n你自己以前回答過的紀錄（你的記憶）：\n{past}" if past else "") + f"\n\n問題：{q[:6000]}")
+    try:
+        text = agent._call([{"role": "user", "content": prompt}], model=model)
+    except Exception as e:
+        return f"請教失敗：{e}"
+    with open(mem, "a", encoding="utf-8") as f:
+        f.write(f"\n## {time.strftime('%m-%d %H:%M')}\n問：{q[:500]}\n答：{text[:1500]}\n")
+    return f"（{model} 的回答，僅供參考）\n{text[:6000]}"
 
 
 class NvidiaAgent(rt.Agent):
@@ -228,13 +278,13 @@ class NvidiaAgent(rt.Agent):
         return (GUIDE.format(steps=MAX_STEPS, topic=rt.RESEARCH_TOPIC or "（見使用者說明）") +f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
                 f"自從你上次發言後的新訊息（最多列最後 8 則；更早的請用工具查）：\n\n{body}\n\n現在輪到你（輝達）。")
 
-    def _call(self, messages):
+    def _call(self, messages, model=None):
         if _today_calls() >= DAILY_SOFT:
             raise RuntimeError(f"輝達今天在討論房已用滿 {DAILY_SOFT} 次")
         os.makedirs(os.path.join(HOME, "jobs"), exist_ok=True)
         jf = os.path.join(HOME, "jobs", time.strftime("room-%m%d-%H%M%S.json"))
         spec = {"messages": messages, "max_tokens": 2048, "data_classification": "public_or_synthetic"}
-        model = chosen_model()
+        model = model or chosen_model()
         if model:
             spec["model"] = model
             self.step(f"模型：{model}")
@@ -289,7 +339,7 @@ class NvidiaAgent(rt.Agent):
             for kind, arg in tools:
                 self.step(f"{kind}：{arg[:40]}")
                 try:
-                    res = run_tool(kind, arg, transcript)
+                    res = run_tool(kind, arg, transcript, self)
                 except Exception as e:
                     res = f"工具出錯：{e}"
                 results.append(f"【{kind}】{arg}（已執行）\n{res}")
