@@ -118,12 +118,12 @@ def _allowed(path):
 
 
 def _today_calls(kind=None):
-    """今天的呼叫次數；kind="auto"／"manual" 只算那一種（舊紀錄沒標的算手動）。"""
+    """今天的呼叫次數；kind="auto"／"manual" 只算那一種（11-18 之前沒標的舊紀錄算自主，免得佔掉點名的份）。"""
     d, n = time.strftime("%Y-%m-%d"), 0
     try:
         for line in open(CALLS, encoding="utf-8"):
             if line.startswith('{"date": "' + d):
-                n += kind is None or (('"kind": "auto"' in line) == (kind == "auto"))
+                n += kind is None or (('"kind": "manual"' not in line) == (kind == "auto"))
     except OSError:
         pass
     return n
