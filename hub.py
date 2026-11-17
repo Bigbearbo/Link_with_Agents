@@ -164,6 +164,8 @@ class Room:
             self.transcript.append(entry)
             idx = len(self.transcript) - 1
             self.hub.save()
+        if who != "Dot" and re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I):
+            notify_dot(self.name, who, entry["time"], text)  # Dot 不在線：留一張點名單，Dot 巡檢時看到再回
         if src != "Telegram":
             label = (("主人（電腦）" + ("・只記下" if kind == "note" else "")) if who == "使用者"
                      else who + ("（完成回報）" if kind == "report" else ""))
@@ -927,6 +929,24 @@ def make_handler(hub):
             self._json({"error": "not found"}, 404)
 
     return H
+
+
+DOT_DIR = r"H:\Agent共用\給Dot"
+
+
+def notify_dot(room, who, when, text):
+    """房間裡有人寫行首 @Dot 或 DOT_REQUEST：在 給Dot\\待處理\\ 留一張點名單（只放請求那段，最多 1500 字）。
+    Dot 回覆走既有 inbox（from: Dot），會以 Dot 的名字貼回機器人互相討論群。"""
+    try:
+        d = os.path.join(DOT_DIR, "待處理")
+        os.makedirs(d, exist_ok=True)
+        name = time.strftime("%m%d-%H%M%S-") + re.sub(r"[^\w]", "", who)[:12] + ".txt"
+        tmp = os.path.join(d, name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(f"房間：{room}\n誰點名：{who}\n時間：{when}\n---\n{(text or '')[:1500]}\n")
+        os.replace(tmp, os.path.join(d, name))
+    except OSError as e:
+        log(f"給 Dot 的點名單寫入失敗：{e}")
 
 
 _codex_hot_cache = {"t": 0, "v": False}
