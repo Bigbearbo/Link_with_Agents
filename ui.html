@@ -89,8 +89,9 @@ footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16p
 .seg button{border:none;border-radius:0;background:transparent}
 .seg button.sel{background:var(--ink);color:var(--panel)}
 .seg button.skip{padding:0 6px;font-size:11px;color:var(--muted);border-left:1px dashed var(--line);min-width:0}
-.seg button.skip.off{text-decoration:line-through;opacity:.55}
-.seg button.skip:not(.off){color:#2e9e6b;font-weight:600}
+.seg button.skip{background:rgba(46,158,107,.16);color:#1f7a52;font-weight:600}
+.seg button.skip.off{background:rgba(128,128,128,.14);color:var(--muted);text-decoration:line-through;font-weight:400}
+@media (prefers-color-scheme:dark){.seg button.skip{background:rgba(79,209,167,.18);color:#7fe0bd}.seg button.skip.off{background:rgba(255,255,255,.06);color:var(--muted)}}
 button{font:inherit;font-size:13px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
 button:hover{filter:brightness(.96)} button:disabled{opacity:.45;cursor:default}
 .row{display:flex;gap:8px;align-items:flex-end}
