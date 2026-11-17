@@ -12,7 +12,8 @@ NOTES = os.path.join(HOME, "筆記.md")
 CALLS = os.path.join(HOME, "calls.jsonl")
 LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SEARCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "search.py")
-READ_ROOTS = [r"H:\Agent共用", r"H:\Codex用", r"H:\免費模型用", r"H:\Gemini用", LOGS]
+READ_ROOTS = [r"H:\Agent共用", r"H:\Codex用", r"H:\免費模型用", r"H:\Gemini用", LOGS,
+              r"J:\我的雲端硬碟\視窗Gemini"]  # 雲端硬碟交換區（Gemini App 的產出）
 BLOCK = ("secret", "token", "tg_state", ".dpapi", "web-key", "credential", "password", "金鑰")
 MAX_STEPS = 6
 READ_LIMIT = 8000
