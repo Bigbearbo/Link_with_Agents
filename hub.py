@@ -240,8 +240,10 @@ class Room:
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
                 picked = [m for m in ("claude", "codex", "gemini", "nvidia", "dot") if m in members]
-                if "codex" in picked and len(picked) > 1 and codex_hot():
-                    picked.remove("codex")  # Codex 額度吃緊：群聊略過它（要問它請按「只問 Codex」）
+                # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
+                if "codex" in picked and codex_hot():
+                    threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
+                                                           "想省就把它切成「略」。")).start()
                 if not picked:
                     picked = ["claude"]
             if len(picked) == 1:
@@ -1183,7 +1185,8 @@ if __name__ == "__main__":
         text = t[last_user]["text"]
         wanted = ([r.claude] if text.startswith("（只問 Claude）") else
                   [r.codex] if text.startswith("（只問 Codex）") else
-                  [] if text.startswith(("（只問 Gemini）", "（只問 輝達）")) else r.order_both())  # 重開時不叫 Gemini 補答
+                  [] if text.startswith(("（只問 Gemini）", "（只問 輝達）", "（只問 Dot）", "（請 ")) else
+                  [a for a in r.order_all() if a in (r.claude, r.codex)])  # 重開補答照房間規則（互相討論群只叫 Claude、Codex 吃緊不叫）
         answered = {m["who"] for m in t[last_user + 1:] if m["who"] in ("Claude", "Codex")}
         todo = [a for a in wanted if a.name not in answered]
         if todo:
