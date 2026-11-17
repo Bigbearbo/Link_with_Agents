@@ -31,7 +31,8 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 【寫筆記】內容            記到你自己的 H:\\免費模型用\\筆記.md（下次可以讀回來，當你的長期記憶）
 你用哪個模型由你自己決定：OpenRouter 上任何 `:free` 結尾的免費模型都可以（例如 nvidia/…、meta-llama/…、qwen/…、deepseek/… 的 :free 版）。
   把模型 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt），下一次呼叫生效；不是 :free 結尾或不寫，就用預設的 Nemotron。
-  不同題目可以換不同模型（例如寫程式、推理、長文），自己記在筆記裡哪個好用。
+  不同題目可以換不同模型（例如寫程式、推理、長文），自己記在筆記裡哪個好用；筆記按模型分開，單次成功只算候選經驗。
+  每次呼叫的「要求模型／實際回傳模型／是否退回預設」記在 H:\免費模型用\calls.jsonl，評估模型時以實際回傳的為準。
 【寫檔】檔名.py           （下一行起是檔案內容，最後單獨一行寫【/寫檔】）寫到你的工作區 H:\\免費模型用\\work（只能寫這裡）
 【跑程式】檔名.py [參數]    在沙盒裡用 Python（有 numpy）跑你工作區的腳本，最多 3 分鐘，回傳輸出的最後 6000 字
   沙盒限制：只能寫 H:\\免費模型用、不能開子程序、不能連網、讀不到秘密檔；資源上限：記憶體 2GB、CPU 25%、3 分鐘。可以讀共用區和 H:\\Codex用 的資料來算。
@@ -115,10 +116,13 @@ def _today_calls():
     return n
 
 
-def _log_call(ok):
+def _log_call(ok, requested=None, actual=None):
+    """每次呼叫記一行：要求的模型、實際回傳的模型、是否退回預設（Codex 11-17：評測不能把預設模型的答案算到指定模型）。"""
     os.makedirs(HOME, exist_ok=True)
     with open(CALLS, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"), "ok": ok},
+        f.write(json.dumps({"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"), "ok": ok,
+                            "requested": requested or "（預設）", "actual": actual,
+                            "fallback": bool(requested and actual and not str(actual).startswith(requested.split(":")[0]))},
                            ensure_ascii=False) + "\n")
 
 
@@ -252,12 +256,14 @@ class NvidiaAgent(rt.Agent):
         except Exception:
             _log_call(False)
             raise RuntimeError(f"輝達 worker 沒有正常回覆：{(err or out)[-300:]}")
-        text = ""
+        text, actual = "", None
         if info.get("result_path"):
             rec = json.load(open(info["result_path"], encoding="utf-8"))
             ch = (rec.get("response") or {}).get("choices") or [{}]
             text = (ch[0].get("message", {}).get("content") or "").strip()
-        _log_call(bool(info.get("success") and text))
+            actual = (rec.get("response") or {}).get("model") or rec.get("model")
+        _log_call(bool(info.get("success") and text), spec.get("model"), actual)
+        self.last_model = actual
         if not info.get("success") or not text:
             raise RuntimeError(f"輝達呼叫失敗：{str(info.get('error'))[:300]}")
         return text
