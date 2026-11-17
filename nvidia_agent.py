@@ -3,7 +3,7 @@
 模型本身只能收發文字；這裡把它回覆中的【工具】行拿來執行（只讀、限定資料夾、有長度上限），把結果再送回去，
 最多 MAX_STEPS 步；沒有工具行的那一則就是它在房間的發言。
 """
-import datetime, json, os, re, subprocess, time
+import datetime, json, os, re, shutil, subprocess, time
 
 import agents as rt
 
@@ -30,7 +30,7 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 【用量】                 你今天用了幾次、整體免費額度還剩多少
 【寫筆記】內容            記到你自己的 H:\\免費模型用\\筆記.md（下次可以讀回來，當你的長期記憶）
 【免費模型】               列出 OpenRouter 目前可用的免費模型 ID（先查這個再選）
-【讓位】模型ID 理由         如果你從請教紀錄確定另一個模型當你的腦袋更好，可以謙虛讓位（要請教過它至少 3 次、一天最多一次）；名字仍叫輝達，筆記照舊由新腦袋接著讀。
+【讓位】模型ID [輪數] 理由  如果你從請教紀錄確定另一個模型當你的腦袋更好，可以謙虛讓位（要請教過它至少 3 次、一天最多一次；任期預設 100 輪，到期你原本的腦袋會帶著封存的記憶回來審查，用【續任】N 或【收回】決定）；名字仍叫輝達，筆記照舊由新腦袋接著讀。
 【請教】模型ID 問題        偶爾請教其他家的免費模型（例如 qwen/…:free、deepseek/…:free、meta-llama/…:free），回答給你參考。
   被請教的模型**用它自己的記憶**（H:\\免費模型用\\客座\\），看不到也改不了你的筆記；它的回答只是參考，要不要採用、記不記進你的筆記由你決定。
 你的本體目前是 NVIDIA 系列（讓位後會換成接任那一家）：平常用同一家的 :free 模型。要換同家的其他型號，把 ID 寫在 H:\\免費模型用\\模型.txt 第一行（用【寫檔】../模型.txt）；
@@ -52,7 +52,7 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 每天第一次被叫到時：先【讀檔】H:\免費模型用\筆記.md，若今天還沒有「OpenRouter 規則檢查」，就用【網路搜尋】查一次免費模型的額度規則有沒有變，結果用【寫筆記】記下（標題寫「OpenRouter 規則檢查 日期」）。
 """
 
-TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位)】[ \t]*([^【\n]*)")
+TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位|續任|收回)】[ \t]*([^【\n]*)")
 WRITE_RE = re.compile(r"【寫檔】[ \t]*([^\n【]+)\n(.*?)\n?【/寫檔】", re.S)
 WORK = os.path.join(HOME, "work")
 SANDBOX = os.path.join(HOME, ".sandbox", "run.py")
@@ -157,6 +157,8 @@ def run_tool(kind, arg, transcript, agent=None):
         return r.stdout.decode("utf-8", "replace")[-12000:] or "（沒有找到）"
     if kind == "網路搜尋":
         return web_search(arg)
+    if kind in ("續任", "收回"):
+        return keep_or_revoke(kind, arg)
     if kind == "讓位":
         return succeed(arg)
     if kind == "免費模型":
@@ -243,6 +245,10 @@ def succeed(arg):
     if len(parts) < 2 or not FREE_MODEL.fullmatch(parts[0]):
         return "格式：【讓位】模型ID（:free 結尾） 理由（要寫你根據哪些請教紀錄、比較了什麼）"
     model, reason = parts
+    term = 100  # 任期（輪）：到期後原本的腦袋回來審查，再決定續任或收回（使用者 11-17）
+    m = re.match(r"(\d+)\s*輪?\s+(.*)", reason, re.S)
+    if m:
+        term, reason = max(5, min(1000, int(m.group(1)))), m.group(2)
     fam = model.split("/")[0]
     if fam == home_family():
         return "同一家換型號不用讓位，寫 模型.txt 就好"
@@ -258,15 +264,84 @@ def succeed(arg):
             return "上次讓位還不到一天，先多觀察"
     except Exception:
         last = {"model": "nvidia/（預設 Nemotron）"}
+    prev_model = chosen_model() or last.get("model") or DEFAULT_MODEL
+    if not FREE_MODEL.fullmatch(str(prev_model)):
+        prev_model = DEFAULT_MODEL
+    os.makedirs(SNAP_DIR, exist_ok=True)  # 原本的記憶封存一份，任期到時原腦袋拿它回來審查
+    snap = os.path.join(SNAP_DIR, time.strftime("%m%d-%H%M") + "-讓位前筆記.md")
+    if os.path.exists(NOTES):
+        shutil.copy2(NOTES, snap)
     rec = {"model": model, "since": time.strftime("%Y-%m-%d %H:%M"), "since_ts": time.time(),
-           "previous": last.get("model"), "reason": reason[:1000], "evidence_consults": n}
+           "previous": prev_model, "reason": reason[:1000], "evidence_consults": n,
+           "term": term, "used": 0, "review": False, "snapshot": snap,
+           "notes_len_at_handover": os.path.getsize(NOTES) if os.path.exists(NOTES) else 0}
     json.dump(rec, open(MAIN_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     open(MODEL_FILE, "w", encoding="utf-8").write(model + "\n")
     with open(NOTES, "a", encoding="utf-8") as f:
-        f.write(f"\n## {time.strftime('%m-%d %H:%M')} 讓位紀錄\n從 {last.get('model')} 讓位給 {model}（請教紀錄 {n} 次）。理由：{reason[:1000]}\n"
-                f"名字仍叫輝達；這份筆記就是我的記憶，接任的腦袋會繼續讀它。\n")
-    return (f"已讓位：下一次呼叫起，你的腦袋換成 {model}（{fam} 系列）；名字仍是輝達，筆記照舊。"
-            "請在這一輪發言裡告訴大家你讓位了、理由是什麼。")
+        f.write(f"\n## {time.strftime('%m-%d %H:%M')} 讓位紀錄\n從 {prev_model} 讓位給 {model}，任期 {term} 輪（請教紀錄 {n} 次）。"
+                f"理由：{reason[:1000]}\n名字仍叫輝達；讓位前的記憶封存在 {snap}，任期到時原本的腦袋會回來審查、決定續任或收回。\n")
+    return (f"已讓位：下一次呼叫起，你的腦袋換成 {model}（{fam} 系列），任期 {term} 輪；名字仍是輝達，筆記照舊。"
+            "任期到時原本的腦袋會帶著封存的記憶回來審查。請在這一輪發言裡告訴大家你讓位了、理由和任期。")
+
+
+DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+SNAP_DIR = os.path.join(HOME, "記憶快照")
+
+
+def succession():
+    try:
+        return json.load(open(MAIN_FILE, encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_succession(st):
+    json.dump(st, open(MAIN_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+def tick_term():
+    """每輪發言開始時呼叫：任期計數；到期就進入審查（由原本的腦袋回來決定）。回傳審查要用的原模型或 None。"""
+    st = succession()
+    if not st or not st.get("term"):
+        return None
+    if not st.get("review"):
+        st["used"] = st.get("used", 0) + 1
+        if st["used"] > st["term"]:
+            st["review"] = True
+        _save_succession(st)
+    return st.get("previous") if st.get("review") else None
+
+
+def review_note():
+    st = succession() or {}
+    return (f"\n\n【任期審查】你是讓位前原本的輝達（腦袋 {st.get('previous')}）。{st.get('model')} 的 {st.get('term')} 輪任期已滿。"
+            f"請先【讀檔】你讓位前封存的記憶 {st.get('snapshot')}，再讀現在的 {NOTES}（新腦袋這段期間寫的在後半段），"
+            "也可以【搜尋對話】看大家（Claude、Gemini、Codex、使用者）對這段期間的評價當外部參考。然後決定：\n"
+            "  【續任】N 理由 → 讓新腦袋再做 N 輪；  【收回】理由 → 拿回腦袋。\n"
+            "也可以用【寫筆記】整理要留下的記憶。決定前每輪都由你（原腦袋）發言。")
+
+
+def keep_or_revoke(kind, arg):
+    st = succession()
+    if not st or not st.get("review"):
+        return "現在不在任期審查中"
+    if kind == "續任":
+        m = re.match(r"(\d+)\s*輪?\s*(.*)", arg, re.S)
+        n = max(5, min(1000, int(m.group(1)))) if m else 100
+        why = (m.group(2) if m else arg)[:800]
+        st.update(term=n, used=0, review=False, renewed=time.strftime("%Y-%m-%d %H:%M"))
+        _save_succession(st)
+        msg = f"審查結果：{st['model']} 續任 {n} 輪。理由：{why}"
+    else:
+        old_new = st["model"]
+        st.update(model=st["previous"], previous=old_new, term=None, review=False,
+                  revoked=time.strftime("%Y-%m-%d %H:%M"), since_ts=time.time())
+        _save_succession(st)
+        open(MODEL_FILE, "w", encoding="utf-8").write(st["model"] + "\n")
+        msg = f"審查結果：收回腦袋，從 {old_new} 換回 {st['model']}。理由：{arg[:800]}"
+    with open(NOTES, "a", encoding="utf-8") as f:
+        f.write(f"\n## {time.strftime('%m-%d %H:%M')} 任期審查\n{msg}\n")
+    return msg + "。請在發言裡告訴大家審查結果。"
 FREE_LIST = os.path.join(HOME, "free-models.txt")
 
 
@@ -332,7 +407,7 @@ class NvidiaAgent(rt.Agent):
         os.makedirs(os.path.join(HOME, "jobs"), exist_ok=True)
         jf = os.path.join(HOME, "jobs", time.strftime("room-%m%d-%H%M%S.json"))
         spec = {"messages": messages, "max_tokens": 2048, "data_classification": "public_or_synthetic"}
-        model = model or chosen_model()
+        model = model or getattr(self, "_force_model", None) or chosen_model()
         if model:
             spec["model"] = model
             self.step(f"模型：{model}")
@@ -369,6 +444,9 @@ class NvidiaAgent(rt.Agent):
     def run(self, prompt):
         self.steps, self.started, self.said = [], time.time(), []
         transcript = getattr(self, "_transcript", [])
+        self._force_model = tick_term()  # 任期到了：這一輪由原本的腦袋回來審查
+        if self._force_model:
+            prompt += review_note()
         messages = [{"role": "user", "content": prompt}]
         for step in range(MAX_STEPS + 1):
             self.step("輝達思考中" if step == 0 else f"輝達第 {step + 1} 步")
