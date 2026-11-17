@@ -3,7 +3,7 @@ param([string]$HubArgs = "")
 function Get-HubPy { Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'hub\.py' -and $_.Name -match 'python' } }
 function Test-Busy {
     foreach ($h in @(Get-HubPy)) {
-        $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($h.ProcessId)" | Where-Object { $_.Name -match 'claude|codex' }
+        $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($h.ProcessId)" | Where-Object { $_.Name -match 'claude|codex|agy|antigravity|python' }  # 11-18：漏算 Gemini（agy）、輝達（python worker），重開時把它們砍斷了
         if ($kids) { return $true }
     }
     return $false
