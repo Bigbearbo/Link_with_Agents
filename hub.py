@@ -27,6 +27,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agents as rt  # noqa: E402
 from deepseek_agent import DeepSeekAgent  # noqa: E402
+from window_agent import WindowAgent  # noqa: E402
+
+# 使用者 11-18 20:11：Gemini 搬到自己的 agy 視窗（官方 FAQ 不支援把 agy 包進應用程式）。
+# True＝群裡叫 Gemini 只留單到 H:\Gemini用\群組\待回\；False＝回到舊的背景 agy -p。
+GEMINI_IN_WINDOW = True
+
+
+def make_gemini(room):
+    if GEMINI_IN_WINDOW:
+        return WindowAgent("Gemini", room.id, getattr(room, "name", ""))
+    return rt.GeminiAgent("Gemini")
 from secret_store import load_token  # noqa: E402
 import terminal_bridge as tb  # noqa: E402
 import shared_watch as sw  # noqa: E402
@@ -106,7 +117,7 @@ class Room:
         self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
         self.claude.session, self.claude.seen = d.get("claude_session"), int(d.get("claude_seen") or 0)
         self.codex.session, self.codex.seen = d.get("codex_session"), int(d.get("codex_seen") or 0)
-        self.gemini = rt.GeminiAgent("Gemini")
+        self.gemini = make_gemini(self)
         self.gemini.session, self.gemini.seen = d.get("gemini_session"), int(d.get("gemini_seen") or 0)
         self.nvidia = rt.NvidiaAgent("輝達")  # 沒有對話記憶，每次帶最近 60 則；只有點名才回
         self.deepseek = DeepSeekAgent("DeepSeek")  # 使用者 11-18 19:26：付費但便宜，Claude 管；只有點名才回
@@ -329,7 +340,7 @@ class Room:
             return False
         with self.hub.lock:
             self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
-            self.gemini = rt.GeminiAgent("Gemini")
+            self.gemini = make_gemini(self)
             self.nvidia = rt.NvidiaAgent("輝達")
             self.deepseek = DeepSeekAgent("DeepSeek")
             self.transcript, self.approval, self.log_name = [], None, None
@@ -990,7 +1001,7 @@ def make_handler(hub):
 # ---------- 自主工作時段（使用者 11-17：讓輝達、Gemini 像正常 agent 一樣自己持續做事） ----------
 AUTO_AGENTS = [  # (房間 id, agent 屬性, 目標檔, 間隔秒)
     ("solo-nvidia", "nvidia", r"H:\免費模型用\目標.md", 30 * 60),
-    ("solo-gemini", "gemini", r"H:\Gemini用\目標.md", 60 * 60),
+    # Gemini 搬到視窗後自己用 /schedule 醒來，中樞不再給它自主時段（11-18 20:4x）
 ]
 AUTO_PROMPT = ("⏰ 自主工作時段：請讀你的目標檔 {goal}，做「下一步」→ 驗證（能跑程式就跑、能讀檔核對就核對）→ "
                "更新目標檔（狀態、下一步、完成標準、需要誰驗證）→ 在這裡用幾行回報做了什麼、驗證結果、下一步。"
