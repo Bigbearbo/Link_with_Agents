@@ -1727,7 +1727,7 @@ if __name__ == "__main__":
                 calls = wa.nvidia_calls_today()               # 使用者 06:50：輝達算呼叫次數，派工要編次數預算
                 try:  # 加上 worker（ask.py 等）同一天的次數，跟聊天室用量條同一個 900
                     import datetime as _dt
-                    _p = json.load(open(r"H:\Agent共用i-call\paths.json", encoding="utf-8"))
+                    _p = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
                     _b = json.load(open(_p.get("budget", r"D:\Codex用\work\openrouter-workerudget.json"), encoding="utf-8"))
                     if calls is not None and _b.get("day") == _dt.datetime.now(_dt.timezone.utc).date().isoformat():
                         calls += _b.get("attempts", 0)
