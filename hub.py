@@ -1485,6 +1485,18 @@ if __name__ == "__main__":
                     log(f"雲端硬碟發言：{who} {name} → {res}")
             except Exception as e:
                 log(f"雲端硬碟發言掃描失敗：{type(e).__name__} {e}")
+            news = os.path.join(HERE, "terminal", "雲端新檔.txt")  # drive_sync.py 反向鏡像到的新研究檔（11-19 03:4x）
+            try:
+                if os.path.exists(news) and os.path.getsize(news):
+                    with open(news, encoding="utf-8") as f:
+                        rows = [l.rstrip("\n").split("\t", 1)[-1] for l in f if l.strip()]
+                    os.remove(news)
+                    hub.room("g1004308131170").notice(
+                        f"📥 雲端硬碟有 {len(rows)} 份新的或更新的研究檔（App 的 GPT／Gemini 放的），已鏡像到 "
+                        "`H:\\Agent共用\\專案\\外部研究\\雲端硬碟\\`（索引 `_索引.md`）。一律【未驗證】，用前先核對：\n"
+                        + "\n".join(f"• {r}" for r in rows[:15]) + (f"\n……還有 {len(rows) - 15} 份" if len(rows) > 15 else ""))
+            except Exception as e:
+                log(f"雲端新檔通知失敗：{type(e).__name__} {e}")
             time.sleep(20)
     threading.Thread(target=drive_post_loop, daemon=True).start()
     try:
