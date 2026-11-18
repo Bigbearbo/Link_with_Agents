@@ -108,6 +108,24 @@ def nvidia_calls_today():
     return n
 
 
+def nvidia_total_today():
+    """輝達今天（UTC 日，台北 08:00 換日）的免費模型呼叫總數＝worker（ask.py 等）＋OpenCode。
+    用量條和派工員都只呼叫這一個（使用者 06:58：一份來源，不要兩個地方各算）。回傳 (合計, worker, OpenCode)；讀不到回 None。"""
+    import datetime, json
+    oc = nvidia_calls_today()
+    if oc is None:
+        return None
+    worker = 0
+    try:
+        paths = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
+        b = json.load(open(paths.get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
+        if b.get("day") == datetime.datetime.now(datetime.timezone.utc).date().isoformat():
+            worker = int(b.get("attempts", 0))
+    except (OSError, ValueError):
+        pass
+    return worker + oc, worker, oc
+
+
 LAST_ROOM = {}  # 最後一次叫醒是為了哪個房間；OpenCode 忙碌時「工作中」就顯示在那個房間
 
 

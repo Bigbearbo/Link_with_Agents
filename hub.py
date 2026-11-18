@@ -1250,10 +1250,8 @@ def usage_summary():
         paths = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
         b = json.load(open(paths.get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
         now = datetime.datetime.now(datetime.timezone.utc)
-        used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
         import window_agent as _wa
-        oc = _wa.nvidia_calls_today() or 0            # 11-19 06:56：輝達搬進 OpenCode 後的呼叫不經 worker，要加上去
-        used += oc
+        used, _w, oc = _wa.nvidia_total_today() or (b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0, 0, 0)
         elapsed = (now.hour * 3600 + now.minute * 60 + now.second) / 864
         pct = used / 9
         state = "正常" if elapsed < 3 or pct <= elapsed else "略快" if pct <= elapsed * 1.2 else "超速"
@@ -1702,6 +1700,20 @@ if __name__ == "__main__":
                     hub.room("g1004308131170").notice(
                         f"🛡 共用區保護：`{f}` 有沒經過 Claude 的改動（可能是雲端 App 或哪位 AI），已改回上一版。"
                         f"被改的內容沒丟，存在中樞 `共用區被改備份\\{os.path.basename(keep)}`；要保留請在群組說，Claude 會併回去。")
+                # 單一來源的副本（使用者 06:58）：team-system 技能入口只改中樞的 skill-team-system.md，六份副本由這裡覆蓋
+                src_skill = os.path.join(HERE, "skill-team-system.md")
+                if os.path.exists(src_skill):
+                    body = open(src_skill, encoding="utf-8").read()
+                    for home in (root, r"H:\Gemini用", r"H:\免費模型用"):
+                        for sub in (".agents", ".claude"):
+                            dst = os.path.join(home, sub, "skills", "team-system", "SKILL.md")
+                            try:
+                                if not os.path.exists(dst) or open(dst, encoding="utf-8").read() != body:
+                                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                                    open(dst, "w", encoding="utf-8").write(body)
+                                    log(f"技能入口副本已由來源覆蓋：{dst}")
+                            except OSError:
+                                pass
                 if now - last_commit > 3600:
                     git("add", "-A")
                     r = git("commit", "-q", "-m", "中樞每小時自動快照")
@@ -1724,15 +1736,8 @@ if __name__ == "__main__":
         while True:
             time.sleep(1800)
             try:
-                calls = wa.nvidia_calls_today()               # 使用者 06:50：輝達算呼叫次數，派工要編次數預算
-                try:  # 加上 worker（ask.py 等）同一天的次數，跟聊天室用量條同一個 900
-                    import datetime as _dt
-                    _p = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
-                    _b = json.load(open(_p.get("budget", r"D:\Codex用\work\openrouter-workerudget.json"), encoding="utf-8"))
-                    if calls is not None and _b.get("day") == _dt.datetime.now(_dt.timezone.utc).date().isoformat():
-                        calls += _b.get("attempts", 0)
-                except Exception:
-                    pass
+                _t = wa.nvidia_total_today()                 # 合計（worker＋OpenCode），跟用量條同一個函式
+                calls = _t[0] if _t else None
                 if calls is not None and calls >= 0.9 * wa.NVIDIA_DAILY_BUDGET and not warned_day.get(time.strftime("%m%d")):
                     warned_day[time.strftime("%m%d")] = True
                     hub.room("g1004308131170").notice(f"⏱ 輝達今天已呼叫模型 {calls} 次（預算 {wa.NVIDIA_DAILY_BUDGET}），快到上限，派工暫停。")
