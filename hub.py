@@ -1251,13 +1251,16 @@ def usage_summary():
         b = json.load(open(paths.get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
         now = datetime.datetime.now(datetime.timezone.utc)
         used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
+        import window_agent as _wa
+        oc = _wa.nvidia_calls_today() or 0            # 11-19 06:56：輝達搬進 OpenCode 後的呼叫不經 worker，要加上去
+        used += oc
         elapsed = (now.hour * 3600 + now.minute * 60 + now.second) / 864
         pct = used / 9
         state = "正常" if elapsed < 3 or pct <= elapsed else "略快" if pct <= elapsed * 1.2 else "超速"
         out.append({"name": "輝達", "windows": [{"label": "今天", "used": round(pct, 1), "elapsed": round(elapsed, 1),
                                                 "state": state, "resets": "08:00", "empty_at": "",
                                                 "count": f"{used}/900"}],
-                    "verdict": f"今天 {used}/900 次（台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
+                    "verdict": f"今天 {used}/900 次（含 OpenCode {oc}；台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "輝達", "missing": True})
     try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）
@@ -1722,6 +1725,14 @@ if __name__ == "__main__":
             time.sleep(1800)
             try:
                 calls = wa.nvidia_calls_today()               # 使用者 06:50：輝達算呼叫次數，派工要編次數預算
+                try:  # 加上 worker（ask.py 等）同一天的次數，跟聊天室用量條同一個 900
+                    import datetime as _dt
+                    _p = json.load(open(r"H:\Agent共用i-call\paths.json", encoding="utf-8"))
+                    _b = json.load(open(_p.get("budget", r"D:\Codex用\work\openrouter-workerudget.json"), encoding="utf-8"))
+                    if calls is not None and _b.get("day") == _dt.datetime.now(_dt.timezone.utc).date().isoformat():
+                        calls += _b.get("attempts", 0)
+                except Exception:
+                    pass
                 if calls is not None and calls >= 0.9 * wa.NVIDIA_DAILY_BUDGET and not warned_day.get(time.strftime("%m%d")):
                     warned_day[time.strftime("%m%d")] = True
                     hub.room("g1004308131170").notice(f"⏱ 輝達今天已呼叫模型 {calls} 次（預算 {wa.NVIDIA_DAILY_BUDGET}），快到上限，派工暫停。")
