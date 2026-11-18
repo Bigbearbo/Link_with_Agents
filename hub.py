@@ -579,7 +579,10 @@ class Room:
                 rules.append(rule)
         agent.denials = []
         with self.hub.lock:
-            always_ok = all(isinstance(r, list) and r[:1] == ["寫入"] for r in rules)
+            # DeepSeek 03:10：只有專案裡的資料夾可以「以後都允許」；共用區根目錄、課程等全隊設定一律每次問
+            proj = os.path.realpath(r"H:\Agent共用\專案").lower() + os.sep
+            always_ok = all(isinstance(r, list) and r[:1] == ["寫入"] and os.path.realpath(r[1]).lower().startswith(proj)
+                            for r in rules)
             self.approval = {"agent": agent.name, "items": items, "rules": rules, "id": secrets.token_hex(4),
                              "always_ok": always_ok}
             self.hub.save()
@@ -599,7 +602,7 @@ class Room:
         writes = [r[1] for r in ap["rules"] if isinstance(r, list) and r[:1] == ["寫入"]]
         if allow and writes:
             if always and ap.get("always_ok"):
-                grant_write(agent.name, writes)  # 使用者 11-19 03:07：「允許一次，以後這類都行」
+                grant_write(agent.name, writes, self.name)  # 使用者 11-19 03:07：「允許一次，以後這類都行」
                 self.add("使用者", f"（只問 {agent.name}）以後這些資料夾你都可以寫：{items}。請繼續剛才的工作。", src)
             else:
                 agent.next_extra_write = writes
@@ -1266,7 +1269,7 @@ def usage_summary():
     return {"agents": out, "time": time.strftime("%H:%M")}
 
 
-def grant_write(name, dirs):
+def grant_write(name, dirs, room=""):
     """使用者按「以後都允許」：把資料夾記進 agent-權限.json（agent 自己改不到這個檔）。"""
     p = os.path.join(HERE, "agent-權限.json")
     try:
@@ -1274,9 +1277,11 @@ def grant_write(name, dirs):
     except (OSError, ValueError):
         g = {}
     cur = g.setdefault(name, {}).setdefault("可寫", [])
+    log_ = g[name].setdefault("紀錄", [])  # DeepSeek 03:10：誰、何時、哪個房間放的權，查得到；撤銷＝從「可寫」刪掉那行（請 Claude 做）
     for d in dirs:
         if d not in cur:
             cur.append(d)
+            log_.append({"資料夾": d, "時間": time.strftime("%Y-%m-%d %H:%M"), "房間": room, "由": "使用者按以後都允許"})
     g[name]["更新"] = time.strftime("%Y-%m-%d %H:%M")
     with open(p, "w", encoding="utf-8") as f:
         json.dump(g, f, ensure_ascii=False, indent=1)

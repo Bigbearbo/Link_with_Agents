@@ -68,7 +68,12 @@ def granted_dirs(extra=()):
 
 def _in_work(name, extra=()):
     p = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
-    for root in (HOME, SHARED_OUT, *granted_dirs(extra)):
+    for root in (HOME, SHARED_OUT):
+        if p.lower().startswith(os.path.realpath(root).lower() + os.sep):
+            return p
+    if os.path.basename(p).lower() == "owner.txt" and p not in [os.path.join(d, "OWNER.txt") for d in extra]:
+        return None  # 別人的 OWNER.txt：就算資料夾允許過，也要每次問
+    for root in granted_dirs(extra):
         if p.lower().startswith(os.path.realpath(root).lower() + os.sep):
             return p
     return None
