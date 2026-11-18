@@ -570,26 +570,41 @@ class Room:
     def request_approval(self, agent):
         items, rules = [], []
         for d in agent.denials[:5]:
-            text, rule = rt.describe_denial(d)
+            if isinstance(d, dict) and d.get("kind") == "寫入":  # DeepSeek 等：想寫共用區的某個資料夾
+                text, rule = f"寫入資料夾 {d['dir']}", ["寫入", d["dir"]]
+            else:
+                text, rule = rt.describe_denial(d)
             if rule not in rules:
                 items.append(text)
                 rules.append(rule)
         agent.denials = []
         with self.hub.lock:
-            self.approval = {"agent": agent.name, "items": items, "rules": rules, "id": secrets.token_hex(4)}
+            always_ok = all(isinstance(r, list) and r[:1] == ["寫入"] for r in rules)
+            self.approval = {"agent": agent.name, "items": items, "rules": rules, "id": secrets.token_hex(4),
+                             "always_ok": always_ok}
             self.hub.save()
         body = "\n".join(f"• {t}" for t in items)
-        self.notice(f"🔐 {agent.name} 請求同意：\n{body}\n\n允許一次請按「允許」或傳 /allow，拒絕請按「拒絕」或傳 /deny。")
+        self.notice(f"🔐 {agent.name} 請求同意：\n{body}\n\n允許一次請按「允許一次」或傳 /allow"
+                    + ("；這個資料夾以後都可以寫，請按「以後都允許」或傳 /always" if always_ok else "")
+                    + "；拒絕請按「拒絕」或傳 /deny。")
 
-    def answer_approval(self, allow, src):
+    def answer_approval(self, allow, src, always=False):
         with self.hub.lock:
             ap, self.approval = self.approval, None
             self.hub.save()
         if not ap:
             return False
-        agent = self.claude if ap["agent"] == "Claude" else self.codex
+        agent = {a.name: a for a in self.agents()}.get(ap["agent"]) or (self.claude if ap["agent"] == "Claude" else self.codex)
         items = "、".join(ap["items"])
-        if allow:
+        writes = [r[1] for r in ap["rules"] if isinstance(r, list) and r[:1] == ["寫入"]]
+        if allow and writes:
+            if always and ap.get("always_ok"):
+                grant_write(agent.name, writes)  # 使用者 11-19 03:07：「允許一次，以後這類都行」
+                self.add("使用者", f"（只問 {agent.name}）以後這些資料夾你都可以寫：{items}。請繼續剛才的工作。", src)
+            else:
+                agent.next_extra_write = writes
+                self.add("使用者", f"（只問 {agent.name}）我允許你這一次：{items}。請繼續剛才的工作。", src)
+        elif allow:
             agent.extra_allow = list(ap["rules"])
             self.add("使用者", f"（只問 {agent.name}）我允許你這一次執行：{items}。請繼續剛才的工作。", src)
         else:
@@ -864,8 +879,8 @@ class Hub:
         elif word == "/new":
             if not room.new_chat():
                 self.bot.send(cid, "⚙️ 還在回答中，先 /stop 再開新討論。")
-        elif word in ("/allow", "/deny"):
-            if not room.answer_approval(word == "/allow", "Telegram"):
+        elif word in ("/allow", "/deny", "/always"):
+            if not room.answer_approval(word != "/deny", "Telegram", word == "/always"):
                 self.bot.send(cid, "⚙️ 這個房間目前沒有待同意的請求。")
         elif word == "/write":
             if arg.lower() in ("on", "off", "開", "關"):
@@ -1001,7 +1016,7 @@ def make_handler(hub):
             if p == "/api/new":
                 return self._json({"ok": room.new_chat()})
             if p == "/api/approve":
-                return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦")})
+                return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦", bool(data.get("always")))})
             if p == "/api/agent_status":
                 # 視窗 agent：{"room", "text": "正在讀單…"} 顯示工作中＋這一步；{"done": true} 收掉
                 who = agent or (data.get("who") if data.get("who") in ("Gemini", "輝達") else None)
@@ -1249,6 +1264,23 @@ def usage_summary():
     except Exception:
         out.append({"name": "DeepSeek", "missing": True})
     return {"agents": out, "time": time.strftime("%H:%M")}
+
+
+def grant_write(name, dirs):
+    """使用者按「以後都允許」：把資料夾記進 agent-權限.json（agent 自己改不到這個檔）。"""
+    p = os.path.join(HERE, "agent-權限.json")
+    try:
+        g = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        g = {}
+    cur = g.setdefault(name, {}).setdefault("可寫", [])
+    for d in dirs:
+        if d not in cur:
+            cur.append(d)
+    g[name]["更新"] = time.strftime("%Y-%m-%d %H:%M")
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(g, f, ensure_ascii=False, indent=1)
+    log(f"權限：{name} 以後可寫 {dirs}")
 
 
 def agent_keys():

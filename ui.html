@@ -176,7 +176,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
   <div id="approval" class="approval" hidden>
     <div class="ap-title">🔐 <b id="apWho"></b> 想做一件跟安全有關的事，需要你同意：</div>
     <ul id="apItems"></ul>
-    <div class="ap-btns"><button class="allow" id="apAllow">允許一次</button><button id="apDeny">拒絕</button></div>
+    <div class="ap-btns"><button class="allow" id="apAllow">允許一次</button><button class="allow" id="apAlways" hidden title="這個資料夾以後都可以寫，不再問">以後都允許</button><button id="apDeny">拒絕</button></div>
   </div>
   <div class="tools">
     <span class="seg" id="target">
@@ -420,6 +420,7 @@ async function poll(){
         ap.dataset.id = d.approval.id;
         $("#apWho").textContent = d.approval.agent;
         $("#apItems").innerHTML = d.approval.items.map(t => `<li>${esc(t)}</li>`).join("");
+        $("#apAlways").hidden = !d.approval.always_ok;
       }
       ap.hidden = false;
     } else { ap.hidden = true; ap.dataset.id = ""; }
@@ -486,6 +487,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 $("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
+$("#apAlways").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, always: true, room}); };
 $("#apDeny").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: false, room}); };
 $("#order").onclick = () => api("/api/order", {room});
 $("#more").onclick = () => api("/api/more", {n: +$("#rounds").value, room});

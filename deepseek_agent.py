@@ -53,18 +53,40 @@ GUIDE = """你是「DeepSeek」（DeepSeek V4.1 Flash，經 OpenRouter 付費額
 TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式)】[ \t]*([^【\n]*)")
 
 
-def _in_work(name):
+GRANTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-權限.json")  # 使用者按「以後都允許」存在這（agent 自己改不到）
+SHARED_ROOT = r"H:\Agent共用"
+NEVER = ("secret", "token", "tg_state", ".dpapi", "web-key", "credential", "password", "導師助手", "待辦.json")
+
+
+def granted_dirs(extra=()):
+    try:
+        g = json.load(open(GRANTS, encoding="utf-8")).get("DeepSeek", {}).get("可寫", [])
+    except (OSError, ValueError):
+        g = []
+    return list(g) + list(extra)
+
+
+def _in_work(name, extra=()):
     p = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
-    for root in (HOME, SHARED_OUT):
+    for root in (HOME, SHARED_OUT, *granted_dirs(extra)):
         if p.lower().startswith(os.path.realpath(root).lower() + os.sep):
             return p
     return None
 
 
-def write_file(name, content, append=False):
-    p = _in_work(name)
+def write_file(name, content, append=False, agent=None):
+    p = _in_work(name, getattr(agent, "extra_write", ()))
     if not p:
-        return f"不能寫：{name}（只能寫 H:\\DeepSeek用 和 H:\\Agent共用\\DeepSeek 裡）"
+        q = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
+        if (agent is not None and q.lower().startswith(os.path.realpath(SHARED_ROOT).lower() + os.sep)
+                and not any(b in q.lower() for b in NEVER)):
+            # 共用區其他地方：記下來，這輪結束後請使用者同意（允許一次／以後都允許這個資料夾）
+            d = os.path.dirname(q)
+            agent.denials = getattr(agent, "denials", []) or []
+            if not any(x.get("dir") == d for x in agent.denials if isinstance(x, dict)):
+                agent.denials.append({"kind": "寫入", "dir": d})
+            return f"還不能寫：{q}。已向使用者申請寫入「{d}」，同意後下一輪再寫一次。"
+        return f"不能寫：{name}（只能寫 H:\\DeepSeek用、H:\\Agent共用\\DeepSeek，和使用者允許過的資料夾）"
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "a" if append else "w", encoding="utf-8") as f:
         f.write(content + "\n")
@@ -176,6 +198,8 @@ class DeepSeekAgent(rt.Agent):
 
     def run(self, prompt):
         self.steps, self.started, self.said = [], time.time(), []
+        self.extra_write = getattr(self, "next_extra_write", [])  # 「允許一次」只給這一輪
+        self.next_extra_write = []
         transcript = getattr(self, "_transcript", [])
         messages = [{"role": "user", "content": prompt}]
         auto = "自主工作時段" in prompt
@@ -198,7 +222,11 @@ class DeepSeekAgent(rt.Agent):
             results = []
             for tag, name, content in writes:
                 self.step(f"{tag}：{name[:40]}")
-                results.append(f"【{tag}】{name}（已執行）\n{write_file(name, content, append=(tag == '續寫'))}")
+                try:  # 11-19 03:07：檔名寫壞（WinError 123）曾讓整輪失敗；改成只回報這一筆
+                    res = write_file(name, content, append=(tag == '續寫'), agent=self)
+                except Exception as e:
+                    res = f"寫檔出錯：{type(e).__name__} {e}（檔名要是單純路徑，不要加反引號或說明文字）"
+                results.append(f"【{tag}】{name}（已執行）\n{res}")
             if cut:
                 results.append("⚠ 你的回覆太長被截斷了：上面這個檔只存到截斷處。請用【續寫】同一個檔名接著寫，最後【/續寫】收尾。")
             for kind, arg in tools:
