@@ -1590,6 +1590,64 @@ if __name__ == "__main__":
             time.sleep(3)
     threading.Thread(target=send_box_loop, daemon=True).start()
 
+    def process_alert_loop():
+        """過程層自動提醒（使用者 03:25「跑得慢、做得怪也算檢查」；待辦 #18）。只提醒、不介入，同一件事只講一次：
+        ① 工作中超過 15 分鐘沒有新步驟（中樞代跑的 agent 和視窗 agent 都算）
+        ② 視窗 agent 同一張待回單叫醒到上限（3 次）還沒回
+        ③ DeepSeek 單次呼叫花費超過歷史 P95 的 3 倍（搜尋本來就貴，另計）"""
+        import window_agent as wa
+        sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
+        STALL = 840  # 比視窗狀態自動消失（900 秒）早一點，才來得及提醒
+        seen_steps, warned = {}, set()
+        ledger = r"H:\Agent共用\ai-call\deepseek\花費.jsonl"
+        try:
+            ledger_pos = os.path.getsize(ledger)
+        except OSError:
+            ledger_pos = 0
+        while True:
+            now = time.time()
+            try:
+                for room in list(hub.rooms.values()):
+                    cur = [(a.name, tuple(a.steps)) for a in room.agents() if a.busy]
+                    cur += [(n, tuple(s["steps"])) for n, s in getattr(room, "window_status", {}).items()]
+                    for name, steps in cur:
+                        k = (room.id, name)
+                        if seen_steps.get(k, (None,))[0] != steps:
+                            seen_steps[k] = (steps, now)
+                        elif now - seen_steps[k][1] > STALL and (k, steps) not in warned:
+                            warned.add((k, steps))
+                            room.notice(f"⏱ 提醒：{name} 工作中已 {int((now - seen_steps[k][1]) // 60)} 分鐘沒有新步驟"
+                                        f"（停在「{(steps[-1] if steps else '開始')[:40]}」）。可能卡住或在跑長工作，要不要看一下由你決定。")
+                    active = {n for n, _ in cur}
+                    for k in [k for k in seen_steps if k[0] == room.id and k[1] not in active]:
+                        seen_steps.pop(k, None)
+                for (name, rid), n in list(wa.NUDGE_COUNT.items()):
+                    if n >= wa.NUDGE_MAX and ("nudge", name, rid) not in warned:
+                        warned.add(("nudge", name, rid))
+                        r = hub.rooms.get(rid) or hub.room("g1004308131170")
+                        r.notice(f"⏱ 提醒：{name} 這張待回單已經叫醒 {n} 次還沒回，不再自動叫。可能卡在視窗的確認框，或視窗沒開。")
+                    elif n < wa.NUDGE_MAX:
+                        warned.discard(("nudge", name, rid))
+                size = os.path.getsize(ledger) if os.path.exists(ledger) else 0
+                if size > ledger_pos:
+                    with open(ledger, encoding="utf-8") as f:
+                        f.seek(ledger_pos)
+                        new = [json.loads(l) for l in f.read().splitlines() if l.strip()]
+                    ledger_pos = size
+                    hist = sorted(json.loads(l).get("cost", 0) for l in open(ledger, encoding="utf-8")
+                                  if l.strip() and "-搜尋" not in l)
+                    if len(hist) >= 20:
+                        p95 = hist[int(len(hist) * 0.95) - 1]
+                        for r_ in new:
+                            if "-搜尋" not in str(r_.get("who")) and r_.get("cost", 0) > max(3 * p95, 0.005):
+                                hub.room("g1004308131170").notice(
+                                    f"⏱ 提醒：DeepSeek 一次呼叫花了 ${r_['cost']:.4f}，是平常（P95 ${p95:.4f}）的 {r_['cost'] / p95:.0f} 倍"
+                                    f"（輸入 {r_.get('in')} token）。可能讀了大檔或對話太長。")
+            except Exception as e:
+                log(f"過程提醒失敗：{type(e).__name__} {e}")
+            time.sleep(60)
+    threading.Thread(target=process_alert_loop, daemon=True).start()
+
     def deepseek_audit_loop():
         """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
         sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
