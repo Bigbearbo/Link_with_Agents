@@ -1728,6 +1728,21 @@ if __name__ == "__main__":
             time.sleep(600)
     threading.Thread(target=shared_guard_loop, daemon=True).start()
 
+    def deps_done(t, items):
+        """待辦的「依賴」欄（例：[6, 21] 或 "6,21"）：前置項目都完成才派（使用者 07:20：手搓＋訓練都吃題目設計，目標彼此連動）。"""
+        d = t.get("依賴") or []
+        ids = [int(x) for x in re.findall(r"\d+", str(d))] if not isinstance(d, list) else [int(x) for x in d]
+        st = {x.get("id"): x.get("狀態") for x in items}
+        return all(st.get(i) == "完成" for i in ids)
+
+    def cpu_ok(t):
+        """待辦的「資源」欄寫 CPU（訓練、窮舉這類吃 CPU 的）：有人在用就先不派（使用者 07:20：訓練卡 CPU 速度）。
+        佔用的人在 H:\\Agent共用\\待辦\\CPU使用中.txt 寫一行「誰｜做什麼｜預計到幾點」，做完刪掉；超過 6 小時的當作忘了刪。"""
+        if "CPU" not in str(t.get("資源", "")).upper():
+            return True
+        p = r"H:\Agent共用\待辦\CPU使用中.txt"
+        return not (os.path.exists(p) and time.time() - os.path.getmtime(p) < 6 * 3600)
+
     def dispatch_loop():
         """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。
         每 30 分鐘：輝達視窗開著、沒在跑、沒有待回單 → 從待辦挑一件它能做的（負責＝輝達 或 誰能做 含輝達；高＞中＞低；
@@ -1754,7 +1769,8 @@ if __name__ == "__main__":
                 items = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
                 cand = [t for t in items if t.get("狀態") not in ("完成", "等", "等待")
                         and not str(t.get("標題", "")).startswith("待討論")
-                        and (t.get("負責") == name or name in str(t.get("誰能做", "")))]
+                        and (t.get("負責") == name or name in str(t.get("誰能做", "")))
+                        and deps_done(t, items) and cpu_ok(t)]
                 if not cand:
                     continue
                 cand.sort(key=lambda t: (rank.get(t.get("優先"), 3), last.get(t["id"], 0)))
