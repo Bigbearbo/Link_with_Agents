@@ -307,6 +307,19 @@ AGY_EXE = r"H:\Agent共用\ai-call\tools\antigravity-cli\bin\agy.exe"
 GEMINI_MODEL = "gemini-4-hydrogen-high"
 GEMINI_WORK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gemini-work")  # 提示檔與權限設定（Gemini 只能讀）
 GEMINI_HOME = r"H:\Gemini用"  # Gemini 自己的資料夾：唯一可以寫的地方
+def work_memory(name, seen):
+    """點名時附「你的主項」一行（三方 11:44 同意）；自主時段中樞已附完整版，這裡就不重複。規則：H:\\Agent共用\\記憶\\規則.json"""
+    if "【工作記憶" in seen[-6000:]:
+        return ""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("注入", r"H:\Agent共用\記憶\注入.py")
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        return m.build(name, "點名")
+    except Exception as e:
+        return f"\n\n【工作記憶載入失敗：{type(e).__name__}】"
+
+
 GEMINI_ROLE = (
     "【你的身分】你是 Gemini（Google），討論裡的第三位 AI 參與者（另兩位是 Claude、Codex）。"
     "權限：你自己的資料夾 H:\Gemini用 可以讀寫（筆記、草稿、分析結果放這裡）；"
@@ -337,6 +350,7 @@ class GeminiAgent(Agent):
 
     def build_prompt(self, transcript):
         p = super().build_prompt(transcript)
+        p += work_memory("Gemini", p)
         return (GEMINI_ROLE + p) if self.session is None else p
 
     def run(self, prompt):
@@ -476,7 +490,9 @@ class NvidiaAgent(Agent):
                 "這是你自己決定的：如果覺得內容太多讓你抓不到重點、或太少缺背景，可以在回覆最後一行寫"
                 "「【載入設定】最近幾則=30 字數上限=20000 略過系統通知=是」（只寫要改的項目），下一輪生效；"
                 "範圍：最近幾則 5–150、字數上限 2000–120000。要跟 Claude 協調（例如載入規則、要它幫你讀檔摘要）就在發言裡寫 @Claude，它會回你。\n\n")
-        return NVIDIA_ROLE + rule + "以下是最近的對話：\n\n" + "\n\n".join(parts) + "\n\n現在輪到你（輝達）發言。"
+        body = "\n\n".join(parts)
+        return (NVIDIA_ROLE + rule + "以下是最近的對話：\n\n" + body + work_memory("輝達", body)
+                + "\n\n現在輪到你（輝達）發言。")
 
     def run(self, prompt):
         os.makedirs(os.path.join(NVIDIA_HOME, "jobs"), exist_ok=True)
