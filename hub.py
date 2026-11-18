@@ -1744,7 +1744,8 @@ if __name__ == "__main__":
                 if calls is not None and calls >= 0.9 * wa.NVIDIA_DAILY_BUDGET and not warned_day.get(time.strftime("%m%d")):
                     warned_day[time.strftime("%m%d")] = True
                     hub.room("g1004308131170").notice(f"⏱ 輝達今天已呼叫模型 {calls} 次（預算 {wa.NVIDIA_DAILY_BUDGET}），快到上限，派工暫停。")
-                if calls is not None and calls >= 0.7 * wa.NVIDIA_DAILY_BUDGET:
+                cap, _rel, _left = wa.nvidia_dispatch_limit()  # 平時 70%；最後 4 小時 900＋分段還回的保留額（使用者 07:15）
+                if calls is not None and calls >= cap:
                     continue
                 if wa.opencode_busy(name) is not False:      # None＝視窗沒開；True＝在忙
                     continue

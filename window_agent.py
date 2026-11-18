@@ -108,6 +108,25 @@ def nvidia_calls_today():
     return n
 
 
+USER_RESERVE = 100   # 每天保留給使用者的 100 次（OpenRouter 免費 1000 次＝輝達 900＋使用者 100）
+
+
+def nvidia_dispatch_limit():
+    """派工員今天最多用到幾次（使用者 11-19 07:15：保留給使用者的 100 次，最後 4 小時用公式還給輝達）。
+    換日在台北 08:00。離換日 >4 小時：只派到 900 的 70%（留給人找它）。
+    最後 4 小時：900 全開，再加上分段釋放的保留額——剩 4h 還 10%、3h 累計 30%、2h 累計 60%、1h 累計 80%；
+    最後 20%（20 次）一直留給使用者，到換日都不還。回傳 (上限, 已釋放保留次數, 距換日小時)。"""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    nxt = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    left = (nxt - now).total_seconds() / 3600
+    if left > 4:
+        return int(NVIDIA_DAILY_BUDGET * 0.7), 0, left
+    frac = 0.1 if left > 3 else 0.3 if left > 2 else 0.6 if left > 1 else 0.8
+    rel = int(USER_RESERVE * frac)
+    return NVIDIA_DAILY_BUDGET + rel, rel, left
+
+
 def nvidia_total_today():
     """輝達今天（UTC 日，台北 08:00 換日）的免費模型呼叫總數＝worker（ask.py 等）＋OpenCode。
     用量條和派工員都只呼叫這一個（使用者 06:58：一份來源，不要兩個地方各算）。回傳 (合計, worker, OpenCode)；讀不到回 None。"""
