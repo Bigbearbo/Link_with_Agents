@@ -1048,6 +1048,7 @@ def make_handler(hub):
                 if app_ai:  # 只認行首 @點名（有接力上限），不觸發 Claude／Codex 自動輪流
                     threading.Thread(target=room.auto_next, args=(None, text, app_ai), daemon=True).start()
                 if agent:  # 視窗 agent 行首 @誰 照常點名（有接力上限）；它自己不會被叫
+                    close_ticket(agent, room.id)  # Gemini 03:31：它在這房間發言了＝這張待回單由中樞銷掉，不靠它手動移
                     threading.Thread(target=room.auto_next, args=({"Gemini": room.gemini, "輝達": room.nvidia}[agent], text), daemon=True).start()
                 room.auto_left = room.auto
                 with hub.lock:
@@ -1284,6 +1285,25 @@ def perm_log(rec):
         render_perm_page()
     except Exception as e:
         log(f"權限總覽產生失敗：{type(e).__name__} {e}")
+
+
+def close_ticket(name, room_id):
+    """視窗 agent 在某房間發言後，把它的 待回\\<房間>.md（含它自己做的 *_copy.md）移到 已處理\\。"""
+    import window_agent as wa
+    home = wa.HOMES.get(name)
+    if not home:
+        return
+    box = os.path.join(home, "群組", "待回")
+    done = os.path.join(box, "已處理")
+    for fn in (f"{room_id}.md", f"{room_id}_copy.md"):
+        p = os.path.join(box, fn)
+        if os.path.exists(p):
+            try:
+                os.makedirs(done, exist_ok=True)
+                os.replace(p, os.path.join(done, time.strftime("%m%d-%H%M%S-") + fn))
+            except OSError as e:
+                log(f"銷單失敗 {name} {fn}：{e}")
+    wa.NUDGE_COUNT.pop((name, room_id), None)
 
 
 def window_allow_lists():
