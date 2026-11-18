@@ -95,7 +95,7 @@ def opencode_busy(name):
         return None
 
 
-def nudge(name, room_id, again=False):
+def nudge(name, room_id, again=False, custom=None):
     """叫醒住在 OpenCode 視窗的 agent：往它的輸入框塞一句話並送出（使用者 11-19 要的通知功能）。
     agy（Gemini）沒有這種控制介面，只留單。回傳結果文字，不丟例外。"""
     import base64, json, urllib.request
@@ -107,7 +107,7 @@ def nudge(name, room_id, again=False):
         c = json.load(open(f, encoding="utf-8"))
         auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
         url = f"http://127.0.0.1:{c['port']}"
-        text = (f"【中樞通知】房間 {room_id}{'（主討論）' if room_id == 'main' else ''} 有人找你：用 群組.py 看 {room_id}（只給你沒看過的新訊息），"
+        text = custom or (f"【中樞通知】房間 {room_id}{'（主討論）' if room_id == 'main' else ''} 有人找你：用 群組.py 看 {room_id}（只給你沒看過的新訊息），"
                 f"需要你回的才回，**回覆要發在同一個房間 {room_id}**（發送箱 room 寫 {room_id}）；中樞會自動銷單。"
                 + ("這張單之前就在了、可能很長，不用整張重讀。" if again else ""))
         for path, body in (("/tui/append-prompt", {"text": text}), ("/tui/submit-prompt", {})):

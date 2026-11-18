@@ -1710,6 +1710,42 @@ if __name__ == "__main__":
             time.sleep(600)
     threading.Thread(target=shared_guard_loop, daemon=True).start()
 
+    def dispatch_loop():
+        """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。
+        每 30 分鐘：輝達視窗開著、沒在跑、沒有待回單 → 從待辦挑一件它能做的（負責＝輝達 或 誰能做 含輝達；高＞中＞低；
+        跳過完成／等待／待討論），用叫醒通道送「請做一小步」。只派輝達（免費）；其他人之後再加。"""
+        import window_agent as wa
+        name, box = "輝達", r"H:\免費模型用\群組\待回"
+        rank = {"高": 0, "中": 1, "低": 2}
+        last = {}
+        while True:
+            time.sleep(1800)
+            try:
+                if wa.opencode_busy(name) is not False:      # None＝視窗沒開；True＝在忙
+                    continue
+                if any(f.endswith(".md") for f in os.listdir(box)):
+                    continue                                  # 還有人找它，先回人
+                items = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+                cand = [t for t in items if t.get("狀態") not in ("完成", "等", "等待")
+                        and not str(t.get("標題", "")).startswith("待討論")
+                        and (t.get("負責") == name or name in str(t.get("誰能做", "")))]
+                if not cand:
+                    continue
+                cand.sort(key=lambda t: (rank.get(t.get("優先"), 3), last.get(t["id"], 0)))
+                t = cand[0]
+                last[t["id"]] = time.time()
+                text = (f"【中樞派工】你現在沒事，請做待辦 #{t['id']} 的一小步（30 分鐘內做得完的量）：{t.get('標題', '')}。"
+                        f"怎麼驗：{t.get('怎麼驗', '照接手卡')}。開始前 `PY H:\\Agent共用\\待辦\\待辦.py 做 {t['id']} \"輝達：做哪一步\"`；"
+                        "做完把結果（指令＋輸出或檔名）用發送箱貼到互相討論群（room g1004308131170）。卡住就寫「@Claude 請幫我：」。")
+                r = wa.nudge(name, "g1004308131170", custom=text)
+                with open(os.path.join(HERE, "logs", "派工.log"), "a", encoding="utf-8") as f:
+                    f.write(f"{time.strftime('%m-%d %H:%M')} {name} #{t['id']} {r}\n")
+                if r == "已送進視窗":
+                    hub.room("g1004308131170").notice(f"📋 派工：輝達閒著，派待辦 #{t['id']}（{str(t.get('標題', ''))[:40]}）的一小步。")
+            except Exception as e:
+                log(f"派工失敗：{type(e).__name__} {e}")
+    threading.Thread(target=dispatch_loop, daemon=True).start()
+
     def deepseek_audit_loop():
         """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
         sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
