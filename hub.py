@@ -15,6 +15,7 @@ import re
 import secrets
 import socket
 import sys
+import subprocess
 import threading
 import time
 import urllib.error
@@ -1673,6 +1674,11 @@ if __name__ == "__main__":
                 last = w
             except Exception as e:
                 log(f"DeepSeek 對帳失敗：{type(e).__name__} {e}")
+            try:  # 11-19 04:2x：Gemini 搬進視窗後用量條沒人更新，看錯以為還有 → Argon 用到 99%。/usage 不呼叫模型、不花額度
+                subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', r'H:\Agent共用i-call\gemini_usage.py'],
+                               capture_output=True, timeout=180, creationflags=0x08000000 if os.name == 'nt' else 0)
+            except Exception as e:
+                log(f'Gemini 用量更新失敗：{type(e).__name__} {e}')
             try:
                 render_perm_page()  # 每小時也刷新權限總覽（視窗裡按的允許會反映出來）
             except Exception as e:
