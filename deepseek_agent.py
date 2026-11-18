@@ -201,7 +201,13 @@ class DeepSeekAgent(rt.Agent):
                 + rt.work_memory("DeepSeek", body) + "\n\n現在輪到你（DeepSeek）。")
 
     def _call(self, messages):
-        text, cost, mid = _ds().chat(messages, model="flash", max_tokens=8192, who="DeepSeek")  # 11-19 02:03 finish=length 空白 → 加大
+        try:
+            text, cost, mid = _ds().chat(messages, model="flash", max_tokens=8192, who="DeepSeek")  # 11-19 02:03 finish=length 空白 → 加大
+        except RuntimeError as e:
+            if "空白" not in str(e):
+                raise
+            self.step("回了空白，重試一次")  # 11-19 03:30 finish=stop 也會空白（供應商偶發）；重試一次，再空白才算失敗
+            text, cost, mid = _ds().chat(messages, model="flash", max_tokens=8192, who="DeepSeek")
         self.last_model = mid
         self.step(f"花 ${cost:.4f}")
         return text
