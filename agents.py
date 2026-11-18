@@ -398,16 +398,32 @@ def gemini_model():
         chosen = first if GEMINI_ALLOWED.fullmatch(first) else GEMINI_MODEL
     except OSError:
         chosen = GEMINI_MODEL
-    # 額度保護（使用者 11-17：谷歌額度一乾就只剩最弱模型）：Hydrogen 和 Flash 共用同一池，
-    # 5 小時用超過 70% 或週額度超速 → 強制降到 flash；週用超過 85% → flash-low。Argon 另計不受限。
+    # 額度保護（使用者 11-17：谷歌額度一乾就只剩最弱模型）：
+    # Hydrogen 與 Flash 共用同一池，採多段平滑降檔而非只靠最後硬切；Argon 獨立計算但高用量時也同步降檔。
     try:
         u = json.load(open(r"H:\Agent共用\gemini-用量.json", encoding="utf-8"))
         h5, wk = u.get("five_hour") or {}, u.get("seven_day") or {}
-        if "argon" not in chosen:
-            if wk.get("used", 0) >= 85:
-                return "gemini-3.8-flash-low"
-            if h5.get("used", 0) >= 70 or wk.get("state") == "超速":
-                return chosen if "flash" in chosen else "gemini-3.8-flash-high"
+        h5_u, wk_u = float(h5.get("used") or 0), float(wk.get("used") or 0)
+        h5_st, wk_st = h5.get("state") or "", wk.get("state") or ""
+        if "argon" in chosen:
+            ar = next(iter(((u.get("其他組") or {}).get("Gemini 4 Argon") or {}).values()), {})
+            ar_u = float(ar.get("used") or 0)
+            if ar_u >= 90 or ar.get("state") == "超速":
+                return "gemini-4-argon-low"
+            if ar_u >= 75:
+                return "gemini-4-argon-low" if chosen.endswith("-low") else "gemini-4-argon-medium"
+            return chosen
+        if wk_u >= 85 or h5_u >= 85:
+            return "gemini-3.8-flash-low"
+        if wk_u >= 75 or h5_u >= 70 or wk_st == "超速":
+            return chosen if chosen in ("gemini-3.8-flash-low", "gemini-3.8-flash-medium") else "gemini-3.8-flash-medium"
+        if wk_u >= 60 or h5_u >= 50 or h5_st == "超速" or wk_st == "略快":
+            if chosen == "gemini-4-hydrogen-xhigh":
+                return "gemini-4-hydrogen-medium"
+            if chosen == "gemini-4-hydrogen-high":
+                return "gemini-4-hydrogen-low"
+            if chosen == "gemini-3.8-flash-high":
+                return "gemini-3.8-flash-medium"
     except Exception:
         pass
     return chosen

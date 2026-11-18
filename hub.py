@@ -43,7 +43,7 @@ SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 v
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
-           "/claude、/codex、/gemini、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n"
+           "/claude 問題、/codex 問題、/gemini 問題、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n"
            "開頭連續點名＝串接：@Gemini @輝達 問題（依序回答）；@all 或 @大家＝四位都回\n/more 2：讓他們再討論 2 輪\n"
            "/note 文字：只記下，不叫他們（下次叫時會一起看到）\n"
            "/order 換誰先講　/stop 中斷　/new 這個房間開新討論\n/write on 或 off：開關寫檔權限\n"
@@ -975,22 +975,39 @@ AUTO_PROMPT = ("⏰ 自主工作時段：請讀你的目標檔 {goal}，做「�
                "沒驗證的不要說成結論；全部完成或卡住就把目標檔第一行改成「狀態：暫停」並說明原因；需要權限或執行環境才 @Claude。")
 
 
-def _auto_budget_ok(kind):
-    """用量照時間比例：用得比時間快就跳過這一輪。"""
+def _auto_pace(kind, base_gap):
+    """自主時段動態降速：回傳 (是否執行, 建議間隔秒, 步數上限)。接近額度先拉長間隔與減步數，滿載才停。"""
     try:
         if kind == "nvidia":
             import datetime
+            import nvidia_agent as na
             b = json.load(open(json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))["budget"],
                                encoding="utf-8"))
             now = datetime.datetime.now(datetime.timezone.utc)
-            used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
-            frac = (now.hour * 3600 + now.minute * 60) / 86400
-            return used < 900 * max(frac, 0.05) * 0.8  # 留兩成給其他人與點名
+            all_used = b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0
+            auto_used = na._today_calls("auto")
+            frac = max((now.hour * 3600 + now.minute * 60) / 86400, 0.05)
+            if all_used >= 900 * frac * 0.9 or auto_used >= na.AUTO_DAILY:
+                return False, base_gap, 0
+            ratio = max(all_used / (900 * 0.8 * frac), auto_used / (na.AUTO_DAILY * frac))
+            if ratio > 1.15:
+                return True, min(240 * 60, int(base_gap * 2.5)), 4
+            if ratio > 0.85:
+                return True, min(240 * 60, int(base_gap * 1.5)), 8
+            return True, base_gap, 12
         u = json.load(open(r"H:\Agent共用\gemini-用量.json", encoding="utf-8"))
         h5, wk = u.get("five_hour") or {}, u.get("seven_day") or {}
-        return h5.get("used", 0) < 60 and wk.get("state") != "超速" and wk.get("used", 0) < 80
+        h5_u, wk_u = float(h5.get("used") or 0), float(wk.get("used") or 0)
+        h5_st, wk_st = h5.get("state") or "", wk.get("state") or ""
+        if h5_u >= 80 or wk_u >= 85:
+            return False, base_gap, 0
+        if h5_u >= 55 or wk_u >= 70 or wk_st == "超速" or h5_st == "超速":
+            return True, min(240 * 60, int(base_gap * 2)), 0
+        if h5_u >= 40 or wk_st == "略快" or h5_st == "略快":
+            return True, min(240 * 60, int(base_gap * 1.5)), 0
+        return True, base_gap, 0
     except Exception:
-        return False
+        return False, base_gap, 0
 
 
 def auto_loop(hub):
@@ -1003,15 +1020,18 @@ def auto_loop(hub):
                 if not room or not os.path.exists(goal):
                     continue
                 head = open(goal, encoding="utf-8", errors="replace").read(400)
-                m = re.search(r"喚醒[間隔]*[：:]\s*(\d+)\s*分", head)  # agent 自己決定多久叫一次（10–240 分鐘）
-                gap = max(10, min(240, int(m.group(1)))) * 60 if m else every
-                if time.time() - last.get(rid, 0) < gap:
-                    continue
                 if "狀態：進行中" not in head and "狀態:進行中" not in head:
                     continue
-                agent = getattr(room, attr)
-                if room.busy or agent.busy or not _auto_budget_ok(attr):
+                m = re.search(r"喚醒[間隔]*[：:]\s*(\d+)\s*分", head)  # agent 自己決定多久叫一次（10–240 分鐘）
+                base_gap = max(10, min(240, int(m.group(1)))) * 60 if m else every
+                ok, gap, auto_steps = _auto_pace(attr, base_gap)
+                if not ok or time.time() - last.get(rid, 0) < gap:
                     continue
+                agent = getattr(room, attr)
+                if room.busy or agent.busy:
+                    continue
+                if attr == "nvidia":
+                    agent._auto_steps = auto_steps
                 last[rid] = time.time()
                 room.stop_flag = False
                 room.notice(AUTO_PROMPT.format(goal=goal))
