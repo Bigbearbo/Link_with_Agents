@@ -8,6 +8,7 @@ import os, time
 import agents as rt
 
 TICKETS = r"H:\Gemini用\群組\待回"
+HOMES = {"Gemini": r"H:\Gemini用", "輝達": r"H:\免費模型用"}  # 輝達 11-18 21:2x 也搬進自己的視窗（OpenCode）
 
 
 class WindowAgent(rt.Agent):
@@ -32,10 +33,12 @@ class WindowAgent(rt.Agent):
     def run(self, prompt):
         self.steps, self.started, self.said = [], time.time(), []
         self.step("留單給視窗")
-        os.makedirs(TICKETS, exist_ok=True)
-        p = os.path.join(TICKETS, f"{self.room_id or 'main'}.md")
+        home = HOMES.get(self.name)
+        tickets = os.path.join(home, "群組", "待回") if home else TICKETS
+        os.makedirs(tickets, exist_ok=True)
+        p = os.path.join(tickets, f"{self.room_id or 'main'}.md")
         head = "" if os.path.exists(p) else (f"# 待回：{self.room_name or self.room_id}（房間 id：{self.room_id}）\n"
-                                             f"看完整對話：PY H:\\Gemini用\\群組\\群組.py 看 {self.room_id}；回完把這個檔移到 已處理\\\n")
+                                             f"看完整對話：PY {home or 'H:'}\\群組\\群組.py 看 {self.room_id}；回完把這個檔移到 已處理\\\n")
         with open(p, "a", encoding="utf-8") as f:
             f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
         return ""
