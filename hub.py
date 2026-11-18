@@ -1129,9 +1129,14 @@ def usage_summary():
             for v in argon.values():
                 x = _usage_window(v, "Argon 週")
                 if x:
+                    if not x["used"] and not x.get("elapsed"):  # 還沒用過：重置時間只是「現在＋7 天」的佔位，別讓人誤會
+                        x.update(label="Argon 週（未用）", resets="", state="")
                     wins.append(x)
         upd = str(d.get("更新") or "")
-        out.append({"name": name, "windows": wins, "verdict": d.get("判斷") or "",
+        verdict = d.get("判斷") or ""
+        if name == "Gemini" and verdict:  # 判斷是看 Hydrogen／Flash 共用池，不是 Argon（使用者 11-18 16:4x 以為顯示有 bug）
+            verdict = "Hydrogen／Flash 池：" + verdict
+        out.append({"name": name, "windows": wins, "verdict": verdict,
                     "updated": upd[5:16].replace("T", " ") if len(upd) >= 16 else upd,
                     "age_min": int((time.time() - os.path.getmtime(p)) / 60)})
     try:  # 輝達：worker 的 UTC 日計數（台北 08:00 換日），上限 900（已扣保留）
