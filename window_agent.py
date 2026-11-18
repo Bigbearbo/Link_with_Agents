@@ -123,7 +123,10 @@ def nvidia_total_today():
             worker = int(b.get("attempts", 0))
     except (OSError, ValueError):
         pass
-    return worker + oc, worker, oc
+    # 11-19 07:05 使用者看 OpenRouter 網站：今天 407＋3＝410，跟 OpenCode 自己數的 408 對得上；
+    # worker 那 97 次幾乎都在 11-18 21:05 換鑰匙「之前」，算在舊鑰匙（現在給 DeepSeek 的那把）上，不該加。
+    # 所以合計只算 OpenCode；worker 次數另外回傳，給人看，不進預算。
+    return oc, worker, oc
 
 
 LAST_ROOM = {}  # 最後一次叫醒是為了哪個房間；OpenCode 忙碌時「工作中」就顯示在那個房間

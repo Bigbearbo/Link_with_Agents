@@ -1258,7 +1258,7 @@ def usage_summary():
         out.append({"name": "輝達", "windows": [{"label": "今天", "used": round(pct, 1), "elapsed": round(elapsed, 1),
                                                 "state": state, "resets": "08:00", "empty_at": "",
                                                 "count": f"{used}/900"}],
-                    "verdict": f"今天 {used}/900 次（含 OpenCode {oc}；台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
+                    "verdict": f"今天 {used}/900 次（OpenCode 實數，對得上 OpenRouter 網站；台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "輝達", "missing": True})
     try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）
