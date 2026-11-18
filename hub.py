@@ -605,6 +605,7 @@ class Hub:
         self.lock = threading.RLock()
         self.pair_code = None
         self.key = web_key()
+        self.seen_posts = []
         self.tg_ok = False
         self.health = {}
         self.rooms = {}
@@ -957,7 +958,15 @@ def make_handler(hub):
                 who = agent or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
                 if not text:
                     return self._json({"ok": False})
+                cid = str(data.get("client_id") or "")[:64]
+                if cid:  # 逾時重送不重複貼（Codex 11-18 20:20）
+                    if cid in hub.seen_posts:
+                        return self._json({"ok": True, "duplicate": True})
+                    hub.seen_posts.append(cid)
+                    del hub.seen_posts[:-200]
                 room.add(who, text, {"Codex": "App", "Gemini": "視窗"}.get(who, "回覆"))
+                if agent:  # 視窗 agent 行首 @誰 照常點名（有接力上限）；它自己不會被叫
+                    threading.Thread(target=room.auto_next, args=(getattr(room, agent.lower()), text), daemon=True).start()
                 room.auto_left = room.auto
                 with hub.lock:
                     if who == "Claude":
