@@ -1669,7 +1669,8 @@ if __name__ == "__main__":
         import subprocess as sp
         root = r"H:\Agent共用"
         protected = ["README.md", "新成員入門.md", "團隊目標.md", "通知規則.txt", ".gitignore",
-                     "記憶/規則.json", "記憶/規則.md", ".agents/skills/team-system/SKILL.md", ".claude/skills/team-system/SKILL.md"]
+                     "記憶/規則.json", "記憶/規則.md", "記憶/注入.py", "待辦/待辦.py", "課程/課程.py",  # 這些資料夾使用者 06:3x 設成雲端雙向，程式檔會被中樞或大家執行，一定要保護
+                     ".agents/skills/team-system/SKILL.md", ".claude/skills/team-system/SKILL.md"]
         backup = os.path.join(HERE, "共用區被改備份")
         first_seen, last_commit = {}, 0.0
 
