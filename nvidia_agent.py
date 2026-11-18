@@ -125,13 +125,32 @@ def _allowed(path):
     return any(p.lower().startswith(os.path.realpath(r).lower()) for r in READ_ROOTS)
 
 
+def _utc_day(rec=None):
+    """OpenRouter 免費額度依 UTC 日（台北 08:00）換日；舊紀錄依本地時間換算成 UTC 日。"""
+    if rec is None:
+        return datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    if rec.get("utc_date"):
+        return rec["utc_date"]
+    try:
+        dt = datetime.datetime.strptime(f"{rec['date']} {rec['time']}", "%Y-%m-%d %H:%M:%S")
+        return dt.astimezone(datetime.timezone.utc).date().isoformat()
+    except Exception:
+        return rec.get("date", "")
+
+
 def _today_calls(kind=None):
-    """今天的呼叫次數；kind="auto"／"manual" 只算那一種（11-18 之前沒標的舊紀錄算自主，免得佔掉點名的份）。"""
-    d, n = time.strftime("%Y-%m-%d"), 0
+    """本 UTC 日（台北 08:00 換日）的呼叫次數；kind='auto'／'manual' 只算那一種（沒標的舊紀錄算自主）。"""
+    d, n = _utc_day(), 0
     try:
         for line in open(CALLS, encoding="utf-8"):
-            if line.startswith('{"date": "' + d):
-                n += kind is None or (('"kind": "manual"' not in line) == (kind == "auto"))
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if _utc_day(rec) == d:
+                rk = "manual" if rec.get("kind") == "manual" else "auto"
+                if kind is None or rk == kind:
+                    n += 1
     except OSError:
         pass
     return n
@@ -141,19 +160,20 @@ def _log_call(ok, requested=None, actual=None, kind="manual"):
     """每次呼叫記一行：要求的模型、實際回傳的模型、是否退回預設（Codex 11-17：評測不能把預設模型的答案算到指定模型）。"""
     os.makedirs(HOME, exist_ok=True)
     with open(CALLS, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"), "ok": ok,
-                            "requested": requested or "（預設）", "actual": actual, "kind": kind,
+        f.write(json.dumps({"date": time.strftime("%Y-%m-%d"), "time": time.strftime("%H:%M:%S"),
+                            "utc_date": _utc_day(), "ok": ok, "requested": requested or "（預設）", "actual": actual,
+                            "kind": kind,
                             "fallback": bool(requested and actual and not str(actual).startswith(requested.split(":")[0]))},
                            ensure_ascii=False) + "\n")
 
 
 def usage_text():
     used = _today_calls()
-    txt = (f"你今天在討論房用了 {used} 次（自主 {_today_calls('auto')}/{AUTO_DAILY}、"
+    txt = (f"你今天（UTC 日，台北 08:00 換日）在討論房用了 {used} 次（自主 {_today_calls('auto')}/{AUTO_DAILY}、"
            f"點名 {_today_calls('manual')}/{MANUAL_DAILY}）。")
     try:
         b = json.load(open(rt._paths().get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
-        utc = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        utc = _utc_day()
         all_used = b.get("attempts", 0) if b.get("day") == utc else 0
         txt += f" 整個 OpenRouter 免費額度今天（UTC 日，台北 08:00 換日）已用 {all_used}/900（900 是 worker 上限，已經扣掉保留給使用者的 100；這個數字以 worker 紀錄為準）。"
     except Exception:
@@ -483,7 +503,7 @@ class NvidiaAgent(rt.Agent):
             prompt += review_note()
         messages = [{"role": "user", "content": prompt}]
         self._auto = "自主工作時段" in prompt
-        limit = 12 if self._auto else MAX_STEPS  # 自主時段一輪可以多走幾步
+        limit = max(2, min(12, int(getattr(self, "_auto_steps", 12)))) if self._auto else MAX_STEPS  # 自主步數依降速倍率調整
         for step in range(limit + 1):
             self.step("輝達思考中" if step == 0 else f"輝達第 {step + 1} 步")
             text = self._call(messages)
