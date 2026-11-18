@@ -40,6 +40,7 @@ def make_gemini(room):
     return rt.GeminiAgent("Gemini")
 
 
+APP_POSTERS = ("視窗Gemini", "Dot")  # 使用者 11-19：App 裡的 AI 經雲端硬碟「發言」資料夾貼到群組（drive_post.py 代送）
 NVIDIA_IN_WINDOW = True  # 使用者 11-18 21:2x：輝達也搬家，住 OpenCode 視窗（H:\免費模型用）；False＝回到舊的工具迴圈
 
 
@@ -526,8 +527,9 @@ class Room:
             self.request_approval(agent)
         self.auto_next(agent, (live["last"] or live["text"] or reply or ""))
 
-    def auto_next(self, agent, said):
-        """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。"""
+    def auto_next(self, agent, said, poster=None):
+        """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。
+        poster＝App 裡的 AI 名稱（agent 是 None）：只處理 @點名，不自動輪流。"""
         # AI 之間自己決定對話對象：發言裡「行首」寫 @名字 就叫那位回一次（不叫自己；每則使用者訊息最多接力 MAX_HOPS 次）
         names = {"claude": self.claude, "codex": self.codex, "gemini": self.gemini, "nvidia": self.nvidia,
                  "輝達": self.nvidia, "deepseek": self.deepseek}
@@ -544,13 +546,13 @@ class Room:
                 self.notice(f"AI 之間的接力已達上限（{MAX_HOPS} 次），等使用者下一則訊息再繼續。")
             else:
                 self.hops += 1
-                log(f"[{self.name}] {agent.name} 點名：{'、'.join(a.name for a in called)}")
+                log(f"[{self.name}] {poster or agent.name} 點名：{'、'.join(a.name for a in called)}")
                 todo = [a for a in called if not a.busy]
                 for a in called:
                     if a.busy:
                         a.pending = True
                 threading.Thread(target=lambda q=todo: self.chain(q), daemon=True).start()
-        if self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
+        if poster or self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
             return
         if agent in (self.gemini, self.nvidia, self.deepseek):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
             return
@@ -976,7 +978,9 @@ def make_handler(hub):
             if p in ("/api/claude_says", "/api/agent_says"):
                 # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
                 text = (data.get("text") or "").strip()
-                who = agent or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
+                # 使用者 11-19 01:4x：App 裡的 AI（視窗Gemini、Dot）從雲端硬碟「發言」資料夾貼文，由本機 drive_post.py 代送
+                app_ai = data.get("who") if (p == "/api/agent_says" and not agent and data.get("who") in APP_POSTERS) else None
+                who = agent or app_ai or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
                 if not text:
                     return self._json({"ok": False})
                 cid = str(data.get("client_id") or "")[:64]
@@ -985,7 +989,9 @@ def make_handler(hub):
                         return self._json({"ok": True, "duplicate": True})
                     hub.seen_posts.append(cid)
                     del hub.seen_posts[:-200]
-                room.add(who, text, {"Codex": "App", "Gemini": "agy"}.get(who, "回覆"))
+                room.add(who, text, {"Codex": "App", "Gemini": "agy"}.get(who, "雲端硬碟" if app_ai else "回覆"))
+                if app_ai:  # 只認行首 @點名（有接力上限），不觸發 Claude／Codex 自動輪流
+                    threading.Thread(target=room.auto_next, args=(None, text, app_ai), daemon=True).start()
                 if agent:  # 視窗 agent 行首 @誰 照常點名（有接力上限）；它自己不會被叫
                     threading.Thread(target=room.auto_next, args=({"Gemini": room.gemini, "輝達": room.nvidia}[agent], text), daemon=True).start()
                 room.auto_left = room.auto
@@ -1282,6 +1288,24 @@ if __name__ == "__main__":
 
     threading.Thread(target=hub.shared_loop, daemon=True).start()
     threading.Thread(target=auto_loop, args=(hub,), daemon=True).start()
+
+    def drive_post_loop():
+        """App 裡的 AI 從雲端硬碟「群組發言」資料夾貼文（drive_post.py；使用者 11-19）。走自己的 /api/agent_says，跟其他發言同一套去重與點名。"""
+        import json as _j, urllib.request as _u
+        import drive_post
+
+        def post(who, room, text, cid):
+            r = _u.Request(f"http://127.0.0.1:{PORT}/api/agent_says?room={room}", headers={"X-Key": hub.key, "Content-Type": "application/json"},
+                           data=_j.dumps({"room": room, "who": who, "text": text, "client_id": cid}).encode())
+            return bool(_j.loads(_u.urlopen(r, timeout=15).read()).get("ok"))
+        while True:
+            try:
+                for who, name, res in drive_post.scan(post):
+                    log(f"雲端硬碟發言：{who} {name} → {res}")
+            except Exception as e:
+                log(f"雲端硬碟發言掃描失敗：{type(e).__name__} {e}")
+            time.sleep(20)
+    threading.Thread(target=drive_post_loop, daemon=True).start()
 
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")
