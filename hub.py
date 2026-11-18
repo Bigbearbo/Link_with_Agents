@@ -1717,10 +1717,16 @@ if __name__ == "__main__":
         import window_agent as wa
         name, box = "輝達", r"H:\免費模型用\群組\待回"
         rank = {"高": 0, "中": 1, "低": 2}
-        last = {}
+        last, warned_day = {}, {}
         while True:
             time.sleep(1800)
             try:
+                calls = wa.nvidia_calls_today()               # 使用者 06:50：輝達算呼叫次數，派工要編次數預算
+                if calls is not None and calls >= 0.9 * wa.NVIDIA_DAILY_BUDGET and not warned_day.get(time.strftime("%m%d")):
+                    warned_day[time.strftime("%m%d")] = True
+                    hub.room("g1004308131170").notice(f"⏱ 輝達今天已呼叫模型 {calls} 次（預算 {wa.NVIDIA_DAILY_BUDGET}），快到上限，派工暫停。")
+                if calls is not None and calls >= 0.7 * wa.NVIDIA_DAILY_BUDGET:
+                    continue
                 if wa.opencode_busy(name) is not False:      # None＝視窗沒開；True＝在忙
                     continue
                 if any(f.endswith(".md") for f in os.listdir(box)):

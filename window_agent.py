@@ -75,6 +75,39 @@ NUDGE_MAX = 3
 NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
 
 
+NVIDIA_DAILY_BUDGET = 800   # 輝達每天呼叫次數預算（OpenRouter 免費模型按「次數」限，不按額度；使用者 11-19 06:50）
+OPENCODE_LOG = os.path.join(os.path.expanduser("~"), ".local", "share", "opencode", "log", "opencode.log")
+
+
+def nvidia_calls_today():
+    """數 OpenCode 紀錄裡今天（台北時間）的模型呼叫次數（每行 message=stream provider＝一次呼叫，含子代理和標題小模型）。
+    同時寫 H:\\Agent共用\\輝達-用量.json 給大家看。"""
+    import datetime, json
+    tz = datetime.timezone(datetime.timedelta(hours=8))
+    today = datetime.datetime.now(tz).date()
+    n = small = 0
+    try:
+        with open(OPENCODE_LOG, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if "message=stream provider" not in line or not line.startswith("timestamp="):
+                    continue
+                ts = datetime.datetime.fromisoformat(line[10:34].replace("Z", "+00:00")).astimezone(tz)
+                if ts.date() == today:
+                    n += 1
+                    small += "small=true" in line
+    except OSError:
+        return None
+    rec = {"更新": datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M"), "今天呼叫": n, "其中小模型": small,
+           "每日預算": NVIDIA_DAILY_BUDGET, "比例": round(n / NVIDIA_DAILY_BUDGET, 3),
+           "說明": "OpenRouter 免費模型按每日次數限；派工員超過 70% 就不再派，90% 群組提醒。預算改 window_agent.NVIDIA_DAILY_BUDGET。"}
+    try:
+        with open(r"H:\Agent共用\輝達-用量.json", "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=1)
+    except OSError:
+        pass
+    return n
+
+
 LAST_ROOM = {}  # 最後一次叫醒是為了哪個房間；OpenCode 忙碌時「工作中」就顯示在那個房間
 
 
