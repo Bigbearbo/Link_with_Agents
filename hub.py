@@ -612,6 +612,9 @@ class Room:
             self.add("使用者", f"（只問 {agent.name}）我允許你這一次執行：{items}。請繼續剛才的工作。", src)
         else:
             self.add("使用者", f"（只問 {agent.name}）我不允許：{items}。請改用別的做法，或說明還需要什麼。", src)
+        perm_log({"房間": self.name, "請求者": agent.name, "項目": ap["items"],
+                  "動作": ("以後都允許" if (allow and always and ap.get("always_ok")) else "允許一次" if allow else "拒絕"),
+                  "批准者": "使用者", "來源": src})
         self.stop_flag = False
         self.chain([agent])
         return True
@@ -1269,6 +1272,57 @@ def usage_summary():
     return {"agents": out, "time": time.strftime("%H:%M")}
 
 
+PERM_LOG = os.path.join(HERE, "agent-權限-紀錄.jsonl")   # 只增不改（DeepSeek 03:14）：撤銷也是新增一筆
+PERM_PAGE = r"H:\Agent共用\權限總覽.md"                  # 給使用者和大家檢視（使用者 03:14：我批准的也供檢視，以免亂批沒人發現）
+
+
+def perm_log(rec):
+    rec = {"時間": time.strftime("%Y-%m-%d %H:%M:%S"), **rec}
+    with open(PERM_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    try:
+        render_perm_page()
+    except Exception as e:
+        log(f"權限總覽產生失敗：{type(e).__name__} {e}")
+
+
+def render_perm_page():
+    """產生 H:\\Agent共用\\權限總覽.md：固定權限（手寫在 權限說明.md）＋目前「以後都允許」＋最近 30 筆批准紀錄。"""
+    base = ""
+    try:
+        base = open(os.path.join(HERE, "權限說明.md"), encoding="utf-8").read().strip()
+    except OSError:
+        pass
+    try:
+        g = json.load(open(os.path.join(HERE, "agent-權限.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        g = {}
+    recs = []
+    try:
+        recs = [json.loads(l) for l in open(PERM_LOG, encoding="utf-8") if l.strip()]
+    except OSError:
+        pass
+    out = ["# 權限總覽（中樞自動產生，請勿手改）", f"更新：{time.strftime('%Y-%m-%d %H:%M')}｜要改固定權限請在群組提，Claude 改 `權限說明.md`", "",
+           base, "", "## 使用者按過「以後都允許」的資料夾（目前有效）"]
+    any_g = False
+    for name, v in g.items():
+        for e in v.get("紀錄", []):
+            if e.get("資料夾") in v.get("可寫", []):
+                out.append(f"- {name}：`{e['資料夾']}`（{e.get('時間', '')}，{e.get('房間', '')}）")
+                any_g = True
+    if not any_g:
+        out.append("- （沒有）")
+    out += ["", "## 最近的批准紀錄（新到舊，最多 30 筆；完整在中樞 agent-權限-紀錄.jsonl）",
+            "| 時間 | 請求者 | 動作 | 批准者／來源 | 項目 |", "|---|---|---|---|---|"]
+    for r in reversed(recs[-30:]):
+        out.append(f"| {r.get('時間', '')} | {r.get('請求者', '')} | {r.get('動作', '')} | {r.get('批准者', '')}／{r.get('來源', '')} | "
+                   + "；".join(r.get("項目") or []).replace("|", "／") + " |")
+    if not recs:
+        out.append("| — | — | — | — | （還沒有） |")
+    with open(PERM_PAGE, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+
+
 def grant_write(name, dirs, room=""):
     """使用者按「以後都允許」：把資料夾記進 agent-權限.json（agent 自己改不到這個檔）。"""
     p = os.path.join(HERE, "agent-權限.json")
@@ -1377,6 +1431,10 @@ if __name__ == "__main__":
                 log(f"雲端硬碟發言掃描失敗：{type(e).__name__} {e}")
             time.sleep(20)
     threading.Thread(target=drive_post_loop, daemon=True).start()
+    try:
+        render_perm_page()  # 開機先產生一次權限總覽
+    except Exception as e:
+        log(f"權限總覽產生失敗：{e}")
 
     def opencode_status_loop():
         """輝達的 OpenCode 在跑時，房間自動顯示「輝達 工作中」（不用它自己回報）；停下來就收掉。"""
