@@ -606,6 +606,7 @@ class Hub:
         self.pair_code = None
         self.key = web_key()
         self.seen_posts = []
+        agent_keys()  # 先建好視窗 agent 的金鑰檔（Gemini 的放在 H:\Gemini用\.群組金鑰.txt）
         self.tg_ok = False
         self.health = {}
         self.rooms = {}
