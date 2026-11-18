@@ -1286,6 +1286,39 @@ def perm_log(rec):
         log(f"權限總覽產生失敗：{type(e).__name__} {e}")
 
 
+def window_allow_lists():
+    """讀 agy、OpenCode、Claude Code 的設定檔裡的允許清單（只讀；長字串截斷、像金鑰的遮掉）。"""
+    home = os.path.expanduser("~")
+    srcs = [("Gemini（agy）", os.path.join(home, ".gemini", "antigravity-cli", "settings.json"),
+             lambda d: {"allow": (d.get("permissions") or {}).get("allow", []), "可碰工作區外": d.get("allowNonWorkspaceAccess"),
+                        "信任的資料夾": d.get("trustedWorkspaces")}),
+            ("輝達（OpenCode）", r"H:\免費模型用\opencode\opencode.json", lambda d: {"permission": d.get("permission")}),
+            ("Claude Code（使用者層）", os.path.join(home, ".claude", "settings.json"), lambda d: d.get("permissions") or {}),
+            ("Claude Code（使用者層・本機）", os.path.join(home, ".claude", "settings.local.json"), lambda d: d.get("permissions") or {}),
+            ("Claude Code（H:\\Claude用 專案）", r"H:\Claude用\.claude\settings.local.json", lambda d: d.get("permissions") or {}),
+            ("Claude Code（H:\\Claude用 專案・共用）", r"H:\Claude用\.claude\settings.json", lambda d: d.get("permissions") or {})]
+    out = []
+    for name, p, pick in srcs:
+        if not os.path.exists(p):
+            continue
+        try:
+            d = pick(json.load(open(p, encoding="utf-8-sig")))
+        except Exception as e:
+            out.append(f"- **{name}**：讀不懂（{type(e).__name__}）")
+            continue
+        out.append(f"- **{name}**（`{p}`）")
+        for k, v in d.items():
+            vals = v if isinstance(v, list) else [v] if v not in (None, {}, []) else []
+            if isinstance(v, dict):
+                vals = [f"{a}: {b}" for a, b in v.items()]
+            for x in vals[:40]:
+                s = re.sub(r"(sk-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]+", r"\1…", str(x))[:160]
+                out.append(f"  - {k}：`{s}`")
+            if len(vals) > 40:
+                out.append(f"  - {k}：……還有 {len(vals) - 40} 條")
+    return out or ["- （沒找到設定檔）"]
+
+
 def render_perm_page():
     """產生 H:\\Agent共用\\權限總覽.md：固定權限（手寫在 權限說明.md）＋目前「以後都允許」＋最近 30 筆批准紀錄。"""
     base = ""
@@ -1319,6 +1352,9 @@ def render_perm_page():
                    + "；".join(r.get("項目") or []).replace("|", "／") + " |")
     if not recs:
         out.append("| — | — | — | — | （還沒有） |")
+    out += ["", "## 各視窗自己的「永久允許」（中樞只讀抓出來；Gemini 03:18 建議）",
+            "你在 agy／OpenCode／Claude Code 視窗裡按的「永遠允許」存在它們自己的設定檔，列在這裡讓大家看得到。"]
+    out += window_allow_lists()
     with open(PERM_PAGE, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
 
@@ -1500,6 +1536,10 @@ if __name__ == "__main__":
                 last = w
             except Exception as e:
                 log(f"DeepSeek 對帳失敗：{type(e).__name__} {e}")
+            try:
+                render_perm_page()  # 每小時也刷新權限總覽（視窗裡按的允許會反映出來）
+            except Exception as e:
+                log(f"權限總覽產生失敗：{e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
