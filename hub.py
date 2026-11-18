@@ -1550,7 +1550,10 @@ if __name__ == "__main__":
                     rid = str(d.get("room") or "g1004308131170")
                     if old and old[1] != rid and old[0] is not None:
                         hub.room(old[1]).set_window_status(name, done=True)
-                    hub.room(rid).set_window_status(name, (str(d.get("text") or "").strip() or None), bool(d.get("done")))
+                    txt = str(d.get("text") or "").strip()
+                    # 11-19 07:11：Gemini 寫 {"text": "結束"} 想收掉，卻被當成一個步驟一直掛著 → 這幾個字也算收掉
+                    fin = bool(d.get("done")) or txt in ("結束", "完成", "done", "收掉", "做完")
+                    hub.room(rid).set_window_status(name, None if fin else (txt or None), fin)
                     seen[name] = (mt, rid)
                 except Exception as e:
                     seen[name] = (os.path.getmtime(p) if os.path.exists(p) else None, (seen.get(name) or (0, "g1004308131170"))[1])
