@@ -114,15 +114,20 @@ USER_RESERVE = 100   # 每天保留給使用者的 100 次（OpenRouter 免費 1
 def nvidia_dispatch_limit():
     """派工員今天最多用到幾次（使用者 11-19 07:15：保留給使用者的 100 次，最後 4 小時用公式還給輝達）。
     換日在台北 08:00。離換日 >4 小時：只派到 900 的 70%（留給人找它）。
-    最後 4 小時：900 全開，再加上分段釋放的保留額——剩 4h 還 10%、3h 累計 30%、2h 累計 60%、1h 累計 80%；
-    最後 20%（20 次）一直留給使用者，到換日都不還。回傳 (上限, 已釋放保留次數, 距換日小時)。"""
+    最後 4 小時：900 全開，再加上動態釋放的保留額（見下方公式）；
+    回傳 (上限, 已釋放保留次數, 距換日小時)。"""
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc)
     nxt = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     left = (nxt - now).total_seconds() / 3600
     if left > 4:
         return int(NVIDIA_DAILY_BUDGET * 0.7), 0, left
-    frac = 0.1 if left > 3 else 0.3 if left > 2 else 0.6 if left > 1 else 0.8
+    # 使用者 07:17 改成動態：四段各還 10%、20%、30%、40%，每段在那一小時內線性還完；
+    # 例：剩 20 分鐘時，最後一段 40% 還剩 1/3 沒還＝留 40%×0.33 給使用者。到換日全部還完。
+    k = 4 - left                          # 已進入最後 4 小時多久（0～4）
+    done_chunks, part = int(k), k - int(k)
+    chunks = [0.1, 0.2, 0.3, 0.4]
+    frac = sum(chunks[:done_chunks]) + (chunks[done_chunks] * part if done_chunks < 4 else 0)
     rel = int(USER_RESERVE * frac)
     return NVIDIA_DAILY_BUDGET + rel, rel, left
 
