@@ -1362,6 +1362,36 @@ if __name__ == "__main__":
             time.sleep(3)
     threading.Thread(target=opencode_status_loop, daemon=True).start()
 
+    def status_file_loop():
+        """Gemini 11-19 01:58 建議：agy 沙盒連 127.0.0.1 要問使用者，改成寫檔回報。
+        <家>\\群組\\狀態.json＝{"room": "...", "text": "正在讀單"}；寫 {"done": true} 或刪檔就收掉。"""
+        import json as _j, window_agent as wa
+        seen = {}  # 名字 → (mtime, room)
+        while True:
+            for name, home in wa.HOMES.items():
+                p = os.path.join(home, "群組", "狀態.json")
+                try:
+                    mt = os.path.getmtime(p) if os.path.exists(p) else None
+                    old = seen.get(name)
+                    if mt is None:
+                        if old and old[0] is not None:
+                            hub.room(old[1]).set_window_status(name, done=True)
+                            seen[name] = (None, old[1])
+                        continue
+                    if old and old[0] == mt:
+                        continue
+                    d = _j.load(open(p, encoding="utf-8-sig"))
+                    rid = str(d.get("room") or "g1004308131170")
+                    if old and old[1] != rid and old[0] is not None:
+                        hub.room(old[1]).set_window_status(name, done=True)
+                    hub.room(rid).set_window_status(name, (str(d.get("text") or "").strip() or None), bool(d.get("done")))
+                    seen[name] = (mt, rid)
+                except Exception as e:
+                    seen[name] = (os.path.getmtime(p) if os.path.exists(p) else None, (seen.get(name) or (0, "g1004308131170"))[1])
+                    log(f"{name} 狀態檔讀不懂：{type(e).__name__} {e}")
+            time.sleep(3)
+    threading.Thread(target=status_file_loop, daemon=True).start()
+
     def deepseek_audit_loop():
         """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
         sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
