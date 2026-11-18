@@ -44,18 +44,28 @@ class WindowAgent(rt.Agent):
             f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
         # 11-19 03:28 使用者：「輝達好像沒收到消息」——原本只有「新單」才叫，輝達回完沒把單移走，
         # 之後同一張單一直追加卻不再叫。改成：新單、或距離上次叫醒超過 NUDGE_GAP 秒就再叫一次（避免一直插話）。
+        # DeepSeek 03:29：同一張單最多叫 NUDGE_MAX 次（避免它慢時疊出重複處理）；它在忙就先不叫
         key = (self.name, self.room_id or "main")
-        if new or time.time() - LAST_NUDGE.get(key, 0) > NUDGE_GAP:
-            LAST_NUDGE[key] = time.time()
-            r = nudge(self.name, self.room_id or "main")
+        if new:
+            NUDGE_COUNT[key] = 0
+        n = NUDGE_COUNT.get(key, 0)
+        if (new or time.time() - LAST_NUDGE.get(key, 0) > NUDGE_GAP) and n < NUDGE_MAX:
+            if opencode_busy(self.name):
+                r = "它正在忙，這次先不叫（下次有人找它時再試）"
+            else:
+                LAST_NUDGE[key] = time.time()
+                NUDGE_COUNT[key] = n + 1
+                r = nudge(self.name, self.room_id or "main", again=not new)
             self.step("叫醒視窗：" + r)
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
-                f.write(f"{time.strftime('%m-%d %H:%M:%S')} {self.name} {self.room_id or 'main'} {r}\n")
+                f.write(f"{time.strftime('%m-%d %H:%M:%S')} {self.name} {self.room_id or 'main'} 第{NUDGE_COUNT.get(key, 0)}次 {r}\n")
         return ""
 
 
 LAST_NUDGE = {}
+NUDGE_COUNT = {}
 NUDGE_GAP = 120
+NUDGE_MAX = 3
 
 
 NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
@@ -81,7 +91,7 @@ def opencode_busy(name):
         return None
 
 
-def nudge(name, room_id):
+def nudge(name, room_id, again=False):
     """叫醒住在 OpenCode 視窗的 agent：往它的輸入框塞一句話並送出（使用者 11-19 要的通知功能）。
     agy（Gemini）沒有這種控制介面，只留單。回傳結果文字，不丟例外。"""
     import base64, json, urllib.request
@@ -93,8 +103,9 @@ def nudge(name, room_id):
         c = json.load(open(f, encoding="utf-8"))
         auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
         url = f"http://127.0.0.1:{c['port']}"
-        text = (f"【中樞通知】群組有人找你：讀 群組\\待回\\{room_id}.md，"
-                f"用 群組.py 看 {room_id} 和回覆，回完把那張單移到 群組\\待回\\已處理\\。")
+        text = (f"【中樞通知】群組有人找你（房間 {room_id}）：用 群組.py 看 {room_id}（只給你沒看過的新訊息），"
+                f"需要你回的才回；回完把 群組\\待回\\{room_id}.md 移到 群組\\待回\\已處理\\。"
+                + ("這張單之前就在了、可能很長，不用整張重讀。" if again else ""))
         for path, body in (("/tui/append-prompt", {"text": text}), ("/tui/submit-prompt", {})):
             r = urllib.request.Request(url + path, data=json.dumps(body).encode(),
                                        headers={"Content-Type": "application/json", "Authorization": auth})
