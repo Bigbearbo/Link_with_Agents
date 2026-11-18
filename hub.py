@@ -598,6 +598,32 @@ class Room:
         self.chain([agent])
         return True
 
+    # ---------- 住視窗的 agent 回報狀態（使用者 11-19：像以前一樣顯示「工作中」，也能說一句進度） ----------
+    WINDOW_STALE = 900  # 15 分鐘沒更新就當作已結束，免得視窗關掉後一直顯示
+
+    def set_window_status(self, name, text=None, done=False):
+        ws = self.__dict__.setdefault("window_status", {})
+        if done:
+            ws.pop(name, None)
+            return
+        now = time.time()
+        s = ws.get(name)
+        if not s or now - s["updated"] > self.WINDOW_STALE:
+            s = ws[name] = {"steps": [], "started": now, "updated": now}
+        s["updated"] = now
+        if text and (not s["steps"] or s["steps"][-1] != text):
+            s["steps"] = (s["steps"] + [text[:120]])[-8:]
+
+    def window_progress(self):
+        now, out = time.time(), []
+        for name, s in list(getattr(self, "window_status", {}).items()):
+            if now - s["updated"] > self.WINDOW_STALE:
+                self.window_status.pop(name, None)
+                continue
+            out.append({"who": name, "steps": list(s["steps"]), "pending": False, "anchor": None,
+                        "elapsed": int(now - s["started"])})
+        return out
+
     # ---------- 網頁 ----------
     def snapshot(self, since, epoch):
         t = self.transcript
@@ -612,6 +638,7 @@ class Room:
                               "anchor": getattr(a, "anchor", None),
                               "elapsed": int(time.time() - (a.started or time.time()))}
                              for a in self.agents() if a.busy]
+                            + self.window_progress()
                             + [{"who": a.name, "label": f"{a.name}（分身）", "steps": list(a.side.steps), "pending": False,
                                 "anchor": None, "elapsed": int(time.time() - (a.side.started or time.time()))}
                                for a in self.agents() if getattr(a, "side", None) is not None]}  # 分身在回答也要顯示「說話中」
@@ -947,7 +974,7 @@ def make_handler(hub):
 
         def do_POST(self):
             agent = None if self._authed() else self._agent()
-            if not self._authed() and not (agent and urlparse(self.path).path == "/api/agent_says"):
+            if not self._authed() and not (agent and urlparse(self.path).path in ("/api/agent_says", "/api/agent_status")):
                 return self._json({"error": "forbidden"}, 403)
             n = int(self.headers.get("Content-Length") or 0)
             try:
@@ -975,6 +1002,13 @@ def make_handler(hub):
                 return self._json({"ok": room.new_chat()})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦")})
+            if p == "/api/agent_status":
+                # 視窗 agent：{"room", "text": "正在讀單…"} 顯示工作中＋這一步；{"done": true} 收掉
+                who = agent or (data.get("who") if data.get("who") in ("Gemini", "輝達") else None)
+                if not who:
+                    return self._json({"ok": False})
+                room.set_window_status(who, (data.get("text") or "").strip() or None, bool(data.get("done")))
+                return self._json({"ok": True})
             if p in ("/api/claude_says", "/api/agent_says"):
                 # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
                 text = (data.get("text") or "").strip()
@@ -1306,6 +1340,27 @@ if __name__ == "__main__":
                 log(f"雲端硬碟發言掃描失敗：{type(e).__name__} {e}")
             time.sleep(20)
     threading.Thread(target=drive_post_loop, daemon=True).start()
+
+    def opencode_status_loop():
+        """輝達的 OpenCode 在跑時，房間自動顯示「輝達 工作中」（不用它自己回報）；停下來就收掉。"""
+        import window_agent as wa
+        shown = None
+        while True:
+            busy = wa.opencode_busy("輝達")
+            rid = wa.LAST_ROOM.get("輝達") or "g1004308131170"
+            try:
+                if busy:
+                    if shown and shown != rid:
+                        hub.room(shown).set_window_status("輝達", done=True)
+                    hub.room(rid).set_window_status("輝達", "OpenCode 執行中")
+                    shown = rid
+                elif shown:
+                    hub.room(shown).set_window_status("輝達", done=True)
+                    shown = None
+            except Exception as e:
+                log(f"輝達狀態更新失敗：{type(e).__name__} {e}")
+            time.sleep(3)
+    threading.Thread(target=opencode_status_loop, daemon=True).start()
 
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")

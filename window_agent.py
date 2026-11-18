@@ -50,6 +50,26 @@ class WindowAgent(rt.Agent):
 NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
 
 
+LAST_ROOM = {}  # 最後一次叫醒是為了哪個房間；OpenCode 忙碌時「工作中」就顯示在那個房間
+
+
+def opencode_busy(name):
+    """OpenCode 視窗現在有沒有在跑（/session/status 有非 idle 的 session）。沒開視窗回 None。"""
+    import base64, json, urllib.request
+    f = NOTIFY.get(name)
+    if not f or not os.path.exists(f):
+        return None
+    try:
+        c = json.load(open(f, encoding="utf-8"))
+        auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
+        r = urllib.request.Request(f"http://127.0.0.1:{c['port']}/session/status", headers={"Authorization": auth})
+        st = json.loads(urllib.request.urlopen(r, timeout=3).read())
+        vals = st.values() if isinstance(st, dict) else st
+        return any(isinstance(v, dict) and v.get("type") not in (None, "idle") for v in vals)
+    except Exception:
+        return None
+
+
 def nudge(name, room_id):
     """叫醒住在 OpenCode 視窗的 agent：往它的輸入框塞一句話並送出（使用者 11-19 要的通知功能）。
     agy（Gemini）沒有這種控制介面，只留單。回傳結果文字，不丟例外。"""
@@ -57,6 +77,7 @@ def nudge(name, room_id):
     f = NOTIFY.get(name)
     if not f or not os.path.exists(f):
         return "沒有開視窗或不支援，只留單"
+    LAST_ROOM[name] = room_id
     try:
         c = json.load(open(f, encoding="utf-8"))
         auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
