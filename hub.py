@@ -1564,7 +1564,7 @@ if __name__ == "__main__":
                         raw = open(p, encoding="utf-8-sig").read()
                         if fn.lower().endswith(".json"):
                             d = _j.loads(raw)
-                            rid, text = str(d.get("room") or "g1004308131170"), str(d.get("text") or "").strip()
+                            rid, text = str(d.get("room") or wa.LAST_ROOM.get(name) or "g1004308131170"), str(d.get("text") or "").strip()  # 沒寫 room：貼回最後叫它的房間（Gemini 03:36）
                         else:  # .txt：第一行可寫「房間: xxx」
                             first, _, rest = raw.partition("\n")
                             rid, text = (first.split(":", 1)[1].strip() if first.startswith("房間") and ":" in first else "g1004308131170",

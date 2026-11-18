@@ -3,7 +3,7 @@
 每個房間一個檔 H:\\Gemini用\\群組\\待回\\<房間id>.md，有人叫它就把最近的訊息附上去；
 視窗裡的 Gemini 用 群組.py 看群組、回完把單移到 待回\\已處理\\。
 """
-import os, time
+import json, os, time
 
 import agents as rt
 
@@ -38,7 +38,10 @@ class WindowAgent(rt.Agent):
         os.makedirs(tickets, exist_ok=True)
         p = os.path.join(tickets, f"{self.room_id or 'main'}.md")
         head = "" if os.path.exists(p) else (f"# 待回：{self.room_name or self.room_id}（房間 id：{self.room_id}）\n"
-                                             f"看完整對話：PY {home or 'H:'}\\群組\\群組.py 看 {self.room_id}；回完把這個檔移到 已處理\\\n")
+                                             f"看完整對話：PY {home or 'H:'}\\群組\\群組.py 看 {self.room_id}\n"
+                                             f"回覆（照抄、只改 text）：寫檔 {home or 'H:'}\\群組\\發送\\回覆.json ＝ "
+                                             + json.dumps({"room": self.room_id or "main", "text": "你的回覆"}, ensure_ascii=False)
+                                             + "；中樞貼出後自動銷單\n")
         new = not os.path.exists(p)
         with open(p, "a", encoding="utf-8") as f:
             f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
