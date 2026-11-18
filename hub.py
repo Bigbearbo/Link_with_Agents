@@ -1362,6 +1362,22 @@ if __name__ == "__main__":
             time.sleep(3)
     threading.Thread(target=opencode_status_loop, daemon=True).start()
 
+    def deepseek_audit_loop():
+        """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
+        sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
+        import ds
+        last = None
+        while True:
+            try:
+                w = ds.audit().get("警告") or []
+                if w and w != last:
+                    hub.room("g1004308131170").notice("DeepSeek 對帳：" + "；".join(w))
+                last = w
+            except Exception as e:
+                log(f"DeepSeek 對帳失敗：{type(e).__name__} {e}")
+            time.sleep(3600)
+    threading.Thread(target=deepseek_audit_loop, daemon=True).start()
+
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")
         hub.health = rt.self_check()

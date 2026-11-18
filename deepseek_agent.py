@@ -31,7 +31,7 @@ GUIDE = """你是「DeepSeek」（DeepSeek V4.1 Flash，經 OpenRouter 付費額
 你只能收發文字，但可以用「工具行」請程式幫你查資料。要用工具時，回覆裡**只寫工具行**（一行一個，最多 3 個），程式執行後把結果給你，你再決定繼續查還是發言：
 【最近對話】N            這個房間最近 N 則（N≤60）
 【搜尋對話】詞 [詞…]       搜尋所有房間的完整對話紀錄
-【網路搜尋】問題              上網查（借 Gemini Flash 的 Google 搜尋；較慢，必要時才用）
+【網路搜尋】問題              上網查（OpenRouter 網路搜尋，約 $0.007／次、算你的額度；必要時才用）
 【讀檔】路徑 [第幾行起] [幾行]   讀檔（H:\\Agent共用、H:\\Codex用、H:\\免費模型用、H:\\Gemini用、H:\\DeepSeek用、對話紀錄；一次最多 8000 字）
 【列目錄】路徑            看資料夾裡有哪些檔
 【用量】                 今天／本月花了多少錢、上限多少
@@ -115,6 +115,11 @@ def run_tool(kind, arg, transcript, agent=None):
         return run_script(arg)
     if kind == "用量":
         return usage_text()
+    if kind == "網路搜尋":  # 11-19：改用 OpenRouter web 外掛（約 $0.007／次，記帳本），不再借 agy
+        try:
+            return _ds().web_search(arg, who="DeepSeek")
+        except Exception as e:
+            return f"搜尋失敗：{type(e).__name__} {str(e)[:200]}"
     if kind == "寫筆記":
         if not arg:
             return "筆記是空的"
