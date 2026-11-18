@@ -42,9 +42,20 @@ class WindowAgent(rt.Agent):
         new = not os.path.exists(p)
         with open(p, "a", encoding="utf-8") as f:
             f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
-        if new:   # 同一張單還沒處理就不重複叫，免得一直插話
-            self.step("叫醒視窗：" + nudge(self.name, self.room_id or "main"))
+        # 11-19 03:28 使用者：「輝達好像沒收到消息」——原本只有「新單」才叫，輝達回完沒把單移走，
+        # 之後同一張單一直追加卻不再叫。改成：新單、或距離上次叫醒超過 NUDGE_GAP 秒就再叫一次（避免一直插話）。
+        key = (self.name, self.room_id or "main")
+        if new or time.time() - LAST_NUDGE.get(key, 0) > NUDGE_GAP:
+            LAST_NUDGE[key] = time.time()
+            r = nudge(self.name, self.room_id or "main")
+            self.step("叫醒視窗：" + r)
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%m-%d %H:%M:%S')} {self.name} {self.room_id or 'main'} {r}\n")
         return ""
+
+
+LAST_NUDGE = {}
+NUDGE_GAP = 120
 
 
 NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
