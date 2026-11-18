@@ -1543,6 +1543,53 @@ if __name__ == "__main__":
             time.sleep(3)
     threading.Thread(target=status_file_loop, daemon=True).start()
 
+    def send_box_loop():
+        """Gemini 03:33：視窗 agent 不用跑指令也能發言——寫 <家>\\群組\\發送\\<任意>.json＝{"room": "...", "text": "..."}，
+        中樞 3 秒內用它自己的金鑰代貼（同一套去重、點名、自動銷單），貼完刪檔；讀不懂的移到 發送\\退件\\。"""
+        import json as _j, hashlib as _h, urllib.request as _u, window_agent as wa
+        while True:
+            keys = agent_keys()
+            for name, home in wa.HOMES.items():
+                box = os.path.join(home, "群組", "發送")
+                try:
+                    os.makedirs(box, exist_ok=True)
+                    files = sorted(f for f in os.listdir(box) if f.lower().endswith((".json", ".txt")))
+                except OSError:
+                    continue
+                for fn in files:
+                    p = os.path.join(box, fn)
+                    try:
+                        if time.time() - os.path.getmtime(p) < 2:
+                            continue  # 可能還在寫
+                        raw = open(p, encoding="utf-8-sig").read()
+                        if fn.lower().endswith(".json"):
+                            d = _j.loads(raw)
+                            rid, text = str(d.get("room") or "g1004308131170"), str(d.get("text") or "").strip()
+                        else:  # .txt：第一行可寫「房間: xxx」
+                            first, _, rest = raw.partition("\n")
+                            rid, text = (first.split(":", 1)[1].strip() if first.startswith("房間") and ":" in first else "g1004308131170",
+                                         (rest if first.startswith("房間") else raw).strip())
+                        rid = {"互相討論": "g1004308131170", "主討論": "main"}.get(rid, rid)
+                        if not text or rid not in hub.rooms:
+                            raise ValueError("沒有內容" if not text else f"沒有這個房間 {rid}")
+                        cid = "box-" + _h.sha1(f"{name}|{rid}|{text}".encode()).hexdigest()[:20]
+                        r = _u.Request(f"http://127.0.0.1:{PORT}/api/agent_says", headers={"X-Agent-Key": keys[name], "Content-Type": "application/json"},
+                                       data=_j.dumps({"room": rid, "text": text[:6000], "client_id": cid}).encode())
+                        if _j.loads(_u.urlopen(r, timeout=15).read()).get("ok"):
+                            os.remove(p)
+                            log(f"發送箱：{name} → {rid}（{len(text)} 字）")
+                    except Exception as e:
+                        try:
+                            os.makedirs(os.path.join(box, "退件"), exist_ok=True)
+                            os.replace(p, os.path.join(box, "退件", time.strftime("%m%d-%H%M%S-") + fn))
+                            with open(os.path.join(box, "退件", fn + ".原因.txt"), "w", encoding="utf-8") as w:
+                                w.write(f"{type(e).__name__}: {e}\n")
+                        except OSError:
+                            pass
+                        log(f"發送箱退件：{name} {fn}：{e}")
+            time.sleep(3)
+    threading.Thread(target=send_box_loop, daemon=True).start()
+
     def deepseek_audit_loop():
         """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
         sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
