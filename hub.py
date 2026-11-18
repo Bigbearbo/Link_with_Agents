@@ -1740,8 +1740,30 @@ if __name__ == "__main__":
         佔用的人在 H:\\Agent共用\\待辦\\CPU使用中.txt 寫一行「誰｜做什麼｜預計到幾點」，做完刪掉；超過 6 小時的當作忘了刪。"""
         if "CPU" not in str(t.get("資源", "")).upper():
             return True
+        return cpu_slots_used() < CPU_SLOTS
+
+    CPU_SLOTS = 3  # Codex 07:22：最多三個訓練 worker（BLAS 單執行緒），用「執行槽」而不是一件就鎖死全部
+
+    def cpu_slots_used():
+        """`待辦\\CPU使用中.txt` 每行一件：「PID｜誰｜做什麼｜預計到幾點」。PID 還活著才算佔一槽（Gemini／Codex 07:22：查程序，不只看時間）。
+        沒寫 PID 的行，6 小時內算佔用。"""
         p = r"H:\Agent共用\待辦\CPU使用中.txt"
-        return not (os.path.exists(p) and time.time() - os.path.getmtime(p) < 6 * 3600)
+        if not os.path.exists(p):
+            return 0
+        n = 0
+        fresh = time.time() - os.path.getmtime(p) < 6 * 3600
+        for line in open(p, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            m = re.match(r"(\d+)\s*[｜|]", line)
+            if m:
+                r = subprocess.run(["tasklist", "/FI", f"PID eq {m.group(1)}", "/NH"], capture_output=True,
+                                   creationflags=0x08000000 if os.name == "nt" else 0)
+                n += m.group(1) in r.stdout.decode("utf-8", "replace")
+            else:
+                n += fresh
+        return n
 
     def dispatch_loop():
         """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。
