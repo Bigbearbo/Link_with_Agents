@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agents as rt  # noqa: E402
+from deepseek_agent import DeepSeekAgent  # noqa: E402
 from secret_store import load_token  # noqa: E402
 import terminal_bridge as tb  # noqa: E402
 import shared_watch as sw  # noqa: E402
@@ -39,11 +40,11 @@ ACK_DELAY = 60  # 工作超過這麼多秒，才先貼出第一句話
 MAIN = "main"
 SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
 SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 vs Gemini", "gemini"),
-              ("solo-dot", "我 vs Dot", "dot")]
+              ("solo-dot", "我 vs Dot", "dot"), ("solo-deepseek", "我 vs DeepSeek", "deepseek")]
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
-ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "系統": "⚙️"}
+ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "DeepSeek": "🐋", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
-           "/claude 問題、/codex 問題、/gemini 問題、/nvidia 問題：只問一位（也可以開頭寫 @Gemini、@輝達）\n"
+           "/claude 問題、/codex 問題、/gemini 問題、/nvidia 問題、/deepseek 問題：只問一位（也可以開頭寫 @Gemini、@輝達、@DeepSeek）\n"
            "開頭連續點名＝串接：@Gemini @輝達 問題（依序回答）；@all 或 @大家＝四位都回\n/more 2：讓他們再討論 2 輪\n"
            "/note 文字：只記下，不叫他們（下次叫時會一起看到）\n"
            "/order 換誰先講　/stop 中斷　/new 這個房間開新討論\n/write on 或 off：開關寫檔權限\n"
@@ -108,6 +109,7 @@ class Room:
         self.gemini = rt.GeminiAgent("Gemini")
         self.gemini.session, self.gemini.seen = d.get("gemini_session"), int(d.get("gemini_seen") or 0)
         self.nvidia = rt.NvidiaAgent("輝達")  # 沒有對話記憶，每次帶最近 60 則；只有點名才回
+        self.deepseek = DeepSeekAgent("DeepSeek")  # 使用者 11-18 19:26：付費但便宜，Claude 管；只有點名才回
         # 終端機 Claude 讀到哪；第一次接手時只給最近幾則，舊紀錄需要時再去讀檔
         self.term_seen = int(d["claude_term_seen"]) if "claude_term_seen" in d else max(0, len(self.transcript) - 6)
         self.auto = int(d.get("auto") or 0)  # 兩位自動輪流回應的上限（每個話題）
@@ -188,7 +190,7 @@ class Room:
 
     # ---------- 狀態 ----------
     def agents(self):
-        return (self.claude, self.codex, self.gemini, self.nvidia)
+        return (self.claude, self.codex, self.gemini, self.nvidia, self.deepseek)
 
     def order_both(self):
         return [self.claude, self.codex] if self.order == "claude" else [self.codex, self.claude]
@@ -197,7 +199,7 @@ class Room:
         """一般發言：Claude、Codex 先講，Gemini 最後（看得到前兩位的回答，負責補充與挑毛病）。
         互相討論群：只叫 Claude 當窗口，由它決定要不要 @ 別人（使用者 11-17：別一直叫醒快沒額度的 Codex）。
         Codex 週額度超速或快用完時，一般發言不叫它（點名還是會叫）。"""
-        if self.solo in ("gemini", "nvidia"):  # 一對一房：只叫那一位
+        if self.solo in ("gemini", "nvidia", "deepseek"):  # 一對一房：只叫那一位
             return [getattr(self, self.solo)]
         if self.solo == "dot":  # Dot 不在線：發言會自動留點名單，不叫任何 AI
             return []
@@ -208,7 +210,7 @@ class Room:
 
     def seq_for(self, target):
         return {"both": self.order_all(), "all": self.order_all(), "claude": [self.claude],
-                "codex": [self.codex], "gemini": [self.gemini], "nvidia": [self.nvidia],
+                "codex": [self.codex], "gemini": [self.gemini], "nvidia": [self.nvidia], "deepseek": [self.deepseek],
                 "dot": []}.get(target, self.order_all())  # dot：不叫 AI，只留點名單給 Dot
 
     @property
@@ -229,7 +231,7 @@ class Room:
         picked = []  # 開頭連續點名＝串接：「@Gemini @輝達 …」依序回答，後面的看得到前面的回答；@all／@大家＝四位
         if target == "both":  # 也接受開頭寫「（只問 Gemini）」
             while True:
-                m = re.match(r"\s*(?:@|（只問\s*)(claude|codex|gemini|nvidia|輝達|all|大家|全部)(?![A-Za-z])[）)]?[\s,，、]*",
+                m = re.match(r"\s*(?:@|（只問\s*)(claude|codex|gemini|nvidia|輝達|deepseek|all|大家|全部)(?![A-Za-z])[）)]?[\s,，、]*",
                              text, re.I)
                 if not m:
                     break
@@ -239,7 +241,7 @@ class Room:
                 text = text[m.end():]
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
-                picked = [m for m in ("claude", "codex", "gemini", "nvidia", "dot") if m in members]
+                picked = [m for m in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") if m in members]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
                 if "codex" in picked and codex_hot():
                     threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
@@ -248,7 +250,7 @@ class Room:
                     picked = ["claude"]
             if len(picked) == 1:
                 target = picked[0]
-        names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "dot": "Dot"}
+        names = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "deepseek": "DeepSeek", "dot": "Dot"}
         if len(picked) > 1 and not (members is not None and picked in (["claude", "codex", "gemini"], ["claude", "gemini"])):
             # 標記請誰、照什麼順序，大家讀到記錄才不會搞錯（網頁預設名單就不加標記，免得每則都一長串）
             text = f"（請 {'→'.join(names[p] for p in picked)} 依序回答）{text}"
@@ -271,7 +273,7 @@ class Room:
 
     # ---------- 分身：主線在忙時，先回答新問題（只讀、不搶主線的對話） ----------
     def start_side(self, agent):
-        if agent.side is not None or agent in (self.gemini, self.nvidia):  # Gemini 沒有分身：忙的話做完再回
+        if agent.side is not None or agent in (self.gemini, self.nvidia, self.deepseek):  # Gemini 沒有分身：忙的話做完再回
             return False
         terminal = agent is self.claude and tb.terminal_alive()
         if not terminal and not agent.session:
@@ -329,6 +331,7 @@ class Room:
             self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
             self.gemini = rt.GeminiAgent("Gemini")
             self.nvidia = rt.NvidiaAgent("輝達")
+            self.deepseek = DeepSeekAgent("DeepSeek")
             self.transcript, self.approval, self.log_name = [], None, None
             self.epoch += 1
             self.hub.save()
@@ -507,9 +510,9 @@ class Room:
         """自動輪流：這位說完，換另一位回應；有上限，也可以用【討論結束】提早結束。"""
         # AI 之間自己決定對話對象：發言裡「行首」寫 @名字 就叫那位回一次（不叫自己；每則使用者訊息最多接力 MAX_HOPS 次）
         names = {"claude": self.claude, "codex": self.codex, "gemini": self.gemini, "nvidia": self.nvidia,
-                 "輝達": self.nvidia}
+                 "輝達": self.nvidia, "deepseek": self.deepseek}
         called = []
-        for m in re.finditer(r"(?m)^\s*@(claude|codex|gemini|nvidia|輝達)(?![A-Za-z])", said or "", re.I):
+        for m in re.finditer(r"(?m)^\s*@(claude|codex|gemini|nvidia|輝達|deepseek)(?![A-Za-z])", said or "", re.I):
             a = names[m.group(1).lower()]
             if a is not agent and a not in called:
                 called.append(a)
@@ -529,7 +532,7 @@ class Room:
                 threading.Thread(target=lambda q=todo: self.chain(q), daemon=True).start()
         if self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
             return
-        if agent in (self.gemini, self.nvidia):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
+        if agent in (self.gemini, self.nvidia, self.deepseek):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
             return
         if "【討論結束】" in said:
             self.auto_left = 0
@@ -823,7 +826,7 @@ class Hub:
             self.bot.send(cid, f"⚙️ 改成 {'Claude' if o == 'claude' else 'Codex'} 先講。")
         elif word == "/more":
             room.more(int(arg) if arg.isdigit() else 1)
-        elif word in ("/claude", "/codex", "/gemini", "/nvidia"):
+        elif word in ("/claude", "/codex", "/gemini", "/nvidia", "/deepseek"):
             if arg:
                 room.user_says(arg, "Telegram", word[1:])
         elif word == "/auto":
@@ -926,7 +929,7 @@ def make_handler(hub):
                     room.note(text, "電腦")
                 elif text:
                     mem = data.get("members")
-                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "dot") else "both",
+                    room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") else "both",
                                    members=[m for m in mem if isinstance(m, str)] if isinstance(mem, list) else None)
                 return self._json({"ok": True})
             if p == "/api/more":
@@ -952,7 +955,7 @@ def make_handler(hub):
                         room.term_seen = len(room.transcript)
                     hub.save()
                 nxt = data.get("then")
-                if nxt in ("codex", "claude", "gemini", "nvidia", "both"):
+                if nxt in ("codex", "claude", "gemini", "nvidia", "deepseek", "both"):
                     room.stop_flag = False
                     room.chain(room.seq_for(nxt))
                 return self._json({"ok": True})
@@ -1154,6 +1157,18 @@ def usage_summary():
                     "verdict": f"今天 {used}/900 次（台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "輝達", "missing": True})
+    try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用i-call\deepseek\設定.json）
+        import deepseek_agent as dsa
+        ds = dsa._ds()
+        d, m = ds.spent()
+        c = ds.conf()
+        dl, ml = c["每日上限美元"], c["每月上限美元"]
+        out.append({"name": "DeepSeek", "windows": [
+            {"label": "今天", "used": round(100 * d / dl, 1), "elapsed": None, "state": "", "resets": "00:00", "empty_at": ""},
+            {"label": "本月", "used": round(100 * m / ml, 1), "elapsed": None, "state": "", "resets": "", "empty_at": ""}],
+            "verdict": f"今天 ${d:.3f}／${dl}，本月 ${m:.3f}／${ml}", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
+    except Exception:
+        out.append({"name": "DeepSeek", "missing": True})
     return {"agents": out, "time": time.strftime("%H:%M")}
 
 

@@ -9,13 +9,13 @@
 <style>
 :root{
   --bg:#f4f2ee; --panel:#ffffff; --ink:#1d1b18; --muted:#7a756d; --line:#e4e0d8;
-  --me:#2f6fde; --me-bg:#e8f0fd; --claude:#c8643b; --claude-bg:#fbefe8; --codex:#0f9a74; --codex-bg:#e6f5f0; --gemini:#4f6bed; --nvidia:#76b900;
+  --me:#2f6fde; --me-bg:#e8f0fd; --claude:#c8643b; --claude-bg:#fbefe8; --codex:#0f9a74; --codex-bg:#e6f5f0; --gemini:#4f6bed; --nvidia:#76b900; --deepseek:#4d6bfe;
   --sys:#8a857c; --sys-bg:#efede8; --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04);
   --font:"Segoe UI","Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#17171a; --panel:#202024; --ink:#ecebe8; --muted:#9a968f; --line:#2f2f35;
-  --me:#7aa7ff; --me-bg:#1f2a40; --claude:#f0956b; --claude-bg:#3a261d; --codex:#4fd1a7; --codex-bg:#16332b; --gemini:#8fa2ff; --nvidia:#9ad62a;
+  --me:#7aa7ff; --me-bg:#1f2a40; --claude:#f0956b; --claude-bg:#3a261d; --codex:#4fd1a7; --codex-bg:#16332b; --gemini:#8fa2ff; --nvidia:#9ad62a; --deepseek:#8aa0ff;
   --sys:#9a968f; --sys-bg:#26262b; --shadow:none; color-scheme:dark;
 }}
 *{box-sizing:border-box}
@@ -31,7 +31,7 @@ header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var
 header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.02em}
 .faces{display:flex;gap:4px}
 .face{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
-.f-me{background:var(--me)}.f-claude{background:var(--claude)}.f-codex{background:var(--codex)}.f-gemini{background:var(--gemini)}.f-nvidia{background:var(--nvidia)}
+.f-me{background:var(--me)}.f-claude{background:var(--claude)}.f-codex{background:var(--codex)}.f-gemini{background:var(--gemini)}.f-nvidia{background:var(--nvidia)}.f-deepseek{background:var(--deepseek)}
 .spacer{flex:1}
 .pill{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--sys-bg);color:var(--muted);white-space:nowrap}
 .pill.on{color:var(--codex)} .pill.warn{color:var(--claude)}
@@ -52,6 +52,7 @@ main{flex:1;overflow-y:auto;padding:20px 16px 8px}
 .m-codex .bubble{border-left:3px solid var(--codex)} .m-codex .meta b{color:var(--codex)}
 .m-gemini .bubble{border-left:3px solid var(--gemini)} .m-gemini .meta b{color:var(--gemini)}
 .m-nvidia .bubble{border-left:3px solid var(--nvidia)} .m-nvidia .meta b{color:var(--nvidia)}
+.m-deepseek .bubble{border-left:3px solid var(--deepseek)} .m-deepseek .meta b{color:var(--deepseek)}
 .m-me .meta b{color:var(--me)}
 .m-sys{justify-content:center}.m-sys .bubble{background:transparent;border:none;box-shadow:none;color:var(--sys);font-size:13px;padding:2px 8px;text-align:center}
 .m-sys .sf{display:inline-block;max-width:100%;text-align:center}
@@ -157,7 +158,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 </head>
 <body>
 <header>
-  <div class="faces"><div class="face f-me">你</div><div class="face f-claude">C</div><div class="face f-codex">X</div><div class="face f-gemini">G</div><div class="face f-nvidia">N</div></div>
+  <div class="faces"><div class="face f-me">你</div><div class="face f-claude">C</div><div class="face f-codex">X</div><div class="face f-gemini">G</div><div class="face f-nvidia">N</div><div class="face f-deepseek">D</div></div>
   <h1>三方討論</h1>
   <div class="spacer"></div>
   <label class="switch" title="開啟後 Claude 與 Codex 可以改檔案、執行指令"><input type="checkbox" id="write"><span class="track"></span><span id="writeLbl">唯讀</span></label>
@@ -179,7 +180,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
   </div>
   <div class="tools">
     <span class="seg" id="target">
-      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
+      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="deepseek" title="付費（便宜），Claude 管">只問 DeepSeek</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
     </span>
     <button id="order" title="切換誰先發言">Claude 先講</button>
     <span class="spacer"></span>
@@ -230,6 +231,7 @@ const WHO = {
   "Codex":  {cls:"m-codex", face:"f-codex", ch:"X", name:"Codex"},
   "Gemini": {cls:"m-gemini", face:"f-gemini", ch:"G", name:"Gemini"},
   "輝達":   {cls:"m-nvidia", face:"f-nvidia", ch:"N", name:"輝達"},
+  "DeepSeek": {cls:"m-deepseek", face:"f-deepseek", ch:"D", name:"DeepSeek"},
   "系統":   {cls:"m-sys"}
 };
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -325,13 +327,13 @@ async function api(path, body){
   if(!r.ok) throw new Error(r.status);
   return r.json();
 }
-const FACE = {"Claude":"f-claude","Codex":"f-codex","Gemini":"f-gemini","輝達":"f-nvidia"};
-const CH = {"Claude":"C","Codex":"X","Gemini":"G","輝達":"N"};
+const FACE = {"Claude":"f-claude","Codex":"f-codex","Gemini":"f-gemini","輝達":"f-nvidia","DeepSeek":"f-deepseek"};
+const CH = {"Claude":"C","Codex":"X","Gemini":"G","輝達":"N","DeepSeek":"D"};
 async function loadUsage(){
   try{
     const d = await api("/api/usage");
     $("#usageTime").textContent = d.time + " 更新";
-    const KEY_OF = {"Claude":"claude","Codex":"codex","Gemini":"gemini","輝達":"nvidia"};
+    const KEY_OF = {"Claude":"claude","Codex":"codex","Gemini":"gemini","輝達":"nvidia","DeepSeek":"deepseek"};
     for(const a of d.agents){  // 兩級警示：🟠 吃緊（任一窗 ≥80% 或超速）、🔴 快用完（任一窗 ≥95%）
       const b = document.querySelector(`#target button[data-t="${KEY_OF[a.name]}"]`);
       if(!b) continue;
@@ -449,9 +451,9 @@ function pickTarget(t){  // 程式切換下方按鈕（一對一房預設選那�
 }
 let soloSetFor = null;
 // 「群聊」名單：每個「只問 X」右邊的小按鈕決定 X 在不在「問大家」裡（存在這台瀏覽器）
-const GROUP_ORDER = ["claude", "codex", "gemini", "nvidia", "dot"];
-const GROUP_NAME = {claude:"Claude", codex:"Codex", gemini:"Gemini", nvidia:"輝達", dot:"Dot"};
-let group = {claude:true, codex:true, gemini:true, nvidia:false, dot:false};
+const GROUP_ORDER = ["claude", "codex", "gemini", "nvidia", "deepseek", "dot"];
+const GROUP_NAME = {claude:"Claude", codex:"Codex", gemini:"Gemini", nvidia:"輝達", deepseek:"DeepSeek", dot:"Dot"};
+let group = {claude:true, codex:true, gemini:true, nvidia:false, deepseek:false, dot:false};
 try{ Object.assign(group, JSON.parse(localStorage.getItem("rt-group") || "{}")); }catch(e){}
 function groupMembers(){ return GROUP_ORDER.filter(k => group[k]); }
 function renderGroup(){
