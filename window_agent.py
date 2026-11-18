@@ -39,6 +39,34 @@ class WindowAgent(rt.Agent):
         p = os.path.join(tickets, f"{self.room_id or 'main'}.md")
         head = "" if os.path.exists(p) else (f"# 待回：{self.room_name or self.room_id}（房間 id：{self.room_id}）\n"
                                              f"看完整對話：PY {home or 'H:'}\\群組\\群組.py 看 {self.room_id}；回完把這個檔移到 已處理\\\n")
+        new = not os.path.exists(p)
         with open(p, "a", encoding="utf-8") as f:
             f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
+        if new:   # 同一張單還沒處理就不重複叫，免得一直插話
+            self.step("叫醒視窗：" + nudge(self.name, self.room_id or "main"))
         return ""
+
+
+NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
+
+
+def nudge(name, room_id):
+    """叫醒住在 OpenCode 視窗的 agent：往它的輸入框塞一句話並送出（使用者 11-19 要的通知功能）。
+    agy（Gemini）沒有這種控制介面，只留單。回傳結果文字，不丟例外。"""
+    import base64, json, urllib.request
+    f = NOTIFY.get(name)
+    if not f or not os.path.exists(f):
+        return "沒有開視窗或不支援，只留單"
+    try:
+        c = json.load(open(f, encoding="utf-8"))
+        auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
+        url = f"http://127.0.0.1:{c['port']}"
+        text = (f"【中樞通知】群組有人找你：讀 群組\\待回\\{room_id}.md，"
+                f"用 群組.py 看 {room_id} 和回覆，回完把那張單移到 群組\\待回\\已處理\\。")
+        for path, body in (("/tui/append-prompt", {"text": text}), ("/tui/submit-prompt", {})):
+            r = urllib.request.Request(url + path, data=json.dumps(body).encode(),
+                                       headers={"Content-Type": "application/json", "Authorization": auth})
+            urllib.request.urlopen(r, timeout=5).read()
+        return "已送進視窗"
+    except Exception as e:
+        return f"叫不醒（{type(e).__name__}），只留單"
