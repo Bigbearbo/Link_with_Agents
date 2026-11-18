@@ -15,6 +15,7 @@ import re
 import secrets
 import socket
 import sys
+import shutil
 import subprocess
 import threading
 import time
@@ -1660,6 +1661,53 @@ if __name__ == "__main__":
                 log(f"過程提醒失敗：{type(e).__name__} {e}")
             time.sleep(60)
     threading.Thread(target=process_alert_loop, daemon=True).start()
+
+    def shared_guard_loop():
+        """共用區保護（使用者 11-19 05:3x：「偵測到異常就改回鏡像」；06:3x 開了雙向雲端資料夾）。
+        ① 每 10 分鐘：保護檔有沒進 git 的改動超過 3 分鐘＝不是 Claude 改的（Claude 改完立刻 commit）→ 另存被改版、改回 git 版、群組提醒。
+        ② 每小時：其他檔自動 commit 一次（快照），讓「最後一版」不會太舊。"""
+        import subprocess as sp
+        root = r"H:\Agent共用"
+        protected = ["README.md", "新成員入門.md", "團隊目標.md", "通知規則.txt", ".gitignore",
+                     "記憶/規則.json", "記憶/規則.md", ".agents/skills/team-system/SKILL.md", ".claude/skills/team-system/SKILL.md"]
+        backup = os.path.join(HERE, "共用區被改備份")
+        first_seen, last_commit = {}, 0.0
+
+        def git(*a):
+            return sp.run(["git", "-C", root, "-c", "core.quotepath=false", "-c", "user.name=中樞自動", "-c", "user.email=hub@local", *a],
+                          capture_output=True, timeout=120, creationflags=0x08000000 if os.name == "nt" else 0)
+        while True:
+            try:
+                changed = set(git("diff", "--name-only", "--", *protected).stdout.decode("utf-8", "replace").split("\n")) - {""}
+                now = time.time()
+                for f in list(first_seen):
+                    if f not in changed:
+                        first_seen.pop(f)
+                for f in changed:
+                    first_seen.setdefault(f, now)
+                    if now - first_seen[f] < 180:
+                        continue
+                    src = os.path.join(root, f.replace("/", os.sep))
+                    os.makedirs(backup, exist_ok=True)
+                    keep = os.path.join(backup, time.strftime("%m%d-%H%M%S-") + f.replace("/", "_"))
+                    if os.path.exists(src):
+                        shutil.copy2(src, keep)
+                    git("checkout", "--", f)
+                    first_seen.pop(f, None)
+                    log(f"共用區保護：{f} 被改，已改回 git 版，被改版存 {keep}")
+                    hub.room("g1004308131170").notice(
+                        f"🛡 共用區保護：`{f}` 有沒經過 Claude 的改動（可能是雲端 App 或哪位 AI），已改回上一版。"
+                        f"被改的內容沒丟，存在中樞 `共用區被改備份\\{os.path.basename(keep)}`；要保留請在群組說，Claude 會併回去。")
+                if now - last_commit > 3600:
+                    git("add", "-A")
+                    r = git("commit", "-q", "-m", "中樞每小時自動快照")
+                    last_commit = now
+                    if r.returncode == 0:
+                        log("共用區自動快照已 commit")
+            except Exception as e:
+                log(f"共用區保護失敗：{type(e).__name__} {e}")
+            time.sleep(600)
+    threading.Thread(target=shared_guard_loop, daemon=True).start()
 
     def deepseek_audit_loop():
         """每小時對一次 DeepSeek 金鑰帳（使用者 11-19 01:56：定期查詢金鑰消費）；有警告才在互相討論群講。"""
