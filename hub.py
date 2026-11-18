@@ -976,7 +976,7 @@ def make_handler(hub):
                         return self._json({"ok": True, "duplicate": True})
                     hub.seen_posts.append(cid)
                     del hub.seen_posts[:-200]
-                room.add(who, text, {"Codex": "App", "Gemini": "視窗"}.get(who, "回覆"))
+                room.add(who, text, {"Codex": "App", "Gemini": "agy"}.get(who, "回覆"))
                 if agent:  # 視窗 agent 行首 @誰 照常點名（有接力上限）；它自己不會被叫
                     threading.Thread(target=room.auto_next, args=(getattr(room, agent.lower()), text), daemon=True).start()
                 room.auto_left = room.auto
