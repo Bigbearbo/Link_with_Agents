@@ -975,6 +975,17 @@ AUTO_PROMPT = ("⏰ 自主工作時段：請讀你的目標檔 {goal}，做「�
                "沒驗證的不要說成結論；全部完成或卡住就把目標檔第一行改成「狀態：暫停」並說明原因；需要權限或執行環境才 @Claude。")
 
 
+def _work_memory(name, mode):
+    """工作記憶（主項、自己的待辦、專案索引）：規則在 H:\Agent共用\記憶\規則.json（使用者 11-18 11:27）。"""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("注入", r"H:\Agent共用\記憶\注入.py")
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        return m.build(name, mode)
+    except Exception:
+        return ""
+
+
 def _auto_pace(kind, base_gap):
     """自主時段動態降速：回傳 (是否執行, 建議間隔秒, 步數上限)。接近額度先拉長間隔與減步數，滿載才停。"""
     try:
@@ -1034,7 +1045,7 @@ def auto_loop(hub):
                     agent._auto_steps = auto_steps
                 last[rid] = time.time()
                 room.stop_flag = False
-                room.notice(AUTO_PROMPT.format(goal=goal))
+                room.notice(AUTO_PROMPT.format(goal=goal) + _work_memory(agent.name, "自主"))
                 log(f"[{room.name}] 自主工作時段：叫 {agent.name}")
                 threading.Thread(target=lambda r=room, a=agent: r.chain([a]), daemon=True).start()
             except Exception as e:
