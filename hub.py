@@ -1259,7 +1259,7 @@ def usage_summary():
                     "verdict": f"今天 {used}/900 次（台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "輝達", "missing": True})
-    try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用i-call\deepseek\設定.json）
+    try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）
         import deepseek_agent as dsa
         ds = dsa._ds()
         d, m = ds.spent()
@@ -1675,7 +1675,7 @@ if __name__ == "__main__":
             except Exception as e:
                 log(f"DeepSeek 對帳失敗：{type(e).__name__} {e}")
             try:  # 11-19 04:2x：Gemini 搬進視窗後用量條沒人更新，看錯以為還有 → Argon 用到 99%。/usage 不呼叫模型、不花額度
-                subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', r'H:\Agent共用i-call\gemini_usage.py'],
+                subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', r'H:\Agent共用\ai-call\gemini_usage.py'],
                                capture_output=True, timeout=180, creationflags=0x08000000 if os.name == 'nt' else 0)
             except Exception as e:
                 log(f'Gemini 用量更新失敗：{type(e).__name__} {e}')
