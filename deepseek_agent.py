@@ -169,7 +169,7 @@ class DeepSeekAgent(rt.Agent):
                 + rt.work_memory("DeepSeek", body) + "\n\n現在輪到你（DeepSeek）。")
 
     def _call(self, messages):
-        text, cost, mid = _ds().chat(messages, model="flash", max_tokens=4096, who="DeepSeek")
+        text, cost, mid = _ds().chat(messages, model="flash", max_tokens=8192, who="DeepSeek")  # 11-19 02:03 finish=length 空白 → 加大
         self.last_model = mid
         self.step(f"花 ${cost:.4f}")
         return text
