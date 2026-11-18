@@ -50,12 +50,15 @@ GUIDE = """你是「DeepSeek」（DeepSeek V4.1 Flash，經 OpenRouter 付費額
 - 不要把密碼、金鑰、帳號、學生資料寫進任何地方。
 """
 
-TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式)】[ \t]*([^【\n]*)")
+TOOL_RE = re.compile(r"(?m)^[ 	]*【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式)】[ \t]*([^【\n]*)")
 
 
 GRANTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-權限.json")  # 使用者按「以後都允許」存在這（agent 自己改不到）
 SHARED_ROOT = r"H:\Agent共用"
-NEVER = ("secret", "token", "tg_state", ".dpapi", "web-key", "credential", "password", "導師助手", "待辦.json")
+NEVER = ("ai-call", "記憶", "catalog.py", "secret", "token", "tg_state", ".dpapi", "web-key", "credential", "password", "導師助手", "待辦.json")
+
+
+CODE_EXT = (".py", ".pyw", ".cmd", ".bat", ".ps1", ".js", ".vbs", ".exe", ".dll")
 
 
 def granted_dirs(extra=()):
@@ -71,6 +74,8 @@ def _in_work(name, extra=()):
     for root in (HOME, SHARED_OUT):
         if p.lower().startswith(os.path.realpath(root).lower() + os.sep):
             return p
+    if p.lower().endswith(CODE_EXT):
+        return None  # Gemini 03:13：共用區其他地方不准寫程式檔（別人或中樞可能會執行）
     if os.path.basename(p).lower() == "owner.txt" and p not in [os.path.join(d, "OWNER.txt") for d in extra]:
         return None  # 別人的 OWNER.txt：就算資料夾允許過，也要每次問
     for root in granted_dirs(extra):
@@ -84,7 +89,7 @@ def write_file(name, content, append=False, agent=None):
     if not p:
         q = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
         if (agent is not None and q.lower().startswith(os.path.realpath(SHARED_ROOT).lower() + os.sep)
-                and not any(b in q.lower() for b in NEVER)):
+                and not any(b in q.lower() for b in NEVER) and not q.lower().endswith(CODE_EXT)):
             # 共用區其他地方：記下來，這輪結束後請使用者同意（允許一次／以後都允許這個資料夾）
             d = os.path.dirname(q)
             agent.denials = getattr(agent, "denials", []) or []

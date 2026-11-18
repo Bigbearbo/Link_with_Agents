@@ -61,10 +61,10 @@ GUIDE = """你是「輝達」（NVIDIA Nemotron，經 OpenRouter 免費額度）
 - 每天第一次被叫到時：先【讀檔】H:\免費模型用\筆記.md，若今天還沒有「OpenRouter 規則檢查」，就用【網路搜尋】查一次免費模型的額度規則有沒有變，結果用【寫筆記】記下（標題寫「OpenRouter 規則檢查 日期」）。
 """
 
-TOOL_RE = re.compile(r"【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位|續任|收回)】[ \t]*([^【\n]*)")
-WRITE_RE = re.compile(r"【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*?)\n?【/\1】", re.S)
+TOOL_RE = re.compile(r"(?m)^[ 	]*【(最近對話|搜尋對話|網路搜尋|讀檔|列目錄|用量|寫筆記|跑程式|請教|免費模型|讓位|續任|收回)】[ \t]*([^【\n]*)")
+WRITE_RE = re.compile(r"(?m)^[ 	]*【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*?)\n?【/\1】", re.S)
 # 回覆被輸出上限截斷時【寫檔】沒有收尾：先存已寫的部分，請它用【續寫】接下去（11-18 07:18 它把半截程式貼到房間）
-OPEN_RE = re.compile(r"【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*)\Z", re.S)
+OPEN_RE = re.compile(r"(?m)^[ 	]*【(寫檔|續寫)】[ \t]*([^\n【]+)\n(.*)\Z", re.S)
 SHARED_OUT = r"H:\Agent共用\輝達"  # 輝達在共用區自己的子資料夾（使用者 11-18 07:18 同意）
 WORK = os.path.join(HOME, "work")
 SANDBOX = os.path.join(HOME, ".sandbox", "run.py")
