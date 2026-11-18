@@ -57,8 +57,9 @@ class WindowAgent(rt.Agent):
                 r = "它正在忙，這次先不叫（下次有人找它時再試）"
             else:
                 LAST_NUDGE[key] = time.time()
-                NUDGE_COUNT[key] = n + 1
                 r = nudge(self.name, self.room_id or "main", again=not new)
+                if r == "已送進視窗":  # 11-19 04:17：Gemini 本來就叫不醒，不算次數，免得誤報「叫了 3 次沒回」
+                    NUDGE_COUNT[key] = n + 1
             self.step("叫醒視窗：" + r)
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
                 f.write(f"{time.strftime('%m-%d %H:%M:%S')} {self.name} {self.room_id or 'main'} 第{NUDGE_COUNT.get(key, 0)}次 {r}\n")
