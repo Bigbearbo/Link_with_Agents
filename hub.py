@@ -886,6 +886,14 @@ def make_handler(hub):
             k = self.headers.get("X-Key") or (q or {}).get("k", [""])[0]
             return secrets.compare_digest(k, hub.key)
 
+        def _agent(self):
+            """視窗裡的 agent（目前只有 Gemini）用自己的低權限金鑰：只能讀房間、以自己名義發言（使用者 11-18 20:11 移交）。"""
+            k = self.headers.get("X-Agent-Key") or ""
+            for name, ak in agent_keys().items():
+                if k and secrets.compare_digest(k, ak):
+                    return name
+            return None
+
         def do_GET(self):
             u = urlparse(self.path)
             q = parse_qs(u.query)
@@ -900,7 +908,7 @@ def make_handler(hub):
                 self.end_headers()
                 self.wfile.write(body)
             elif u.path == "/api/poll":
-                if not self._authed():
+                if not (self._authed() or self._agent()):
                     return self._json({"error": "forbidden"}, 403)
                 self._json(hub.snapshot(q.get("room", [MAIN])[0], int(q.get("since", ["0"])[0]),
                                         int(q.get("epoch", ["0"])[0])))
@@ -914,7 +922,8 @@ def make_handler(hub):
                 self._json({"error": "not found"}, 404)
 
         def do_POST(self):
-            if not self._authed():
+            agent = None if self._authed() else self._agent()
+            if not self._authed() and not (agent and urlparse(self.path).path == "/api/agent_says"):
                 return self._json({"error": "forbidden"}, 403)
             n = int(self.headers.get("Content-Length") or 0)
             try:
@@ -945,17 +954,17 @@ def make_handler(hub):
             if p in ("/api/claude_says", "/api/agent_says"):
                 # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
                 text = (data.get("text") or "").strip()
-                who = "Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude"
+                who = agent or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
                 if not text:
                     return self._json({"ok": False})
-                room.add(who, text, "App" if who == "Codex" else "回覆")
+                room.add(who, text, {"Codex": "App", "Gemini": "視窗"}.get(who, "回覆"))
                 room.auto_left = room.auto
                 with hub.lock:
                     if who == "Claude":
                         room.term_seen = len(room.transcript)
                     hub.save()
                 nxt = data.get("then")
-                if nxt in ("codex", "claude", "gemini", "nvidia", "deepseek", "both"):
+                if nxt in ("codex", "claude", "gemini", "nvidia", "deepseek", "both") and not agent:
                     room.stop_flag = False
                     room.chain(room.seq_for(nxt))
                 return self._json({"ok": True})
@@ -1170,6 +1179,27 @@ def usage_summary():
     except Exception:
         out.append({"name": "DeepSeek", "missing": True})
     return {"agents": out, "time": time.strftime("%H:%M")}
+
+
+def agent_keys():
+    """各視窗 agent 的低權限金鑰：secrets/agent-key-<名字>.txt；同一份也放在該 agent 的家（例如 H:\Gemini用\.群組金鑰.txt）。"""
+    out = {}
+    for name, home in (("Gemini", r"H:\Gemini用"),):
+        p = os.path.join(HERE, "secrets", f"agent-key-{name}.txt")
+        try:
+            out[name] = open(p, encoding="utf-8").read().strip()
+        except OSError:
+            k = secrets.token_urlsafe(24)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "w", encoding="utf-8").write(k)
+            out[name] = k
+        try:
+            hp = os.path.join(home, ".群組金鑰.txt")
+            if not os.path.exists(hp) or open(hp, encoding="utf-8").read().strip() != out[name]:
+                open(hp, "w", encoding="utf-8").write(out[name])
+        except OSError:
+            pass
+    return out
 
 
 def web_key():
