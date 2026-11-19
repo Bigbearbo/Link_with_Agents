@@ -1919,7 +1919,7 @@ if(!box){{box=document.createElement('div');box.className='sentbox';sec.appendCh
 const n=document.createElement('div');n.className='sent';n.textContent='✓ 已送出（'+new Date().toTimeString().slice(0,5)+'）：'+t.value;box.appendChild(n);
 const ol=document.querySelector('#hist ol');if(ol){{const li=document.createElement('li');li.className='h';const mt=document.createElement('span');mt.className='meta';
 mt.textContent=new Date().toTimeString().slice(0,5)+'（剛送出）｜'+((sec.querySelector('h3')||{{}}).textContent||'').slice(0,40);li.append(mt,document.createElement('br'),t.value);
-if(ol.firstElementChild&&!ol.firstElementChild.classList.contains('h'))ol.firstElementChild.remove();ol.prepend(li);
+if(ol.firstElementChild&&!ol.firstElementChild.classList.contains('h'))ol.firstElementChild.remove();ol.prepend(li);const vis=[...ol.querySelectorAll('li.h:not([hidden])')];if(vis.length>20)vis[vis.length-1].hidden=true;
 const hb=document.getElementById('histBtn');if(hb)hb.textContent='批示歷史（'+ol.querySelectorAll('li.h').length+'）';}}
 t.value='';sec.classList.add('shrunk');}}
 else s.textContent='送出失敗';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
