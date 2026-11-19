@@ -1491,6 +1491,8 @@ def usage_pressure(who):
             return float(w.get("used", 0)) / 100
         if who == "codex":
             w = json.load(open(r"H:\Agent共用\codex-用量.json", encoding="utf-8"))["seven_day"]
+            if time.time() > float(w.get("resets_at_unix") or 0):
+                return None   # 用量檔停在重置前（codex_usage.py update 目前壞了），過了重置時間就當作不知道，不再擋
             return float(w.get("used", 0)) / 100
         if who == "deepseek":
             sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
