@@ -1926,6 +1926,31 @@ if __name__ == "__main__":
                 n += fresh
         return n
 
+    def subscription_loop():
+        """視窗 agent 的訂閱摘要（使用者 11-19 09:08：agent 也可以像人一樣訂閱資訊）。
+        每 30 分鐘照 <家>\\訂閱.json 篩共用區變動，寫進 <家>\\群組\\訂閱摘要.md（只留最近 24 小時），家規叫它醒來先看。"""
+        import window_agent as wa
+        defaults = {"Gemini": ["Gemini", "團隊目標", "研究想法庫", "外部研究", "Codex工作清單"],
+                    "輝達": ["輝達", "手搓", "claude-接手Fable", "GPT對話整理", "待辦"]}
+        while True:
+            for name, home in wa.HOMES.items():
+                try:
+                    rp = os.path.join(home, "訂閱.json")
+                    if not os.path.exists(rp):
+                        json.dump({"_說明": f"{name} 的訂閱：共用區變動裡，關鍵字任一個符合路徑／負責人／摘要就列進 群組\\訂閱摘要.md；空清單＝全部。自己改。",
+                                   "關鍵字": defaults.get(name, [name]), "類": "", "最多": 15},
+                                  open(rp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                    rule = json.load(open(rp, encoding="utf-8"))
+                    since = time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 86400))
+                    body = sw.digest(rule, since)
+                    with open(os.path.join(home, "群組", "訂閱摘要.md"), "w", encoding="utf-8") as f:
+                        f.write(f"# {name} 的訂閱摘要（中樞每 30 分鐘更新；最近 24 小時；條件在 {rp}）\n"
+                                f"更新：{time.strftime('%m-%d %H:%M')}\n\n" + (body or "（沒有符合的變動）") + "\n")
+                except Exception as e:
+                    log(f"訂閱摘要失敗 {name}：{type(e).__name__} {e}")
+            time.sleep(1800)
+    threading.Thread(target=subscription_loop, daemon=True).start()
+
     def dispatch_loop():
         """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。
         每 30 分鐘：輝達視窗開著、沒在跑、沒有待回單 → 從待辦挑一件它能做的（負責＝輝達 或 誰能做 含輝達；高＞中＞低；

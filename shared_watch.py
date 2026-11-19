@@ -298,3 +298,17 @@ def query_changes(q="", since="", until="", kind="", limit=200):
         if len(out) >= limit:
             break
     return out
+
+
+def digest(rule, since):
+    """訂閱摘要（使用者 11-19 09:08：「agent 也可以像人一樣訂閱資訊」）。rule＝{"關鍵字": [...], "類": "", "最多": 10}；
+    關鍵字任一個符合路徑／負責人／摘要就列，空清單＝全部。回傳 markdown 條列（新的在前）。"""
+    kws = rule.get("關鍵字") or [""]
+    rows, seen = [], set()
+    for kw in kws:
+        for r in query_changes(kw, since, "", rule.get("類", ""), 50):
+            if r["路徑"] not in seen:
+                seen.add(r["路徑"])
+                rows.append(r)
+    rows = sorted(rows, key=lambda r: r["時間"], reverse=True)[:int(rule.get("最多", 10))]
+    return "\n".join(f"- {r['時間'][5:]} {r['類']} {r['路徑']}" + (f"｜{r['摘要']}" if r.get("摘要") else "") for r in rows)

@@ -202,7 +202,7 @@ class DeepSeekAgent(rt.Agent):
                 + self.changes_digest()
                 + rt.work_memory("DeepSeek", body) + "\n\n現在輪到你（DeepSeek）。")
 
-    CHANGE_RULE = os.path.join(HOME, "變動條件.json")
+    CHANGE_RULE = os.path.join(HOME, "訂閱.json")  # 使用者 09:08：訂閱資訊（原名 變動條件.json）
 
     def changes_digest(self):
         """依 H:\\DeepSeek用\\變動條件.json 篩上次醒來後的共用區變動。檔案格式（DeepSeek 自己改）：
@@ -215,15 +215,8 @@ class DeepSeekAgent(rt.Agent):
         since = getattr(self, "_changes_since", "") or time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 6 * 3600))
         self._changes_since = time.strftime("%Y-%m-%d %H:%M")
         kws = rule.get("關鍵字") or [""]
-        rows, seen = [], set()
-        for kw in kws:
-            for r in sw.query_changes(kw, since, "", rule.get("類", ""), 50):
-                if r["路徑"] not in seen:
-                    seen.add(r["路徑"])
-                    rows.append(r)
-        rows = sorted(rows, key=lambda r: r["時間"], reverse=True)[:int(rule.get("最多", 10))]
-        lines = "\n".join(f"- {r['時間'][5:]} {r['類']} {r['路徑']}" + (f"｜{r['摘要']}" if r.get("摘要") else "") for r in rows)
-        return (f"\n\n共用區變動（依你的條件 `{self.CHANGE_RULE}`：關鍵字 {kws}；想看更多就改那個檔，"
+        lines = sw.digest(rule, since)   # 跟視窗 agent 的訂閱摘要同一個函式
+        return (f"\n\n共用區變動（你的訂閱 `{self.CHANGE_RULE}`：關鍵字 {kws}；想看更多就改那個檔，"
                 f"或用【讀檔】看 `H:\\Claude用\\三方討論\\logs\\共用區變動.jsonl`）：\n" + (lines or "（沒有符合的）"))
 
     def _call(self, messages):
