@@ -224,6 +224,19 @@ class Room:
                     except Exception as e:
                         self.notice(f"小AI·{n} 叫不動：{type(e).__name__} {str(e)[:80]}")
             threading.Thread(target=_small, daemon=True).start()
+        if who not in ("系統",) and not who.startswith("小AI") and (text or "").lstrip().startswith("求救"):
+            # 使用者 11-20 04:39：AI 卡住時的求救通道（規格 Codex 04:41），分流在 求救.py
+            def _rescue(w=who, t=text):
+                try:
+                    import importlib
+                    msg = importlib.import_module("求救").handle(w, t)
+                except Exception as e:
+                    msg = f"🆘 求救通道出錯（{type(e).__name__}）：@Claude 請直接看 {w} 的求救。"
+                self.notice(msg)
+                if "@Claude" in msg and w != "Claude":   # 第二次求救或重大：真的叫醒 Claude
+                    self.stop_flag = False
+                    self.chain([self.claude])
+            threading.Thread(target=_rescue, daemon=True).start()
         if who == "使用者" and (text or "").lstrip().startswith("報錯"):
             # 使用者 11-20 02:42：報錯接線生當第一線客服，決定回覆、併單、上報或追問（分流規則是 Codex 的 support_triage）
             def _support(t=text, rn=self.name, w=entry["time"]):

@@ -40,6 +40,15 @@ def my_todos(who):
     return out
 
 
+def rescues(who):
+    """還沒解決、而且負責人或發起人是他的求救卡（求救.py）。"""
+    try:
+        cards = json.load(open(os.path.join(HERE, "logs", "求救卡.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [{"id": k, **v} for k, v in cards.items() if v.get("狀態") != "已解決" and who in (v.get("負責", ""), v.get("發起", ""))]
+
+
 def following(who):
     news = ""
     p = os.path.join(HERE, "logs", "派報", f"{who}-下一期.md")
@@ -76,7 +85,7 @@ def feed(hub, n=30):
 
 def page(hub, who, key):
     who = who if who in NAMES else "Claude"
-    w, todos = waiting(hub, who), my_todos(who)
+    w, todos, sos = waiting(hub, who), my_todos(who), rescues(who)
     news, wakes = following(who)
     esc = _h.escape
     tabs = "".join(f'<a class="{"sel" if n == who else ""}" href="/board?ai={esc(n)}&k={esc(key)}">{esc(n)}</a>' for n in NAMES)
@@ -96,7 +105,7 @@ h3{{margin:4px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:12px}} 
 <div class="tabs">{tabs}</div>
 <section><h3>① 等 {esc(who)} 處理（{len(w) + len(todos)}）</h3>
 <p class="meta">被 @ 之後還沒在那個房間回話的（24 小時內）；負責中的待辦。做完才會消失，看過不算。</p>
-<ul>{wl}</ul><h3 style="font-size:14px">負責中的待辦</h3><ul>{tl}</ul></section>
+<ul>{wl}</ul>{"".join(f'<h3 style="font-size:14px">🆘 求救卡</h3><ul>' + "".join(f'<li><b>{esc(c["id"])}</b>（{esc(c.get("等級", ""))}，{esc(c.get("發起", ""))} 發起，第 {c.get("次數", 1)} 次）<br>{esc(c.get("欄位", {}).get("卡在", ""))}</li>' for c in sos) + "</ul>" for _ in [0] if sos)}<h3 style="font-size:14px">負責中的待辦</h3><ul>{tl}</ul></section>
 <section><h3>② {esc(who)} 追蹤的</h3><p class="meta">派報生的「下一期」新聞（小 AI 判斷不急的）與最近叫醒紀錄。訂閱規則在設定頁。</p>
 <div class="pre">{esc(news) or "（下一期還沒有新聞）"}</div><ul>{wk}</ul></section>
 <section><h3>③ 全部動態（機器人群，新的在上，同一人連續的收在一起）</h3>{fd or "<p class=meta>沒有</p>"}</section>
