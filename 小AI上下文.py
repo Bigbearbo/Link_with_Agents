@@ -121,8 +121,21 @@ def build(room, name):
     return out, kind
 
 
+def identity(name):
+    """使用者 11-20 06:33：「他不知道他是 groq？」——groq 是平台名，模型是 gpt-oss-120b；告訴它兩者，被問到自己就用「我」。"""
+    try:
+        import importlib, sys
+        sys.path.insert(0, r"H:\Agent共用\ai-call")
+        p = importlib.import_module("免費AI池").PROVIDERS.get(name)
+        return f"{p[0]} 平台上的 {p[2]} 模型" if p else name
+    except Exception:
+        return name
+
+
 def prompt(name, ctx, kind):
-    return (f"你是免費小 AI「{name}」（{kind}型），在一個多個 AI 一起工作的聊天室，使用者點名你。下面是程式替你整理的資料：使用者最後一句、"
+    return (f"你是「小AI·{name}」：{identity(name)}（{kind}型額度）。聊天室裡大家叫你 {name}；"
+            f"有人談到「{name}」就是在說你，請用「我」回答，不要用第三人稱評論自己。\n"
+            f"你在一個多個 AI 一起工作的聊天室，使用者點名你。下面是程式替你整理的資料：使用者最後一句、"
             "簡寫白話、這輪其他 AI 的回答、前面對話" + ("、共用區檢索片段" if kind == "次數" else "") + "。\n"
             "規則：只根據這些資料回答，用繁體中文、200 字內，直接回應使用者最後一句；其他 AI 已經答過的不要重複，"
             "能補充、指出矛盾或提出不同看法才講；資料裡沒有的就說「資料裡沒有」，不要猜。\n\n" + ctx)
