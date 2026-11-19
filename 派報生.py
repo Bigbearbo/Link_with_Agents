@@ -103,6 +103,17 @@ def news_router(name, wake, hits):
     程式關鍵字先篩出候選 → 小 AI 編成新聞（發生了什麼／為什麼跟你有關／原文在哪）並決定：即時叫醒 or 放進下一期摘要。
     只送共用區變動摘要和機器人群內容（不送主討論私聊）；用免費 groq。小 AI 失敗就退回原本的程式叫醒。
     回 (叫醒?, 新聞文字)。"""
+    # 使用者 02:48「每次再依照狀況回修程式，跟 AI 流水生產線是同一個意思」：
+    # 小 AI 判錯的情況，確認穩定後寫成固定規則（派報規則.json），程式先查規則，命中就不問小 AI。
+    # 規則格式：[{"給": "Codex 或 *", "含": ["訓練", "完成收據"], "叫醒": false, "來源": "誤判 11-20 …"}]
+    try:
+        rules = json.load(open(os.path.join(HERE, "派報規則.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        rules = []
+    blob = "\n".join(hits)
+    for r in rules:
+        if r.get("給", "*") in ("*", name) and all(k in blob for k in r.get("含", [])):
+            return bool(r.get("叫醒")), f"（固定規則：{r.get('來源', '')}）\n" + "\n".join(hits[:3])
     try:
         import importlib
         sys.path.insert(0, r"H:\Agent共用\ai-call")
