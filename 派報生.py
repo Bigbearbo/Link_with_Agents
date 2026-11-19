@@ -171,14 +171,15 @@ def patrol():
         from datetime import datetime as _D
         todo = json.load(open(os.path.join(SHARED, "待辦", "待辦.json"), encoding="utf-8"))
         yr = time.strftime("%Y-")
-        hrs, inter = [], []
+        hrs, inter, solo = [], [], []
         for t in todo:
             recs = [str(r.get("內容", r) if isinstance(r, dict) else r) for r in (t.get("紀錄") or [])]
             inter.append(sum("使用者" in x for x in recs))
             done = [x for x in recs if _re.match(r"\d\d-\d\d \d\d:\d\d 完", x)]
             if t.get("狀態") == "完成" and done and t.get("建立"):
+                solo.append(inter[-1] == 0)
                 hrs.append((_D.strptime(yr + done[-1][:11], "%Y-%m-%d %H:%M") - _D.strptime(yr + t["建立"][:11], "%Y-%m-%d %H:%M")).total_seconds() / 3600)
-        lines.append(f"- 待辦 {len(todo)} 項、完成 {len(hrs)}；建立→完成中位數 {(_st.median(hrs) if hrs else 0):.1f} 小時；平均每項使用者介入 {(sum(inter) / max(1, len(inter))):.1f} 次")
+        lines.append(f"- 待辦 {len(todo)} 項、完成 {len(hrs)}；建立→完成中位數 {(_st.median(hrs) if hrs else 0):.1f} 小時；平均每項使用者介入 {(sum(inter) / max(1, len(inter))):.1f} 次；完成的裡 AI 自己跑完 {sum(solo)} 項、你出過手 {len(solo) - sum(solo)} 項")
     except Exception as e:
         lines.append(f"- 算不出來（{type(e).__name__}）")
     lines.append("\n## 註解層指標（研究想法 018：有註解後還會不會再誤會、註解會不會越補越亂）")
