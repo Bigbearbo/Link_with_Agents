@@ -3,7 +3,7 @@ r"""報錯接線生（第一線客服）：使用者 11-20 02:42「報錯接線�
 
 怎麼觸發：任何房間裡使用者的訊息以「報錯」開頭（中樞呼叫 handle）。
 流程：
-  1. 抽欄位：Haiku（贈點，paid=True；主討論是私人對話，所以不送免費模型）讀報錯，回 摘要／哪個功能／有沒有重現步驟／緊不緊急／缺什麼。
+  1. 抽欄位：Haiku（贈點，paid=True；先過隱私篩：可送用免費 groq，否則 Haiku）讀報錯，回 摘要／哪個功能／有沒有重現步驟／緊不緊急／缺什麼。
      抽不出來就退回關鍵字規則，不會卡住。
   2. 找負責人：依關鍵字（網頁、用量、中樞→Claude；訓練、學生、課程→Codex；研究觀察→Gemini；輝達、OpenCode→Claude…）。
   3. 找舊單：跟沒完成的待辦標題比關鍵字，重疊夠多就當「同一個問題已有人在修」。
@@ -41,8 +41,16 @@ def extract(text):
                   "missing_detail：要交給工程師還缺的那一項，沒缺就空字串。\n範例："
                   '{"摘要": "", "功能": "", "has_reproduction": false, "urgent": false, "missing_detail": ""}\n報錯：' + text)
         raw = ""
+        # 使用者 11-20 03:00：主討論一般內容可送免費模型，有隱私的本機篩掉 → 先過隱私篩，可送就用免費 groq，不可送才用 Haiku 贈點
+        sp = importlib.util.spec_from_file_location("ys", os.path.join(HERE, "隱私篩.py"))
+        ys = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(ys)
+        ok, safe, _why = ys.check(text)
+        who, paid = ("groq", False) if ok else ("anthropic", True)
+        if ok:
+            prompt = prompt.replace(text, safe)
         for _ in range(2):   # 偶爾回壞 JSON：再問一次
-            raw = pool.ask("anthropic", prompt, max_tokens=300, timeout=40, paid=True)
+            raw = pool.ask(who, prompt, max_tokens=600, timeout=40, paid=paid)
             m = re.search(r"\{.*\}", raw or "", re.S)
             try:
                 j = json.loads(m.group(0))
