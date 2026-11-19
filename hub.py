@@ -1882,6 +1882,8 @@ section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
 summary{{cursor:pointer;margin:6px 0;color:var(--acc)}}
 section.replied{{display:none}} body.showold section.replied{{display:block;opacity:.65}}
+section.shrunk details,section.shrunk ul,section.shrunk .adv,section.shrunk .meta,section.shrunk .quick{{display:none}}
+section.shrunk textarea{{min-height:34px}} section.shrunk h3{{cursor:pointer}} section.shrunk h3::after{{content:"　（已批示，點標題展開）";font-size:12px;color:var(--mute);font-weight:400}}
 .adv{{background:var(--bg);border:1px dashed var(--acc);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:14px}}
 .quick{{margin-left:6px}} .sent{{background:var(--bg);border-left:3px solid var(--acc);padding:6px 10px;margin-top:8px;white-space:pre-wrap}} #hist li{{margin:6px 0}} button.q{{background:var(--card);color:var(--ink);border:1px solid var(--line);margin-left:4px}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
@@ -1897,8 +1899,12 @@ button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8
 const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
-const j=await r.json();if(j.ok){{s.textContent='';const n=document.createElement('div');n.className='sent';n.textContent='✓ 已送出：'+t.value;t.after(n);t.value='';t.hidden=true;}}
+const j=await r.json();if(j.ok){{s.textContent='';const sec=t.closest('section');let box=sec.querySelector('.sentbox');
+if(!box){{box=document.createElement('div');box.className='sentbox';sec.appendChild(box);}}
+const n=document.createElement('div');n.className='sent';n.textContent='✓ 已送出（'+new Date().toTimeString().slice(0,5)+'）：'+t.value;box.appendChild(n);
+t.value='';sec.classList.add('shrunk');}}
 else s.textContent='送出失敗';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
+document.querySelectorAll('section h3').forEach(h=>h.addEventListener('click',()=>h.closest('section').classList.remove('shrunk')));
 function more(){{[...document.querySelectorAll('#hist li.h[hidden]')].slice(0,20).forEach(x=>x.hidden=false);}}
 function quick(id,w){{const t=document.getElementById('t'+id);t.value=w+(t.value.trim()?'：'+t.value.trim():'');send(id);}}
 function toggleOld(b){{const on=document.body.classList.toggle('showold');b.textContent=(on?'收起':'顯示')+'回覆過的';}}
