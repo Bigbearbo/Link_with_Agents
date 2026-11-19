@@ -1829,7 +1829,7 @@ def research_page(key):
     except (OSError, ValueError):
         todos = []
     who_opts = "".join(f'<option value="{v}">{n}</option>' for v, n in
-                       (("claude", "Claude"), ("codex", "Codex"), ("gemini", "Gemini"), ("nvidia", "輝達"), ("deepseek", "DeepSeek"), ("both", "大家"), ("note", "不叫人，只記下")))
+                       (("note", "先記下（AI 巡視時會看）"), ("claude", "現在叫 Claude"), ("codex", "現在叫 Codex"), ("gemini", "現在叫 Gemini"), ("nvidia", "現在叫輝達"), ("deepseek", "現在叫 DeepSeek"), ("both", "現在叫大家")))
 
     def box(kind, iid):
         return (f'<div class="row"><textarea id="t{kind}{iid}" placeholder="想法、問題、要誰做什麼…"></textarea></div>'
@@ -1865,7 +1865,7 @@ select,button{{font:inherit;border-radius:8px;padding:4px 10px;border:1px solid 
 button{{background:var(--acc);color:#fff;border:0;cursor:pointer}} .tabs button{{background:var(--card);color:var(--ink);border:1px solid var(--line)}}
 .tabs button.on{{background:var(--acc);color:#fff}} input{{font:inherit;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);width:220px}}
 </style></head><body><h2>研究與待辦</h2>
-<p class="meta">每項都能留言、指定叫誰來討論。送出＝記進那一項，也以你的名義貼到主討論（選「只記下」就不叫人）。</p>
+<p class="meta">像在每一項旁邊寫便條：意見、方向、「這該怎麼做？」都可以，不用寫成公文。預設「先記下」，Claude 每小時巡視時會看新留言、整理後更新那一項；急的再選「現在叫誰」。</p>
 <div class="tabs"><button id="bi" class="on" onclick="tab('i')">研究想法（{len(ideas)}）</button> <button id="bt" onclick="tab('t')">待辦（{len(todos)}）</button>
 <input id="q" placeholder="篩選關鍵字" oninput="filt()"></div>
 <div id="pi">{"".join(rows_i) or "<p>沒有研究想法。</p>"}</div><div id="pt" hidden>{"".join(rows_t) or "<p>沒有待辦。</p>"}</div>

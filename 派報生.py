@@ -165,6 +165,22 @@ def patrol():
         lines.append(uc.report(uc.check(m.usage_summary())))
     except Exception as e:
         lines.append(f"（核對失敗：{type(e).__name__} {e}）")
+    lines.append("\n## 研究頁新留言（使用者 11-20 00:44：留言累積，AI 巡視時看、更新那一項；處理完在那行尾加「（已處理）」）")
+    import glob
+    found = []
+    for f in glob.glob(os.path.join(SHARED, "研究想法庫", "[0-9][0-9][0-9]-*.md")):
+        for ln in open(f, encoding="utf-8").read().splitlines():
+            if "【使用者留言" in ln and "（已處理）" not in ln:
+                found.append(f"- {os.path.basename(f)[:3]}：{ln.strip()[:120]}")
+    try:
+        for t in json.load(open(os.path.join(SHARED, "待辦", "待辦.json"), encoding="utf-8")):
+            for r in (t.get("紀錄") or [])[-5:]:
+                txt = r.get("內容", "") if isinstance(r, dict) else str(r)
+                if "使用者留言" in txt and "（已處理）" not in txt and t.get("狀態") != "完成":
+                    found.append(f"- 待辦 #{t['id']}：{txt[:120]}")
+    except (OSError, ValueError):
+        pass
+    lines += found or ["（沒有）"]
     lines.append("\n## 派報生最近叫醒")
     try:
         recent = open(WAKE_LOG, encoding="utf-8").read().splitlines()[-8:]
