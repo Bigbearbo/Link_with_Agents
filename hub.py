@@ -1126,6 +1126,10 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/api/attention":   # 使用者 11-20 04:11：待討論、研究需要我批的也用「新」，以免忘了
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                self._json(attention_counts())
             elif u.path == "/api/around":   # 書籤跳到 300 則以外的舊訊息：回傳前後各 6 則（Codex 01:37 補漏）
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
@@ -1961,6 +1965,27 @@ try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.te
 
 
 IDEAS_DIR = r"H:\Agent共用\研究想法庫"
+
+
+def attention_counts():
+    """需要使用者批的件數：待討論＝標題「待討論」、沒完成、使用者還沒回（或回了之後又有【請使用者看】）；
+    研究＝其他沒完成的待辦，最後一次使用者留言之後有【請使用者看】。"""
+    try:
+        todos = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"decide": 0, "research": 0}
+    dec = res = 0
+    for t in todos:
+        if t.get("狀態") == "完成":
+            continue
+        texts = [str(r.get("內容", r) if isinstance(r, dict) else r) for r in (t.get("紀錄") or [])]
+        lastu = max((i for i, x in enumerate(texts) if "使用者回覆" in x or "使用者留言" in x), default=-1)
+        ask = any("【請使用者看】" in x for x in texts[lastu + 1:])
+        if str(t.get("標題", "")).startswith("待討論"):
+            dec += (lastu < 0) or ask
+        else:
+            res += ask
+    return {"decide": dec, "research": res}
 
 
 def research_page(key):

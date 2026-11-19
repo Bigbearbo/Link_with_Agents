@@ -270,7 +270,8 @@ function switchRoom(id){
   $("#approval").hidden = true; $("#approval").dataset.id = "";
   poll();
 }
-function renderRooms(rooms){
+let lastRooms = null, attn = {decide: 0, research: 0};
+function renderRooms(rooms){ lastRooms = rooms;
   const nav = $("#rooms");
   nav.hidden = rooms.length < 2;
   nav.innerHTML = "";
@@ -293,6 +294,9 @@ function renderRooms(rooms){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
     b.textContent = ic + " " + label; b.title = label + "（右側面板）";
+    // 使用者 11-20 04:11：待討論、研究需要我批的也用「新」
+    const need = p === "decide" ? attn.decide : p === "research" ? attn.research : 0;
+    if(need > 0){ const s = document.createElement("span"); s.className = "new"; s.textContent = "新 " + need; b.appendChild(s); b.title += "：有 " + need + " 項等你看"; }
     b.onclick = () => { openSide(p); renderRooms(rooms); };
     nav.appendChild(b);
   }
@@ -556,6 +560,9 @@ $("#marksBtn").onclick = () => $("#marks").classList.toggle("open");
     $("#foldBtn").textContent = on ? "↕ 展開" : "↕ 收合"; try{ localStorage.setItem("rt-fold", on ? "1" : "0"); }catch(e){} }; })();
 loadMarks();
 loadUsage(); setInterval(loadUsage, 60000);
+attn = {decide: 0, research: 0};
+async function loadAttn(){ try{ const a = await api("/api/attention"); const ch = a.decide !== attn.decide || a.research !== attn.research; attn = a; if(ch && lastRooms) renderRooms(lastRooms); }catch(e){} }
+loadAttn(); setInterval(loadAttn, 60000);
 let uiVer = 0;  // 第一次載入時的網頁版本
 $("#updBtn").onclick = () => location.reload();
 let pollSeq = 0;
