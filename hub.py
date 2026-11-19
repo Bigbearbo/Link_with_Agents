@@ -1116,6 +1116,15 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/settings":   # 使用者 11-20 01:02：設定分頁
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                body = settings_page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path in ("/研究", "/research"):   # 使用者 11-20 00:36：研究與待辦入口
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1194,6 +1203,46 @@ def make_handler(hub):
                 return self._json({"ok": True, "bookmarks": bm})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦", bool(data.get("always")))})
+            if p == "/api/settings":
+                import 派報生
+                if data.get("kind") == "codex":
+                    rid = data.get("room")
+                    if rid not in hub.rooms:
+                        return self._json({"ok": False, "error": "沒有這個房間"})
+                    path = os.path.join(HERE, "codex-房間設定.json")
+                    try:
+                        cr = json.load(open(path, encoding="utf-8"))
+                    except (OSError, ValueError):
+                        cr = {}
+                    ent = {}
+                    if data.get("model") in ("gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol"):
+                        ent["model"] = data["model"]
+                    if data.get("effort") in ("low", "medium", "high", "xhigh"):
+                        ent["effort"] = data["effort"]
+                    if ent:
+                        cr[rid] = ent
+                    else:
+                        cr.pop(rid, None)
+                    json.dump(cr, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                    log(f"設定：{rid} 的 Codex → {ent or '預設'}")
+                    return self._json({"ok": True})
+                if data.get("kind") == "wake" and data.get("name") in 派報生.SUBS:
+                    sp = 派報生.SUBS[data["name"]]
+                    try:
+                        r = json.load(open(sp, encoding="utf-8"))
+                    except (OSError, ValueError):
+                        r = {}
+                    kws = [k.strip() for k in re.split(r"[、,，\s]+", str(data.get("keywords") or "")) if k.strip()][:30]
+                    w = r.setdefault("喚醒", {})
+                    w["關鍵字"] = kws
+                    try:
+                        w["冷卻分鐘"] = max(5, int(float(data.get("cooldown") or 30)))
+                    except ValueError:
+                        pass
+                    json.dump(r, open(sp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                    log(f"設定：{data['name']} 的派報生喚醒 → {kws}")
+                    return self._json({"ok": True})
+                return self._json({"ok": False, "error": "不認得的設定"})
             if p == "/api/research_comment":
                 kind, iid, text = data.get("kind"), str(data.get("id") or "").strip(), (data.get("text") or "").strip()
                 who = data.get("who") if data.get("who") in ("claude", "codex", "gemini", "nvidia", "deepseek", "both", "note") else "claude"
@@ -1881,6 +1930,77 @@ try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.te
 async function send(kind,id){{const t=document.getElementById('t'+kind+id),w=document.getElementById('w'+kind+id).value,s=document.getElementById('s'+kind+id);
 if(!t.value.trim())return;s.textContent='送出中…';try{{const r=await fetch('/api/research_comment',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},
 body:JSON.stringify({{kind,id,text:t.value,who:w}})}});const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗：'+(j.error||'');if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+</script></body></html>"""
+
+
+def settings_page(key):
+    """設定分頁（使用者 11-20 01:02：「你覺得該有的分頁就放上去」；Codex 01:01：看得出現在用什麼、改了影響哪裡、何時生效）。
+    可改：每房 Codex 模型與推理深度、各 AI 的派報生喚醒規則。只看：花費上限、輝達每日預算、Codex 配速（要改跟 Claude 說）。"""
+    import html as _h
+    import 派報生
+    try:
+        cr = json.load(open(os.path.join(HERE, "codex-房間設定.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        cr = {}
+    models = ["（Codex 預設）", "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol"]
+    efforts = ["（預設）", "low", "medium", "high", "xhigh"]
+    rows = []
+    for rid, r in hub.rooms.items():
+        if r.solo:
+            continue
+        c = cr.get(rid, {})
+        opt = lambda vals, cur: "".join(f'<option{" selected" if v == cur else ""}>{_h.escape(v)}</option>' for v in vals)
+        rows.append(f'<tr><td>{_h.escape(r.name)}</td><td><select id="m_{rid}">{opt(models, c.get("model") or models[0])}</select></td>'
+                    f'<td><select id="e_{rid}">{opt(efforts, c.get("effort") or efforts[0])}</select></td>'
+                    f'<td><button onclick="saveCodex(\'{rid}\')">存</button> <span id="s_{rid}"></span></td></tr>')
+    wakes = []
+    for name in 派報生.SUBS:
+        w = 派報生.load_rule(name)
+        wakes.append(f'<tr><td>{_h.escape(name)}</td><td><input id="k_{_h.escape(name)}" value="{_h.escape("、".join(w.get("關鍵字", [])))}"></td>'
+                     f'<td><input id="c_{_h.escape(name)}" type="number" min="5" value="{_h.escape(str(w.get("冷卻分鐘", 30)))}" style="width:70px"></td>'
+                     f'<td><button onclick="saveWake(\'{_h.escape(name)}\')">存</button> <span id="sw_{_h.escape(name)}"></span></td></tr>')
+    info = []
+    try:
+        sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
+        import ds as _ds
+        c = _ds.conf()
+        info.append(f"<li>DeepSeek 花費上限：每日 ${c['每日上限美元']}、每月 ${c['每月上限美元']}（`H:\\Agent共用\\ai-call\\deepseek\\設定.json`；花錢的上限只有你能改，跟 Claude 說）</li>")
+    except Exception:
+        pass
+    try:
+        import window_agent as _wa
+        info.append(f"<li>輝達每日預算：{_wa.NVIDIA_DAILY_BUDGET} 次＋保留給你 {_wa.USER_RESERVE} 次（台北 08:00 換日）</li>")
+    except Exception:
+        pass
+    try:
+        p = json.load(open(r"H:\Agent共用\codex-配速.json", encoding="utf-8"))
+        info.append(f"<li>Codex 配速：{_h.escape(p.get('標籤', ''))}，從 {_h.escape(p.get('開始', '')[:16])} 起 {p.get('天數')} 天（`H:\\Agent共用\\codex-配速.json`）</li>")
+    except (OSError, ValueError):
+        pass
+    info.append("<li>贈點：Claude $100（12-22 到期）、OpenAI $76（用量條看估算花費）</li>")
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>設定</title><style>
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:16px;overflow-x:hidden}}
+section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:12px 0;overflow-x:auto}}
+h3{{margin:2px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} table{{border-collapse:collapse;width:100%}} td{{padding:4px 6px;border-top:1px solid var(--line);font-size:14px}}
+select,input{{font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}} input{{width:100%;box-sizing:border-box}}
+button{{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:4px 12px;cursor:pointer;font:inherit}} li{{margin:4px 0;font-size:14px}}
+</style></head><body><h2>設定</h2>
+<section><h3>每個房間的 Codex 用什麼模型</h3>
+<p class="meta">影響：那個房間裡 Codex 回話的速度、品質、額度消耗。生效：<b>下一次 Codex 回話</b>，不用重開。檔案 `codex-房間設定.json`。</p>
+<table><tr><td class="meta">房間</td><td class="meta">模型</td><td class="meta">推理深度</td><td></td></tr>{"".join(rows)}</table></section>
+<section><h3>派報生：什麼消息一來就提前叫醒誰</h3>
+<p class="meta">關鍵字用「、」分隔；符合共用區變動或機器人群發言就叫醒那位，冷卻時間內只叫一次。生效：<b>2 分鐘內</b>。各自的檔在家裡的 `訂閱.json`。</p>
+<table><tr><td class="meta">誰</td><td class="meta">喚醒關鍵字</td><td class="meta">冷卻（分）</td><td></td></tr>{"".join(wakes)}</table></section>
+<section><h3>只看（要改跟 Claude 說）</h3><ul>{"".join(info)}</ul></section>
+<script>
+const K={json.dumps(key)};
+async function post(body,s){{s.textContent='存檔中…';try{{const r=await fetch('/api/settings',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+const j=await r.json();s.textContent=j.ok?'✓ 已存':'失敗：'+(j.error||'');}}catch(e){{s.textContent='失敗';}}}}
+function saveCodex(r){{post({{kind:'codex',room:r,model:document.getElementById('m_'+r).value,effort:document.getElementById('e_'+r).value}},document.getElementById('s_'+r));}}
+function saveWake(n){{post({{kind:'wake',name:n,keywords:document.getElementById('k_'+n).value,cooldown:document.getElementById('c_'+n).value}},document.getElementById('sw_'+n));}}
 </script></body></html>"""
 
 

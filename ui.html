@@ -212,7 +212,7 @@ body.fold .m-sys .bubble::after{display:none}
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
 <div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
-<aside id="sidePane" hidden><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button>
+<aside id="sidePane" hidden><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button>
 <span class="spacer"></span><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
 </aside>
 <aside id="marks"><h3>🔖 書籤</h3><div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div></aside>
@@ -273,7 +273,7 @@ function renderRooms(rooms){
   }
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
-  for(const [p, label] of [["decide", "待討論"], ["research", "研究"], ["changes", "變動"]]){
+  for(const [p, label] of [["decide", "待討論"], ["research", "研究"], ["changes", "變動"], ["settings", "設定"]]){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
     b.textContent = "📋 " + label; b.title = label + "（右側面板）";
@@ -641,7 +641,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
+const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open"); return; }
@@ -652,7 +652,7 @@ function openSide(name){
   let f = pane.querySelector(`iframe[data-p="${name}"]`);
   if(!f){ f = document.createElement("iframe"); f.dataset.p = name; f.className = "sideFrame"; f.src = SIDE_PAGES[name][1] + "?k=" + k; pane.appendChild(f); }
 }
-for(const n of Object.keys(SIDE_PAGES)) $("#" + n).onclick = () => openSide(n);
+for(const n of Object.keys(SIDE_PAGES)){ const b = document.getElementById(n); if(b) b.onclick = () => openSide(n); }
 document.querySelectorAll("#sidePane .side-tabs button[data-p]").forEach(b => b.onclick = () => openSide(b.dataset.p));
 $("#sideClose").onclick = () => { $("#sidePane").hidden = true; document.body.classList.remove("side-open"); };
 $("#sideReload").onclick = () => { const f = $("#sidePane").querySelector(`iframe[data-p="${$("#sidePane").dataset.cur}"]`); if(f) f.src = f.src; };
