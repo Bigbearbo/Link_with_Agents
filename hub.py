@@ -1932,7 +1932,52 @@ if __name__ == "__main__":
         import window_agent as wa
         defaults = {"Gemini": ["Gemini", "團隊目標", "研究想法庫", "外部研究", "Codex工作清單"],
                     "輝達": ["輝達", "手搓", "claude-接手Fable", "GPT對話整理", "待辦"]}
+        import 派報員 as paper
+        cycle = 0
+        paper_cache = {}
+
+        def recent_msgs(hours=2):
+            out = []
+            cut = time.time() - hours * 3600
+            for rid in ("main", "g1004308131170"):
+                r = hub.rooms.get(rid)
+                for m in (r.transcript[-80:] if r else []):
+                    if m.get("who") == "系統":
+                        continue
+                    try:
+                        ts = time.mktime(time.strptime(time.strftime("%Y-") + m.get("time", ""), "%Y-%m-%d %H:%M"))
+                    except ValueError:
+                        continue
+                    if ts >= cut:
+                        out.append((m["who"], m.get("time", ""), m.get("text", "")))
+            return out
+
+        def do_paper(name, rule):
+            """派報員（使用者 09:12）：每 2 小時用免費小模型讀最近 2 小時的群組訊息＋訂閱到的變動，寫 10 行內導讀。"""
+            since = time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 7200))
+            msgs = recent_msgs()
+            if not msgs:
+                return "（最近 2 小時群組沒有新訊息）"
+            try:
+                return paper.brief_for(name, rule.get("關鍵字") or [], msgs, sw.digest(rule, since)) or "（派報員這次沒產出）"
+            except Exception as e:
+                return f"（派報員失敗：{type(e).__name__}）"
+
         while True:
+            if cycle % 4 == 0:                              # 每 2 小時派一次報（含 DeepSeek，寫到它家 派報.md）
+                targets = dict(wa.HOMES)
+                targets["DeepSeek"] = r"H:\DeepSeek用"
+                for name, home in targets.items():
+                    try:
+                        rp = os.path.join(home, "訂閱.json")
+                        rule = json.load(open(rp, encoding="utf-8")) if os.path.exists(rp) else {"關鍵字": [name]}
+                        paper_cache[name] = (time.strftime("%m-%d %H:%M"), do_paper(name, rule))
+                        if name == "DeepSeek":
+                            open(os.path.join(home, "派報.md"), "w", encoding="utf-8").write(
+                                f"# 派報員導讀（{paper_cache[name][0]}；免費小模型整理、未核對，要引用請回原文）\n\n{paper_cache[name][1]}\n")
+                    except Exception as e:
+                        log(f"派報失敗 {name}：{type(e).__name__} {e}")
+            cycle += 1
             for name, home in wa.HOMES.items():
                 try:
                     rp = os.path.join(home, "訂閱.json")
@@ -1945,7 +1990,9 @@ if __name__ == "__main__":
                     body = sw.digest(rule, since)
                     with open(os.path.join(home, "群組", "訂閱摘要.md"), "w", encoding="utf-8") as f:
                         f.write(f"# {name} 的訂閱摘要（中樞每 30 分鐘更新；最近 24 小時；條件在 {rp}）\n"
-                                f"更新：{time.strftime('%m-%d %H:%M')}\n\n" + (body or "（沒有符合的變動）") + "\n")
+                                f"更新：{time.strftime('%m-%d %H:%M')}\n\n" + (body or "（沒有符合的變動）") + "\n"
+                                + (f"\n## 派報員導讀（{paper_cache[name][0]}；免費小模型整理、未核對，要引用請回原文）\n\n{paper_cache[name][1]}\n"
+                                   if name in paper_cache else ""))
                 except Exception as e:
                     log(f"訂閱摘要失敗 {name}：{type(e).__name__} {e}")
             time.sleep(1800)

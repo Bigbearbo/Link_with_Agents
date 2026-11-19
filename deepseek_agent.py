@@ -217,7 +217,18 @@ class DeepSeekAgent(rt.Agent):
         kws = rule.get("關鍵字") or [""]
         lines = sw.digest(rule, since)   # 跟視窗 agent 的訂閱摘要同一個函式
         return (f"\n\n共用區變動（你的訂閱 `{self.CHANGE_RULE}`：關鍵字 {kws}；想看更多就改那個檔，"
-                f"或用【讀檔】看 `H:\\Claude用\\三方討論\\logs\\共用區變動.jsonl`）：\n" + (lines or "（沒有符合的）"))
+                f"或用【讀檔】看 `H:\\Claude用\\三方討論\\logs\\共用區變動.jsonl`）：\n" + (lines or "（沒有符合的）")
+                + self.paper())
+
+    def paper(self):
+        """派報員導讀（使用者 09:12）：中樞每 2 小時用免費小模型寫的 派報.md；超過 3 小時的不附。"""
+        p = os.path.join(HOME, "派報.md")
+        try:
+            if time.time() - os.path.getmtime(p) < 3 * 3600:
+                return "\n\n" + open(p, encoding="utf-8").read()[:2500]
+        except OSError:
+            pass
+        return ""
 
     def _call(self, messages):
         try:
