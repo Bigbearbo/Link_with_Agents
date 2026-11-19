@@ -1475,6 +1475,11 @@ def usage_summary():
             c = s.get("今天次數", 0) if s.get("日") == today else 0
             lim, rem = s.get("上限"), s.get("剩餘") if s.get("日") == today else s.get("上限")
             used = round(100 * (lim - rem) / lim, 1) if lim and rem is not None else 0
+            if s.get("贈點"):   # Claude／OpenAI 贈點：顯示本機估算花費／額度
+                spent = s.get("已用美元") or 0
+                wins.append({"label": n + "（贈點）", "used": round(100 * spent / s["贈點"], 1), "elapsed": None, "state": "",
+                             "resets": f"{s.get('到期', '')[5:]} 到期", "empty_at": "", "count": f"約 ${spent:.2f}／${s['贈點']:.0f}"})
+                continue
             wins.append({"label": n, "used": used, "elapsed": None, "state": "", "resets": "08:00", "empty_at": "",
                          "count": f"{c} 次" + (f"／剩 {rem}" if rem is not None else "")})
         if wins:
