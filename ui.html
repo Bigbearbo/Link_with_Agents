@@ -631,7 +631,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {decide: ["待討論", "/待討論"], research: ["研究", "/研究"], changes: ["變動", "/變動"]};
+const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open"); return; }
