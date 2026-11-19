@@ -165,6 +165,18 @@ def patrol():
         lines.append(uc.report(uc.check(m.usage_summary())))
     except Exception as e:
         lines.append(f"（核對失敗：{type(e).__name__} {e}）")
+    lines.append("\n## 註解層指標（研究想法 018：有註解後還會不會再誤會、註解會不會越補越亂）")
+    def sections(fn):
+        try:
+            return [x for x in open(os.path.join(SHARED, fn), encoding="utf-8").read().split("\n## ")[1:] if "｜" in x.split("\n", 1)[0]]
+        except OSError:
+            return []
+    try:
+        pend = open(os.path.join(SHARED, "待補註解.md"), encoding="utf-8").read()
+        p_open, p_done = pend.count("- [ ]"), pend.count("- [x]")
+    except OSError:
+        p_open = p_done = 0
+    lines.append(f"- 註解 {len(sections('註解.md'))} 條；誤會更正 {len(sections('誤會更正.md'))} 條；待補註解 開著 {p_open}／已補 {p_done}")
     lines.append("\n## 研究頁新留言（使用者 11-20 00:44：留言累積，AI 巡視時看、更新那一項；處理完在那行尾加「（已處理）」）")
     import glob
     found = []
