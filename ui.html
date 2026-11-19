@@ -174,14 +174,20 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
 .msg.flash .bubble{outline:2px solid var(--me);outline-offset:2px;transition:outline-color 1.5s}
-#sidePane{position:fixed;right:0;top:56px;bottom:0;width:min(560px,100vw);background:var(--panel);border-left:1px solid var(--line);
+:root{--sidew:560px}
+#sidePane{position:fixed;right:0;top:56px;bottom:0;width:min(var(--sidew),100vw);background:var(--panel);border-left:1px solid var(--line);
   z-index:20;display:flex;flex-direction:column;box-shadow:-4px 0 16px rgba(0,0,0,.08)}
 #sidePane[hidden]{display:none}
 #sidePane .side-tabs{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}
 #sidePane .side-tabs button{border-radius:999px;padding:3px 12px}
 #sidePane .side-tabs button.sel{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .sideFrame{flex:1;border:0;width:100%;background:var(--bg)}.sideFrame[hidden]{display:none}
-@media (min-width:1100px){body.side-open main,body.side-open footer{margin-right:560px}body.side-open #usage{display:none}}
+@media (min-width:1100px){body.side-open main,body.side-open footer{margin-right:var(--sidew)}body.side-open #usage{display:none}}
+/* 使用者 11-20 01:10：拉中間的條調寬度；⤢ 放大成整頁（左邊聊天縮掉） */
+#sideGrip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:21}
+#sideGrip:hover,#sideGrip.drag{background:var(--me);opacity:.35}
+body.side-max #sidePane{width:100vw}body.side-max main,body.side-max footer,body.side-max #marks{display:none}
+body.dragging iframe{pointer-events:none}body.dragging{user-select:none;cursor:col-resize}
 .cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px}.cp:hover{opacity:1}
 a.fp{font-family:Consolas,monospace;font-size:.92em}
 /* 收合模式：每則只顯示 小標題＋三行，點一下展開 */
@@ -212,8 +218,8 @@ body.fold .m-sys .bubble::after{display:none}
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
 <div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
-<aside id="sidePane" hidden><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button>
-<span class="spacer"></span><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
+<aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button>
+<span class="spacer"></span><button id="sideMax" title="放大成整頁／還原（左邊聊天縮掉）">⤢</button><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
 </aside>
 <aside id="marks"><h3>🔖 書籤</h3><div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div></aside>
 <footer><div class="composer">
@@ -654,7 +660,21 @@ function openSide(name){
 }
 for(const n of Object.keys(SIDE_PAGES)){ const b = document.getElementById(n); if(b) b.onclick = () => openSide(n); }
 document.querySelectorAll("#sidePane .side-tabs button[data-p]").forEach(b => b.onclick = () => openSide(b.dataset.p));
-$("#sideClose").onclick = () => { $("#sidePane").hidden = true; document.body.classList.remove("side-open"); };
+$("#sideClose").onclick = () => { $("#sidePane").hidden = true; document.body.classList.remove("side-open", "side-max"); };
+$("#sideMax").onclick = () => document.body.classList.toggle("side-max");
+(() => {   // 拖曳中間的條調整左右寬度，記在這台瀏覽器
+  const root = document.documentElement, grip = $("#sideGrip");
+  try{ const w = +localStorage.getItem("rt-sidew"); if(w >= 320) root.style.setProperty("--sidew", w + "px"); }catch(e){}
+  grip.onmousedown = e => {
+    e.preventDefault(); grip.classList.add("drag"); document.body.classList.add("dragging");
+    const move = ev => { const w = Math.max(320, Math.min(window.innerWidth - 360, window.innerWidth - ev.clientX));
+                         root.style.setProperty("--sidew", w + "px"); };
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
+                       grip.classList.remove("drag"); document.body.classList.remove("dragging");
+                       try{ localStorage.setItem("rt-sidew", parseInt(getComputedStyle(root).getPropertyValue("--sidew"))); }catch(e){} };
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+  };
+})();
 $("#sideReload").onclick = () => { const f = $("#sidePane").querySelector(`iframe[data-p="${$("#sidePane").dataset.cur}"]`); if(f) f.src = f.src; };
 $("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
 $("#apAlways").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, always: true, room}); };
