@@ -24,9 +24,10 @@ BLOCK = [
 ]
 
 
-def check(text):
+def check(text, max_len=4000):
+    """max_len：一般 4000 字；小AI上下文.py 由程式組好、每塊都有出處的上下文可放寬到該家預算（11-20 06:11 次數型給多一點）。"""
     t = text or ""
-    if len(t) > 4000:
+    if len(t) > max_len:
         return False, "", "太長，拿不準，留本機"
     for why, rx in BLOCK:
         if rx.search(t):

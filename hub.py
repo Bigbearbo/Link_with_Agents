@@ -213,17 +213,18 @@ class Room:
             def _small(names=[x.lower() for x in dict.fromkeys(_pick)], t=text):
                 import importlib
                 ys = importlib.import_module("隱私篩")
-                ctx = "\n".join(f"{m.get('who')}：{(m.get('text') or '')[:300]}" for m in self.transcript[-8:] if m.get("who") != "系統")
-                ok, safe, why = ys.check(ctx[-3500:])
-                if not ok:
-                    self.notice(f"🔒 這段對話{why}，沒有送給免費小 AI。")
-                    return
+                cx = importlib.import_module("小AI上下文")   # 使用者 11-20 06:11：先讀該有的資訊再說話；次數型／用量型給的量不同
+                cx.wait_room(self)   # 等這輪大 AI 講完，小 AI 才看得到他們查到的
                 sys.path.insert(0, r"H:\Agent共用\ai-call")
                 pool = importlib.import_module("免費AI池")
                 for n in names:
+                    ctx, kind = cx.build(self, n)
+                    ok, safe, why = ys.check(ctx, max_len=cx.budget(n)[1] + 200)
+                    if not ok:
+                        self.notice(f"🔒 這段對話{why}，沒有送給小AI·{n}。")
+                        continue
                     try:
-                        r = pool.ask(n, f"你是免費小 AI「{n}」，在一個多個 AI 一起討論的聊天室，使用者點名你。"
-                                        f"用繁體中文、200 字內、直接回答使用者最後一句；不確定就說不確定。\n最近對話：\n{safe}", max_tokens=1200, timeout=60)
+                        r = pool.ask(n, cx.prompt(n, safe, kind), max_tokens=1200, timeout=60)
                         self.add(f"小AI·{n}", (r or "（空白回覆）").strip(), "回覆")
                     except Exception as e:
                         self.notice(f"小AI·{n} 叫不動：{type(e).__name__} {str(e)[:80]}")
