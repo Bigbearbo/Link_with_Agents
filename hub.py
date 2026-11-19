@@ -1843,11 +1843,18 @@ def decisions_page(key):
                 details += f'<details><summary>📄 點我展開：{_h.escape(os.path.basename(fp))}</summary><div class="md" data-md="{_h.escape(txt)}"></div></details>'
             except OSError:
                 details += f'<div class="meta">（找不到 {_h.escape(fp)}）</div>'
-        rows.append(f"""<section><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}</h3>
+        recs = t.get("紀錄") or []
+        texts = [(r.get("內容", "") if isinstance(r, dict) else str(r)) for r in recs]
+        lastu = max((i for i, x in enumerate(texts) if "使用者回覆" in x or "使用者留言" in x), default=-1)
+        # 使用者 11-20 01:16：回覆過的先收起；之後 AI 寫了「【請使用者看】」（新進度要你再決定）才再出現
+        replied = lastu >= 0 and not any("【請使用者看】" in x for x in texts[lastu + 1:])
+        rows.append(f"""<section class="{'replied' if replied else ''}"><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}{'　<span class="meta">（你回覆過，等我們處理）</span>' if replied else ''}</h3>
 <div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
 {details}{f'<ul>{log_}</ul>' if log_ else ''}
 <textarea id="t{t['id']}" placeholder="你的回覆（例：同意／不要／改成…）"></textarea>
-<button onclick="send({t['id']})">送出</button> <span id="s{t['id']}"></span></section>""")
+<button onclick="send({t['id']})">送出</button>
+<span class="quick">{"".join(f'<button class="q" onclick="quick({t[chr(105)+chr(100)]},this.textContent)">{w}</button>' for w in ("同意", "暫時擱置", "你們再討論", "反對"))}</span>
+<span id="s{t['id']}"></span></section>""")
     body = "\n".join(rows) or "<p>目前沒有待討論的項目。</p>"
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>待討論</title>
@@ -1859,11 +1866,14 @@ body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft Jhe
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}}
 section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
-summary{{cursor:pointer;margin:6px 0;color:var(--acc)}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
+summary{{cursor:pointer;margin:6px 0;color:var(--acc)}}
+section.replied{{display:none}} body.showold section.replied{{display:block;opacity:.65}}
+.quick{{margin-left:6px}} button.q{{background:var(--card);color:var(--ink);border:1px solid var(--line);margin-left:4px}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
 </style></head><body><h2>待討論（等你拍板）</h2>
-<p class="meta">每項寫完按送出：會記進待辦紀錄，也貼到主討論給 Claude 處理。可以一次回好幾項，或寫完幾項再按最下面「全部送出」。</p>
+<p class="meta">每項可以打字送出，或直接按「同意／暫時擱置／你們再討論／反對」（有打字會一起附上）。回覆過的先收起來，等我們有新進度才再出現。</p>
+<p><button onclick="sendAll()">全部送出（有填的都送）</button> <button class="q" onclick="toggleOld(this)">顯示回覆過的（{sum(1 for r in rows if 'class="replied"' in r)}）</button> <span id="sall2"></span></p>
 {body}
 <p><button onclick="sendAll()">全部送出（有填的都送）</button> <span id="sall"></span></p>
 <script>
@@ -1871,6 +1881,8 @@ const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
 const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+function quick(id,w){{const t=document.getElementById('t'+id);t.value=w+(t.value.trim()?'：'+t.value.trim():'');send(id);}}
+function toggleOld(b){{const on=document.body.classList.toggle('showold');b.textContent=(on?'收起':'顯示')+'回覆過的';}}
 async function sendAll(){{const ts=[...document.querySelectorAll('textarea')].filter(t=>t.value.trim());const s=document.getElementById('sall');
 if(!ts.length){{s.textContent='沒有填任何一項';return;}}s.textContent='送出 '+ts.length+' 項…';for(const t of ts){{await send(t.id.slice(1));}}s.textContent='✓ 送出 '+ts.length+' 項';}}
 document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&m&&!m.dataset.done){{
