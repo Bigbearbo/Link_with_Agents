@@ -282,7 +282,13 @@ class Room:
                     if h:
                         picked = [h] + [p for p in picked if p != h]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
-                if "codex" in picked and codex_hot():
+                if "codex" in picked and (usage_pressure("codex") or 0) >= 0.95 and len(picked) > 1:
+                    # 使用者 11:51：「codex 快陣亡了每次出來說話都嚇我一下」→ 週額度 ≥95% 時，群聊名單先不叫它（@Codex 照叫）
+                    picked = [p for p in picked if p != "codex"]
+                    if time.time() - getattr(self, "_codex_skip_note", 0) > 3600:
+                        self._codex_skip_note = time.time()
+                        threading.Timer(1, lambda: self.notice("Codex 週額度剩不到 5%，群聊先不叫它（要它回就開頭寫 @Codex）；額度重置後自動恢復。")).start()
+                elif "codex" in picked and codex_hot():
                     threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
                                                            "想省就把它切成「略」。")).start()
                 if not picked:
