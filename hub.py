@@ -42,6 +42,7 @@ def make_gemini(room):
     return rt.GeminiAgent("Gemini")
 
 
+_CF_CACHE = [0, None]   # cloudflare Neurons 用量快取 [時間, 數值]
 SUB_POSTERS = ("流程優化員", "手搓匠")  # 使用者 11-20 07:44：外部／子代理暫時接入的發言入口（用網頁金鑰，/api/agent_says 帶 who）
 APP_POSTERS = ("視窗Gemini", "Dot")  # 使用者 11-19：App 裡的 AI 經雲端硬碟「發言」資料夾貼到群組（drive_post.py 代送）
 NVIDIA_IN_WINDOW = True  # 使用者 11-18 21:2x：輝達也搬家，住 OpenCode 視窗（H:\免費模型用）；False＝回到舊的工具迴圈
@@ -1687,6 +1688,11 @@ def usage_summary():
                 wins.append({"label": n + "（贈點）", "used": round(100 * spent / s["贈點"], 1), "elapsed": None, "state": "",
                              "resets": (f"{s['到期'][5:]} 到期" if s.get('到期') else "到期日待補"), "empty_at": "", "count": f"約 ${spent:.2f}／${s['贈點']:.0f}"})
                 continue
+            if n == "cloudflare" and _pool is not None:   # 使用者 11-20 07:4x：有統計金鑰就顯示真的 Neurons 用量（10 分鐘查一次）
+                if time.time() - _CF_CACHE[0] > 600:
+                    _CF_CACHE[:] = [time.time(), _pool.cf_neurons_today() if hasattr(_pool, "cf_neurons_today") else None]
+                if _CF_CACHE[1] is not None:
+                    used, rem = round(_CF_CACHE[1] / 100, 1), f"{max(0, 10000 - _CF_CACHE[1]):,.0f} Neurons（Cloudflare 統計）"
             # Codex 04:36 核對：各家重置規則不同，不能都寫 08:00；本機次數和服務回報的剩餘分開標
             RESET = {"groq": "每日 08:00（另有每分鐘限制）", "cloudflare": "每日 08:00（看 Neurons 不看次數）",
                      "google": "每日 16:00（美西午夜）", "cohere": "試用每月 1,000 次", "nvidia": "日上限未驗證（NIM，不是輝達 OpenCode）"}
