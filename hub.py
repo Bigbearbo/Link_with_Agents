@@ -196,7 +196,7 @@ class Room:
         if who == "輝達" and text:
             # 使用者 11-20 06:19：輝達自主進度出錯——目標檔「暫停」、11-18 後沒新檔，回報卻一直套「我的部分繼續……」。
             # 規則寫進程式：沒附檔名（.py/.json/.md…）的「我的部分繼續」整句拿掉。
-            s = re.sub(r"我的部分(：)?繼續[^\n]*?(移單。?|$)", lambda m: m.group(0) if re.search(r"\.\w{2,5}\b", m.group(0)) else "", text)
+            s = re.sub(r"我的部分(：)?繼續[^\n]*?(移單。?|(?=\n)|$)", lambda m: m.group(0) if re.search(r"\.\w{2,5}\b", m.group(0)) else "", text)
             if s != text:
                 text = (s.strip() or "收到。") + "\n（中樞：拿掉一句沒附檔名的「繼續做」套句；輝達目標檔目前是「暫停」）"
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}

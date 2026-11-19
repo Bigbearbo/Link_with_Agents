@@ -201,7 +201,7 @@ def pending_permissions(name):
         return None
 
 
-SKIP_FWD = ("沒有新訊息", "已讀到最新", "不需要回", "無需回覆", "不用回")
+SKIP_FWD = ("沒有新訊息", "已讀到最新", "不需要回", "無需回覆", "不用回", "無新訊息", "不需回覆", "沒有針對我")
 
 
 def forward_unsent(name, room_id, ticket, wait=600):
