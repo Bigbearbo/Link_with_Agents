@@ -165,6 +165,22 @@ def patrol():
         lines.append(uc.report(uc.check(m.usage_summary())))
     except Exception as e:
         lines.append(f"（核對失敗：{type(e).__name__} {e}）")
+    lines.append("\n## 成果指標（使用者 11-20 01:54：看 AI 的效率、產出、修復、發展空間，比數 PR 有意義）")
+    try:
+        import re as _re, statistics as _st
+        from datetime import datetime as _D
+        todo = json.load(open(os.path.join(SHARED, "待辦", "待辦.json"), encoding="utf-8"))
+        yr = time.strftime("%Y-")
+        hrs, inter = [], []
+        for t in todo:
+            recs = [str(r.get("內容", r) if isinstance(r, dict) else r) for r in (t.get("紀錄") or [])]
+            inter.append(sum("使用者" in x for x in recs))
+            done = [x for x in recs if _re.match(r"\d\d-\d\d \d\d:\d\d 完", x)]
+            if t.get("狀態") == "完成" and done and t.get("建立"):
+                hrs.append((_D.strptime(yr + done[-1][:11], "%Y-%m-%d %H:%M") - _D.strptime(yr + t["建立"][:11], "%Y-%m-%d %H:%M")).total_seconds() / 3600)
+        lines.append(f"- 待辦 {len(todo)} 項、完成 {len(hrs)}；建立→完成中位數 {(_st.median(hrs) if hrs else 0):.1f} 小時；平均每項使用者介入 {(sum(inter) / max(1, len(inter))):.1f} 次")
+    except Exception as e:
+        lines.append(f"- 算不出來（{type(e).__name__}）")
     lines.append("\n## 註解層指標（研究想法 018：有註解後還會不會再誤會、註解會不會越補越亂）")
     def sections(fn):
         try:
