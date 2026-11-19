@@ -1856,6 +1856,16 @@ def decisions_page(key):
 <span class="quick">{"".join(f'<button class="q" onclick="quick({t[chr(105)+chr(100)]},this.textContent)">{w}</button>' for w in ("同意", "暫時擱置", "你們再討論", "反對"))}</span>
 <span id="s{t['id']}"></span></section>""")
     body = "\n".join(rows) or "<p>目前沒有待討論的項目。</p>"
+    hist = []   # 使用者 11-20 01:26：批示歷史，照順序，先 20 筆、按「看更多」
+    for t in items:
+        for r in (t.get("紀錄") or []):
+            x = r.get("內容", "") if isinstance(r, dict) else str(r)
+            if "使用者回覆" in x or "使用者留言" in x:
+                what = re.sub(r"^.*?(使用者回覆|使用者留言)[：:]", "", x)
+                hist.append((x[:11], t["id"], str(t.get("標題", ""))[:40], what))
+    hist.sort(key=lambda h: h[0], reverse=True)
+    hist_html = "".join(f'<li class="h"{" hidden" if i >= 20 else ""}><span class="meta">{_h.escape(w)}｜#{i2} {_h.escape(tt)}</span><br>{_h.escape(wh)}</li>'
+                        for i, (w, i2, tt, wh) in enumerate(hist))
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>待討論</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
@@ -1868,19 +1878,23 @@ section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
 summary{{cursor:pointer;margin:6px 0;color:var(--acc)}}
 section.replied{{display:none}} body.showold section.replied{{display:block;opacity:.65}}
-.quick{{margin-left:6px}} button.q{{background:var(--card);color:var(--ink);border:1px solid var(--line);margin-left:4px}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
+.quick{{margin-left:6px}} .sent{{background:var(--bg);border-left:3px solid var(--acc);padding:6px 10px;margin-top:8px;white-space:pre-wrap}} #hist li{{margin:6px 0}} button.q{{background:var(--card);color:var(--ink);border:1px solid var(--line);margin-left:4px}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
 </style></head><body><h2>待討論（等你拍板）</h2>
 <p class="meta">每項可以打字送出，或直接按「同意／暫時擱置／你們再討論／反對」（有打字會一起附上）。回覆過的先收起來，等我們有新進度才再出現。</p>
-<p><button onclick="sendAll()">全部送出（有填的都送）</button> <button class="q" onclick="toggleOld(this)">顯示回覆過的（{sum(1 for r in rows if 'class="replied"' in r)}）</button> <span id="sall2"></span></p>
+<p><button onclick="sendAll()">全部送出（有填的都送）</button> <button class="q" onclick="document.getElementById('hist').hidden=!document.getElementById('hist').hidden">批示歷史（{len(hist)}）</button> <button class="q" onclick="toggleOld(this)">顯示回覆過的（{sum(1 for r in rows if 'class="replied"' in r)}）</button> <span id="sall2"></span></p>
+<section id="hist" hidden><h3>你的批示歷史（新的在前）</h3><ol>{hist_html or "<li>還沒有</li>"}</ol>
+{'<button class="q" onclick="more()">看更多</button>' if len(hist) > 20 else ''}</section>
 {body}
 <p><button onclick="sendAll()">全部送出（有填的都送）</button> <span id="sall"></span></p>
 <script>
 const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
-const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
+const j=await r.json();if(j.ok){{s.textContent='';const n=document.createElement('div');n.className='sent';n.textContent='✓ 已送出：'+t.value;t.after(n);t.value='';t.hidden=true;}}
+else s.textContent='送出失敗';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
+function more(){{[...document.querySelectorAll('#hist li.h[hidden]')].slice(0,20).forEach(x=>x.hidden=false);}}
 function quick(id,w){{const t=document.getElementById('t'+id);t.value=w+(t.value.trim()?'：'+t.value.trim():'');send(id);}}
 function toggleOld(b){{const on=document.body.classList.toggle('showold');b.textContent=(on?'收起':'顯示')+'回覆過的';}}
 async function sendAll(){{const ts=[...document.querySelectorAll('textarea')].filter(t=>t.value.trim());const s=document.getElementById('sall');
