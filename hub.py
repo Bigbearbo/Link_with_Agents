@@ -1832,30 +1832,49 @@ def decisions_page(key):
             continue
         log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))}</li>"
                        for r in (t.get("紀錄") or [])[-5:])
+        # 使用者 11-20 01:08（#23）：「我看不到 G1～G3，點我展開詳細」→ 標題裡提到的檔案，附可展開的全文
+        details = ""
+        named = re.findall(r"[A-Za-z]:\\[^\s，。；、）)「」]+?\.(?:md|txt|json)", t["標題"])
+        if "團隊目標" in t["標題"] and not any(x.endswith("團隊目標.md") for x in named):
+            named.append(r"H:\Agent共用\團隊目標.md")
+        for fp in named:
+            try:
+                txt = open(fp, encoding="utf-8").read()[:20000]
+                details += f'<details><summary>📄 點我展開：{_h.escape(os.path.basename(fp))}</summary><div class="md" data-md="{_h.escape(txt)}"></div></details>'
+            except OSError:
+                details += f'<div class="meta">（找不到 {_h.escape(fp)}）</div>'
         rows.append(f"""<section><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}</h3>
 <div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
-{f'<ul>{log_}</ul>' if log_ else ''}
+{details}{f'<ul>{log_}</ul>' if log_ else ''}
 <textarea id="t{t['id']}" placeholder="你的回覆（例：同意／不要／改成…）"></textarea>
 <button onclick="send({t['id']})">送出</button> <span id="s{t['id']}"></span></section>""")
     body = "\n".join(rows) or "<p>目前沒有待討論的項目。</p>"
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>待討論</title><style>
+<title>待討論</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script><style>
 :root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:860px;margin:0 auto;padding:16px}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}}
 section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
+summary{{cursor:pointer;margin:6px 0;color:var(--acc)}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
 </style></head><body><h2>待討論（等你拍板）</h2>
-<p class="meta">每項寫完按送出：會記進待辦紀錄，也貼到主討論給 Claude 處理。可以一次回好幾項。</p>
+<p class="meta">每項寫完按送出：會記進待辦紀錄，也貼到主討論給 Claude 處理。可以一次回好幾項，或寫完幾項再按最下面「全部送出」。</p>
 {body}
+<p><button onclick="sendAll()">全部送出（有填的都送）</button> <span id="sall"></span></p>
 <script>
 const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
 const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+async function sendAll(){{const ts=[...document.querySelectorAll('textarea')].filter(t=>t.value.trim());const s=document.getElementById('sall');
+if(!ts.length){{s.textContent='沒有填任何一項';return;}}s.textContent='送出 '+ts.length+' 項…';for(const t of ts){{await send(t.id.slice(1));}}s.textContent='✓ 送出 '+ts.length+' 項';}}
+document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&m&&!m.dataset.done){{
+try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.textContent=m.dataset.md;}}m.dataset.done=1;}}}}));
 </script></body></html>"""
 
 
@@ -2259,8 +2278,13 @@ if __name__ == "__main__":
                             seen_steps[k] = (steps, now)
                         elif now - seen_steps[k][1] > STALL and (k, steps) not in warned:
                             warned.add((k, steps))
-                            room.notice(f"⏱ 提醒：{name} 工作中已 {int((now - seen_steps[k][1]) // 60)} 分鐘沒有新步驟"
-                                        f"（停在「{(steps[-1] if steps else '開始')[:40]}」）。可能卡住或在跑長工作，要不要看一下由你決定。")
+                            mins = int((now - seen_steps[k][1]) // 60)
+                            room.notice(f"⏱ 提醒：{name} 工作中已 {mins} 分鐘沒有新步驟"
+                                        f"（停在「{(steps[-1] if steps else '開始')[:40]}」）。可能卡住或在跑長工作。")
+                            # 使用者 11-20 01:08（待討論 #27）：異常就喚醒負責的 AI——視窗 agent 直接叫它自己回報或求救
+                            if name in wa.HOMES:
+                                wa.nudge(name, room.id, custom=f"【監控】你在「{(steps[-1] if steps else '開始')[:30]}」停了 {mins} 分鐘。"
+                                         "沒卡住就回報一句進度；卡住就在群組行首寫「@Claude 請幫我：」附失敗的檔名和試過的方法。")
                     active = {n for n, _ in cur}
                     for k in [k for k in seen_steps if k[0] == room.id and k[1] not in active]:
                         seen_steps.pop(k, None)
@@ -2268,7 +2292,10 @@ if __name__ == "__main__":
                     if n >= wa.NUDGE_MAX and ("nudge", name, rid) not in warned:
                         warned.add(("nudge", name, rid))
                         r = hub.rooms.get(rid) or hub.room("g1004308131170")
-                        r.notice(f"⏱ 提醒：{name} 這張待回單已經叫醒 {n} 次還沒回，不再自動叫。可能卡在視窗的確認框，或視窗沒開。")
+                        r.notice(f"⏱ 提醒：{name} 這張待回單已經叫醒 {n} 次還沒回，不再自動叫。可能卡在視窗的確認框，或視窗沒開。\n"
+                                 f"@Claude 總指揮請查：{name} 的視窗開著嗎、是不是卡在確認框（使用者 11-20 01:08：異常喚醒負責 AI）")
+                        r.stop_flag = False
+                        r.chain([r.claude])
                     elif n < wa.NUDGE_MAX:
                         warned.discard(("nudge", name, rid))
                 size = os.path.getsize(ledger) if os.path.exists(ledger) else 0
