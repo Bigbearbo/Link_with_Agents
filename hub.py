@@ -192,6 +192,7 @@ class Room:
     def add(self, who, text, src, kind=None, track=None):
         """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
         kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
+        raw_text = text   # 去重用原文（下面會改 text，改過就對不上同一則從另一個管道送來的原文 → 06:45、06:48 重複貼兩次）
         if who == "輝達" and text:
             # 使用者 11-20 06:19：輝達自主進度出錯——目標檔「暫停」、11-18 後沒新檔，回報卻一直套「我的部分繼續……」。
             # 規則寫進程式：沒附檔名（.py/.json/.md…）的「我的部分繼續」整句拿掉。
@@ -199,6 +200,8 @@ class Room:
             if s != text:
                 text = (s.strip() or "收到。") + "\n（中樞：拿掉一句沒附檔名的「繼續做」套句；輝達目標檔目前是「暫停」）"
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
+        if raw_text != text:
+            entry["raw"] = raw_text
         if who == "使用者" and CORRECTION_RE.search(text or ""):
             # 使用者 16:36：「AI 被更正後……先道歉反省保證改進，可能寫入記憶，然後沒了」→ 被更正就留一張待補註解，不靠 AI 自己記得
             try:
@@ -1411,7 +1414,7 @@ def make_handler(hub):
                         pass
                 if not text:
                     return self._json({"ok": False})
-                same = [m for m in room.transcript[-6:] if m.get("who") == who and m.get("text", "").strip() == text]
+                same = [m for m in room.transcript[-6:] if m.get("who") == who and text in (m.get("text", "").strip(), str(m.get("raw", "")).strip())]
                 if same:   # 同一位、同一段話，從不同管道（發送箱＋群組.py）各送一次：只貼一次
                     return self._json({"ok": True, "duplicate": True})
                 cid = str(data.get("client_id") or "")[:64]
