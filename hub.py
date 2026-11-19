@@ -1412,6 +1412,17 @@ def usage_summary():
             out.append({"name": name, "missing": True})
             continue
         wins = [x for x in (_usage_window(d.get("five_hour"), "5小時"), _usage_window(d.get("seven_day"), "7天")) if x]
+        if name == "Codex":   # Codex 23:35：本輪「四天用滿」目標線，跟七天時間線分開標
+            try:
+                import datetime as _dt
+                plan = json.load(open(r"H:\Agent共用\codex-配速.json", encoding="utf-8"))
+                t0 = _dt.datetime.fromisoformat(plan["開始"]).timestamp()
+                goal = max(0.0, min(100.0, (time.time() - t0) / (float(plan["天數"]) * 86400) * 100))
+                for w in wins:
+                    if w["label"] == "7天":
+                        w["goal"], w["goal_label"] = round(goal, 1), plan.get("標籤") or "目標"
+            except (OSError, ValueError, KeyError):
+                pass
         if name == "Gemini":
             argon = ((d.get("其他組") or {}).get("Gemini 4 Argon") or {})
             for v in argon.values():

@@ -145,6 +145,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 .u-fill{height:100%;border-radius:4px;background:#2e9e6b}
 .u-fill.warn{background:#d99a1e}.u-fill.hot{background:#d9483b}
 .u-tick{position:absolute;top:-3px;width:2px;height:13px;background:var(--ink);opacity:.55;border-radius:1px}
+.u-goal{position:absolute;top:-4px;width:0;height:15px;border-left:2px dashed var(--codex);opacity:.9}
 .u-verdict{color:var(--muted);margin-top:3px;line-height:1.4}
 .u-verdict.hot{color:#d9483b}
 .u-stale{color:#d99a1e}
@@ -473,9 +474,11 @@ async function loadUsage(){
       if(a.missing) return `<div class="u-agent">${head}</div>`;
       const wins = (a.windows||[]).map(w => {
         const cls = w.state === "超速" ? "hot" : w.state === "略快" ? "warn" : "";
-        const tick = (w.elapsed != null) ? `<span class="u-tick" style="left:calc(${Math.min(100,w.elapsed)}% - 1px)"></span>` : "";
+        const tick = ((w.elapsed != null) ? `<span class="u-tick" style="left:calc(${Math.min(100,w.elapsed)}% - 1px)"></span>` : "") +
+          ((w.goal != null) ? `<span class="u-goal" title="${esc(w.goal_label || "目標")}：現在該用到 ${w.goal}%" style="left:calc(${Math.min(100,w.goal)}% - 1px)"></span>` : "");
         const right = w.count ? w.count : `${Math.round(w.used)}%`;
         const sub = [w.state && w.state !== "正常" ? w.state : "", w.empty_at ? `約 ${esc(whenStr(w.empty_at))} 用完` : "",
+                     w.goal != null ? `${esc(w.goal_label || "目標")}：該到 ${Math.round(w.goal)}%（虛線）` : "",
                      w.resets ? `${esc(w.resets)} 重置` : ""].filter(Boolean).join("・");
         return `<div class="u-win"><div class="u-row"><span>${esc(w.label)}</span><b>${right}</b></div>
           <div class="u-bar"><div class="u-fill ${cls}" style="width:${Math.min(100,w.used)}%"></div>${tick}</div>
