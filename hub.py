@@ -269,6 +269,12 @@ class Room:
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
                 picked = [m for m in members if m in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot")]  # 照名單順序（Telegram「先回」排第一）
+                # 11-19 08:56 Codex 抓到：使用者寫「點名deepseek，…」（句中自然語句）沒被認出來 → 句中「點名 X」把 X 排第一個
+                nm = re.search(r"點名\s*[@＠]?\s*(claude|codex|gemini|nvidia|輝達|deepseek)", text, re.I)
+                if nm:
+                    k = nm.group(1).lower()
+                    k = "nvidia" if k == "輝達" else k
+                    picked = [k] + [p for p in picked if p != k]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
                 if "codex" in picked and codex_hot():
                     threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
