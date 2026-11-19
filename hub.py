@@ -203,6 +203,19 @@ class Room:
                     "補完把 `H:\\Agent共用\\待補註解.md` 那行打勾。不用道歉，補註解就好。")).start()
             except OSError:
                 pass
+        if who not in ("系統", "有下文 Codex") and "@有下文" in (text or ""):
+            # 使用者 11-20 02:36：給《有下文》視窗一個身分，讓其他 AI 能送信給它 → 房間裡 @有下文 就自動投一封信到它的信箱（Codex 建的檔案信箱）
+            try:
+                box = r"H:\Agent共用\agent-通訊\有下文\待處理"
+                mid = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+                tmp = os.path.join(box, f".mail-{mid}.tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(f"# mail-{mid}\n- 寄件人：{who}（經中樞，房間「{self.name}」）\n- 信件 ID：{mid}\n- 主旨：聊天室點名 @有下文\n"
+                            f"- 原文出處：房間「{self.name}」{entry['time']}，{who} 的發言\n- 回報位置：`回覆/mail-{mid}.md`\n\n## 內容\n{text}\n")
+                os.replace(tmp, os.path.join(box, f"mail-{mid}.md"))
+                threading.Timer(1, lambda: self.notice(f"📮 已轉一封信給有下文 Codex（mail-{mid}），它開工時會看，回條在 agent-通訊\\有下文\\回覆\\。")).start()
+            except OSError as e:
+                log(f"轉信給有下文失敗：{e}")
         if who != "系統" and ("轉譯" in (text or "")[:12]):   # 轉譯提案（使用者 14:48）
             try:
                 msg = dialect.handle_proposal(who, text, set(self.hub.rooms))
