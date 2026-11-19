@@ -143,6 +143,10 @@ def fix_file(path, write=False):
         except ValueError as e:
             return "fail", f"反轉後 JSON 還是壞的（{e}），保留原檔"
     desc = "、".join(f"{repr(c)}→{UNDO[c]} ×{hits.count(c)}" for c in sorted(set(hits)))
+    # 使用者 11-20 04:16：「要轉換的是斜線那種很危險，印象中最危險的符號（漏洞）就是斜線」；Codex 04:16：能編譯≠路徑對，可能讀寫到錯的檔案
+    # → R1 降級成「只報錯＋給建議修法」，不自動寫回；要寫回得人看過後加 --R1確認（之後有「原值可核對＋路徑仍在允許範圍」的驗證再考慮放寬）
+    if write and "--R1確認" not in sys.argv:
+        return "fail", f"R1（反斜線）只報錯不自動修：建議 {desc}；人確認後加 --R1確認 才寫回"
     if write:
         open(path, "w", encoding="utf-8", newline="").write(new)
         record(path, "R1 反斜線陷阱反轉", desc)
