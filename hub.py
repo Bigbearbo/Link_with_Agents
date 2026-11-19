@@ -275,6 +275,12 @@ class Room:
                     k = nm.group(1).lower()
                     k = "nvidia" if k == "輝達" else k
                     picked = [k] + [p for p in picked if p != k]
+                elif src != "Telegram" or not os.path.exists(TG_SETTINGS):
+                    # 使用者 11:47：「看用量交棒主持，路由可以給輝達擔任」——沒有點名、也沒有 Telegram「先回」設定時，
+                    # 主持（第一個回）交給：輝達的路由建議（2 小時內有效）＞名單裡用量最寬裕的那位
+                    h = pick_host(picked)
+                    if h:
+                        picked = [h] + [p for p in picked if p != h]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
                 if "codex" in picked and codex_hot():
                     threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
@@ -1428,6 +1434,52 @@ def render_perm_page():
     out += window_allow_lists()
     with open(PERM_PAGE, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
+
+
+ROUTE_HINT = r"H:\免費模型用\路由建議.json"   # 輝達當路由員：{"先回": "deepseek", "原因": "..."}，2 小時內有效
+
+
+def usage_pressure(who):
+    """用量壓力（越小越寬裕；讀不到回 None）：Claude 看 5 小時、Codex 看 7 天的「已用÷時間已過」，DeepSeek 看今天花費÷每日上限。"""
+    try:
+        if who == "claude":
+            w = json.load(open(r"H:\Agent共用\claude-用量.json", encoding="utf-8"))["five_hour"]
+            return float(w.get("used", 0)) / 100
+        if who == "codex":
+            w = json.load(open(r"H:\Agent共用\codex-用量.json", encoding="utf-8"))["seven_day"]
+            return float(w.get("used", 0)) / 100
+        if who == "deepseek":
+            sys.path.insert(0, r"H:\Agent共用\ai-call\deepseek")
+            import ds
+            d, _ = ds.spent()
+            return d / float(ds.conf()["每日上限美元"])
+    except Exception:
+        return None
+    return None
+
+
+def pick_host(picked):
+    """選主持人（第一個回）：只在會馬上回話的 Claude／Codex／DeepSeek 裡選（Gemini、輝達住視窗，看到單才回，不當主持）。"""
+    cand = [p for p in picked if p in ("claude", "codex", "deepseek")]
+    if len(cand) < 2:
+        return None
+    try:
+        if time.time() - os.path.getmtime(ROUTE_HINT) < 7200:
+            h = str(json.load(open(ROUTE_HINT, encoding="utf-8")).get("先回", "")).lower()
+            h = {"輝達": "nvidia"}.get(h, h)
+            if h in picked:
+                return h
+    except (OSError, ValueError):
+        pass
+    scored = [(usage_pressure(p), i, p) for i, p in enumerate(cand)]
+    scored = [s for s in scored if s[0] is not None]
+    if not scored:
+        return None
+    best = min(scored)
+    cur = next((s for s in scored if s[2] == cand[0]), None)
+    if cur and cur[0] - best[0] < 0.15:   # 差不到 15% 就照原順序，不亂換
+        return None
+    return best[2]
 
 
 TG_SETTINGS = os.path.join(HERE, "telegram-設定.json")
