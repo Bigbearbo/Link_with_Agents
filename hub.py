@@ -2825,6 +2825,30 @@ if __name__ == "__main__":
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
+    def permission_watch_loop():
+        """使用者 11-20 06:41：CLI 有權限需求時通知到主討論。輝達（OpenCode）每 20 秒看 /permission，新的請求貼一則到主討論。
+        終端機 Claude 走 Claude Code 的 Notification hook（權限提示.ps1）；Gemini（agy）、Codex App 沒有可讀的介面。"""
+        import window_agent as wa
+        seen = set()
+        while True:
+            try:
+                for name in ("輝達",):
+                    for p in wa.pending_permissions(name) or []:
+                        pid = str(p.get("id") or p)
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        what = p.get("title") or p.get("permission") or p.get("type") or ""
+                        pat = p.get("pattern") or p.get("patterns") or (p.get("metadata") or {}).get("filepath") or ""
+                        room = hub.rooms.get(MAIN)
+                        if room:
+                            room.notice(f"🔐 {name} 的視窗在等你按權限：{what} {pat}".strip()[:300] + "\n（到它的 OpenCode 視窗按允許／拒絕；這則只是通知）")
+                        log(f"權限請求：{name} {what} {pat}")
+            except Exception as e:
+                log(f"權限監看失敗：{type(e).__name__} {e}")
+            time.sleep(20)
+    threading.Thread(target=permission_watch_loop, daemon=True).start()
+
     def run_check():
         log("自我檢查中（Claude 回話、Codex 執行指令）…")
         hub.health = rt.self_check()

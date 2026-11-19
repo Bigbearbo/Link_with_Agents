@@ -184,6 +184,23 @@ def opencode_busy(name):
         return None
 
 
+def pending_permissions(name):
+    """OpenCode 視窗正在等人按的權限請求（GET /permission）。沒開視窗或讀不到回 None。
+    使用者 11-20 06:41：CLI 有權限需求時通知到主討論，比較不會漏掉。"""
+    import base64, json, urllib.request
+    f = NOTIFY.get(name)
+    if not f or not os.path.exists(f):
+        return None
+    try:
+        c = json.load(open(f, encoding="utf-8"))
+        auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
+        r = urllib.request.Request(f"http://127.0.0.1:{c['port']}/permission", headers={"Authorization": auth})
+        v = json.loads(urllib.request.urlopen(r, timeout=5).read())
+        return v if isinstance(v, list) else None
+    except Exception:
+        return None
+
+
 SKIP_FWD = ("沒有新訊息", "已讀到最新", "不需要回", "無需回覆", "不用回")
 
 
