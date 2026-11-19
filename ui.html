@@ -202,7 +202,8 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 #sideGrip:hover,#sideGrip.drag{background:var(--me);opacity:.35}
 body.side-max #sidePane{width:100vw}body.side-max main,body.side-max footer,body.side-max #marks{display:none}
 body.dragging iframe{pointer-events:none}body.dragging{user-select:none;cursor:col-resize}
-.cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px}.cp:hover{opacity:1}
+.cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px;user-select:none;-webkit-user-select:none}
+.cp::selection{background:transparent}.cp:hover{opacity:1}
 a.fp{font-family:Consolas,monospace;font-size:.92em}
 /* 收合模式：每則只顯示 小標題＋三行，點一下展開 */
 body.fold .bubble:not(.open){max-height:5.6em;overflow:hidden;cursor:zoom-in;position:relative}
@@ -386,6 +387,11 @@ function titleOf(m){
   const t = first.replace(/^#{1,6}\s*/, "").replace(/^\*\*(.+)\*\*$/, "$1").replace(/^【(.+)】$/, "$1").trim();
   return (t !== first && t.length <= 40) ? t : "";   // 只認「# 標題」「**標題**」「【標題】」這種整行標題
 }
+// 使用者 11-20 07:2x：反白複製路徑時把旁邊的 📋 按鈕也一起複製了 → 複製時把 📋 拿掉
+document.addEventListener("copy", e => {
+  const s = (window.getSelection() || "").toString();
+  if(s.includes("📋") && e.clipboardData){ e.clipboardData.setData("text/plain", s.replace(/📋/g, "")); e.preventDefault(); }
+});
 function copyText(s, btn){
   (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(
     () => { btn.textContent = "✓"; setTimeout(() => btn.textContent = "📋", 1200); },
