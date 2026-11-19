@@ -2825,6 +2825,10 @@ if __name__ == "__main__":
                 importlib.import_module("等待追蹤").remind(hub)
             except Exception as e:
                 log(f"等待追蹤失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-20 07:05：流程優化 → 每天 07 點後一次流程體檢，程式數、小 AI 挑最多 3 件
+                importlib.import_module("流程體檢").daily(hub)
+            except Exception as e:
+                log(f"流程體檢失敗：{type(e).__name__} {e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
