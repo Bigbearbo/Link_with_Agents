@@ -98,6 +98,27 @@ def fix_file(path, write=False):
             compile(new, path, "exec")
         except SyntaxError as e:
             return "fail", f"反轉後還是編譯不過（{e.msg}，第 {e.lineno} 行），保留原檔"
+        # Codex 02:14：能編譯不代表路徑對——一般 "..." 字串裡的 \a 執行時又會變回控制字元。
+        # 只有每個修補點都落在 r"..." 原始字串裡才自動修；否則報行號、保留原檔。
+        import io, tokenize
+        spots, line, col = [], 1, 0
+        for c in text:
+            if c in UNDO:
+                spots.append((line, col))
+            if c == "\n":
+                line, col = line + 1, 0
+            else:
+                col += len(UNDO.get(c, c))
+        raw_ok = set()
+        for tok in tokenize.generate_tokens(io.StringIO(new).readline):
+            if tok.type == tokenize.STRING:
+                prefix = tok.string[:tok.string.find(tok.string.lstrip("rRbBuUfF")[0])].lower()
+                for s in spots:
+                    if tok.start <= s < tok.end and "r" in prefix:
+                        raw_ok.add(s)
+        unsure = sorted({s[0] for s in spots if s not in raw_ok})
+        if unsure:
+            return "fail", f"第 {'、'.join(map(str, unsure))} 行的修補點不在 r\"...\" 原始字串裡，修回 \\a 執行時仍會壞，原意不確定，保留原檔"
     if path.lower().endswith(".json"):
         try:
             json.loads(new)
