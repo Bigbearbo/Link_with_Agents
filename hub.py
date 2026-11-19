@@ -67,6 +67,7 @@ MAIN = "main"
 SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到這個房間（可在 tg_state 的 shared_room 指定 id）
 SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 vs Gemini", "gemini"),
               ("solo-dot", "我 vs Dot", "dot"), ("solo-deepseek", "我 vs DeepSeek", "deepseek")]
+WORK_ROOMS = [("small-pool", "小模型工作群", "deepseek", "nvidia")]   # (id, 名字, 主持, 候補)；Codex 22:40 接入單 small-pool-room-20261119-2234
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "DeepSeek": "🐋", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
@@ -257,6 +258,10 @@ class Room:
             return []
         if self.name == SHARED_ROOM_NAME:
             return [self.claude]
+        host = next(((h, b) for rid, _n, h, b in WORK_ROOMS if rid == self.id), None)
+        if host:   # 工作群：只叫主持（DeepSeek）；今天花費到上限就換候補（輝達）；其他人要點名才叫
+            h, b = host
+            return [getattr(self, b if (usage_pressure(h) or 0) >= 1 else h)]
         nearly_out = (usage_pressure("codex") or 0) >= 0.95   # 使用者 11:51：快陣亡別叫（重開補答也算）
         seq = [a for a in self.order_both() if not (a is self.codex and (codex_hot() or nearly_out))]
         return seq + [self.gemini]
@@ -316,6 +321,8 @@ class Room:
                     h = pick_host(picked)
                     if h:
                         picked = [h] + [p for p in picked if p != h]
+                if any(rid == self.id for rid, *_ in WORK_ROOMS) and not nm:   # 工作群沒點名：只叫主持（不喚醒全員）
+                    picked = [{"DeepSeek": "deepseek", "輝達": "nvidia"}.get(a.name, a.name.lower()) for a in self.order_all()]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
                 if "codex" in picked and (usage_pressure("codex") or 0) >= 0.95 and len(picked) > 1:
                     # 使用者 11:51：「codex 快陣亡了每次出來說話都嚇我一下」→ 週額度 ≥95% 時，群聊名單先不叫它（@Codex 照叫）
@@ -794,6 +801,8 @@ class Hub:
         s["rooms"].setdefault(MAIN, {"name": "主討論", "chats": []})
         for rid, name, solo in SOLO_ROOMS:  # 使用者 11-17：我 vs 輝達／Gemini／Dot 的一對一視窗，不連 Telegram
             s["rooms"].setdefault(rid, {"name": name, "chats": [], "solo": solo})
+        for rid, name, _h, _b in WORK_ROOMS:  # 使用者 22:34 授權建的工作群：只有網頁、空房開始、不連 Telegram
+            s["rooms"].setdefault(rid, {"name": name, "chats": []})
         self.rooms = {rid: Room(self, rid, d) for rid, d in s["rooms"].items()}
         self.save()
 
