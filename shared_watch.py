@@ -100,17 +100,29 @@ def read_inbox():
     out = []
     if not os.path.isdir(INBOX):
         return out
-    for name in sorted(os.listdir(INBOX)):
-        full = os.path.join(INBOX, name)
-        if not os.path.isfile(full) or name.endswith(SKIP_EXT) or name.startswith("."):
-            continue
-        if time.time() - os.path.getmtime(full) < 3:
-            continue  # 可能還在寫
-        try:
-            raw = open(full, "rb").read()
-        except OSError:
-            continue
-        out.append((full,) + parse_ticket(name, raw))
+    # 使用者 11-19 14:22：「不同系統寫入的確該分資料夾」→ inbox\<來源>\（例 inbox\Dot\、inbox\視窗Gemini\）也收，資料夾名當預設寄件人
+    spots = [(INBOX, None)] + [(os.path.join(INBOX, d), d) for d in sorted(os.listdir(INBOX))
+                               if os.path.isdir(os.path.join(INBOX, d)) and d not in ("done", "rejected") and not d.startswith(".")]
+    for folder, who in spots:
+        for name in sorted(os.listdir(folder)):
+            full = os.path.join(folder, name)
+            if not os.path.isfile(full) or name.endswith(SKIP_EXT) or name.startswith(".") or name.lower() in ("readme.md", "_說明.txt"):
+                continue
+            if time.time() - os.path.getmtime(full) < 3:
+                continue  # 可能還在寫
+            try:
+                raw = open(full, "rb").read()
+            except OSError:
+                continue
+            sender, to, body, room = parse_ticket(name, raw)
+            if who and sender in ("未知", "", "雲端 App"):
+                sender = who[:20]
+            elif sender == "未知" and to not in ("invalid", "gdoc"):
+                to = "unclear"
+            if to not in ("invalid", "gdoc") and body.count("�") >= 5:   # 亂碼：文字還是轉，但交給輝達先看
+                body = "（這張單有亂碼，可能是不同系統的編碼問題；看得懂的部分照辦，看不懂的請回問寄件人）\n" + body
+                to = "unclear"
+            out.append((full, sender, to, body, room))
     return out
 
 
@@ -174,8 +186,10 @@ def parse_ticket(name, raw):
         to = "claude"                                           # 使用說明第 3 節的 DOT_REQUEST 四欄格式：給本機（Claude 先接）
     if not body:
         return (sender or "未知", "invalid", text[:300], None)
-    if not sender or to is None:
+    if to is None:
         return (sender or "未知", "unclear", body, meta.get("room") or None)
+    if not sender:
+        return ("未知", to, body, meta.get("room") or None)   # 有寫給誰、沒寫是誰：read_inbox 用資料夾名補；補不到才轉輝達
     return (sender, to, body, meta.get("room") or None)
 
 
