@@ -71,6 +71,22 @@ UNDO = {"\x07": "\\a", "\x08": "\\b", "\x0c": "\\f", "\x0b": "\\v", "\x00": "\\0
 def fix_file(path, write=False):
     """回傳 (狀態, 說明)。狀態：ok（本來就好）、fixed（修好）、would（試修可行但沒寫）、fail（修不了）。"""
     raw = open(path, "rb").read()
+    if path.lower().endswith(".json"):   # JSON 的 BOM、尾逗號：接 Codex 11-20 02:12 的 repair_json_format.normalize（不重寫）
+        try:
+            json.loads(raw.decode("utf-8"))
+        except ValueError:
+            try:
+                import importlib.util as _u
+                sp = _u.spec_from_file_location("rjf", r"H:\Codex用\outputs\roundtable-updates\repair_json_format.py")
+                rjf = _u.module_from_spec(sp)
+                sp.loader.exec_module(rjf)
+                cand, fixes = rjf.normalize(raw)
+                if fixes:
+                    if write:
+                        open(path, "wb").write(cand)
+                    return ("fixed" if write else "would"), "、".join(fixes) + "（Codex 的 JSON 修復）"
+            except Exception:
+                pass   # 修不了就往下走控制字元反轉
     text = raw.decode("utf-8", "replace")
     hits = [c for c in text if c in UNDO]
     other = [c for c in text if ord(c) in BAD and c not in UNDO]
