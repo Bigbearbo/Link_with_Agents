@@ -2677,6 +2677,13 @@ if __name__ == "__main__":
                                timeout=600, capture_output=True, creationflags=0x08000000)
             except Exception as e:
                 log(f"檢索索引重建失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-20 03:09「你們去弄」：每天一份第三方時間戳（只送指紋），今天蓋過就跳過
+                r = subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', os.path.join(HERE, '研究時間戳.py')],
+                                   timeout=180, capture_output=True, text=True, encoding='utf-8', creationflags=0x08000000)
+                if "今天已蓋過" not in (r.stdout or ""):
+                    log(f"研究時間戳：{(r.stdout or r.stderr or '').strip()[-200:]}")
+            except Exception as e:
+                log(f"研究時間戳失敗：{type(e).__name__} {e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
