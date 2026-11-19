@@ -1092,6 +1092,10 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/api/bookmarks":   # 書籤（使用者 11-19 22:01）
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                self._json({"bookmarks": load_bookmarks()})
             elif u.path in ("/變動", "/changes"):
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1143,6 +1147,21 @@ def make_handler(hub):
                 return self._json({"ok": True})
             if p == "/api/new":
                 return self._json({"ok": room.new_chat()})
+            if p == "/api/bookmarks":   # {"add": {...}} 或 {"del": id}
+                with hub.lock:
+                    bm = load_bookmarks()
+                    if data.get("add"):
+                        a = data["add"]
+                        bid = f"{a.get('room')}-{a.get('idx')}"
+                        if not any(b["id"] == bid for b in bm):
+                            bm.append({"id": bid, "room": str(a.get("room") or MAIN), "room_name": str(a.get("room_name") or "")[:30],
+                                       "idx": int(a.get("idx") or 0), "who": str(a.get("who") or "")[:20],
+                                       "time": str(a.get("time") or "")[:20], "text": str(a.get("text") or "")[:80],
+                                       "added": time.strftime("%m-%d %H:%M")})
+                    if data.get("del"):
+                        bm = [b for b in bm if b["id"] != data["del"]]
+                    json.dump(bm, open(BOOKMARKS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                return self._json({"ok": True, "bookmarks": bm})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦", bool(data.get("always")))})
             if p == "/api/decide":
@@ -1574,6 +1593,14 @@ def pick_host(picked):
 
 
 TG_SETTINGS = os.path.join(HERE, "telegram-設定.json")
+BOOKMARKS = os.path.join(HERE, "logs", "書籤.json")   # 使用者 11-19 22:01：聊天視窗的書籤（存中樞，換瀏覽器也在）
+
+
+def load_bookmarks():
+    try:
+        return json.load(open(BOOKMARKS, encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
 TG_NAMES = {"claude": "claude", "codex": "codex", "gemini": "gemini", "輝達": "nvidia", "nvidia": "nvidia",
             "deepseek": "deepseek", "dot": "dot"}
 TG_SHOW = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "deepseek": "DeepSeek", "dot": "Dot"}
