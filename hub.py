@@ -1147,6 +1147,16 @@ def make_handler(hub):
                 return self._json({"ok": True})
             if p == "/api/new":
                 return self._json({"ok": room.new_chat()})
+            if p == "/api/reveal":   # 使用者 22:23：訊息裡的電腦路徑可點 → 在檔案總管裡選到它（只「顯示」，不執行）
+                path = os.path.normpath(str(data.get("path") or "").strip().rstrip("\\"))
+                roots = (r"H:\Agent共用", r"H:\Claude用", r"H:\免費模型用", r"H:\Gemini用", r"H:\DeepSeek用", r"H:\Codex用", r"J:\我的雲端硬碟")
+                low = path.lower()
+                if not any(low.startswith(r.lower()) for r in roots) or any(b in low for b in ("secret", ".dpapi", "token", "導師助手")):
+                    return self._json({"ok": False, "error": "這個位置不開放從網頁打開"})
+                if not os.path.exists(path):
+                    return self._json({"ok": False, "error": "找不到：" + path})
+                subprocess.Popen(["explorer.exe", "/select," + path] if os.path.isfile(path) else ["explorer.exe", path])
+                return self._json({"ok": True})
             if p == "/api/bookmarks":   # {"add": {...}} 或 {"del": id}
                 with hub.lock:
                     bm = load_bookmarks()

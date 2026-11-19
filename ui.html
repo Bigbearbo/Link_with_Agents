@@ -172,6 +172,16 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
 .msg.flash .bubble{outline:2px solid var(--me);outline-offset:2px;transition:outline-color 1.5s}
+.cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px}.cp:hover{opacity:1}
+a.fp{font-family:Consolas,monospace;font-size:.92em}
+/* 收合模式：每則只顯示 小標題＋三行，點一下展開 */
+body.fold .bubble:not(.open){max-height:5.6em;overflow:hidden;cursor:zoom-in;position:relative}
+body.fold .bubble:not(.open)::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1.6em;background:linear-gradient(transparent,var(--panel))}
+body.fold .m-me .bubble:not(.open)::after{background:linear-gradient(transparent,var(--me-bg))}
+body.fold .bubble[data-title]:not(.open)::before{content:"▸ " attr(data-title);display:block;font-weight:650}
+body.fold .bubble[data-title]:not(.open) > :first-child{display:none}
+body.fold .m-sys .bubble{max-height:none}
+body.fold .m-sys .bubble::after{display:none}
 </style>
 </head>
 <body>
@@ -182,6 +192,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
   <label class="switch" title="開啟後 Claude 與 Codex 可以改檔案、執行指令"><input type="checkbox" id="write"><span class="track"></span><span id="writeLbl">唯讀</span></label>
   <span id="health" class="pill warn" hidden></span>
   <span id="updBtn" class="pill upd" title="網頁有新版本，點一下重新整理" hidden>🔄 有更新，點我重新整理</span>
+  <span id="foldBtn" class="pill" title="全部縮成 小標題＋三行，點一則展開" style="cursor:pointer">↕ 收合</span>
   <span id="marksBtn" class="pill" title="書籤">🔖 書籤</span>
   <span id="usageBtn" class="pill" title="大家的用量">📊 用量</span>
   <span id="tg" class="pill"><span class="dot"></span>Telegram</span>
@@ -311,7 +322,50 @@ function render(m, idx){
     <div class="meta"><button class="bm${marked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
     <div class="bubble">${md(m.text)}</div><div class="live"></div></div>`;
   el.querySelector(".bm").onclick = () => toggleMark(m, idx, el);
+  decorate(el.querySelector(".bubble"), m);
   return el;
+}
+// ---------- 使用者 22:23：連結旁加複製、電腦檔案路徑可點、AI 小標題＋收合成三行 ----------
+function titleOf(m){
+  const first = ((m.text || "").split("\n").find(l => l.trim()) || "").trim();
+  const t = first.replace(/^#{1,6}\s*/, "").replace(/^\*\*(.+)\*\*$/, "$1").replace(/^【(.+)】$/, "$1").trim();
+  return (t !== first && t.length <= 40) ? t : "";   // 只認「# 標題」「**標題**」「【標題】」這種整行標題
+}
+function copyText(s, btn){
+  (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(
+    () => { btn.textContent = "✓"; setTimeout(() => btn.textContent = "📋", 1200); },
+    () => prompt("複製這段：", s));
+}
+const PATH_RE = /\b[A-Za-z]:\\[^\s`'"<>|*?：，。；、（）()「」]+/g;
+function decorate(bub, m){
+  if(!bub) return;
+  bub.querySelectorAll("a[href^='http']").forEach(a => {   // 網址：開新分頁＋複製鈕（複製的是實際網址）
+    a.target = "_blank"; a.rel = "noopener";
+    const b = document.createElement("button"); b.className = "cp"; b.textContent = "📋"; b.title = "複製網址：" + a.href;
+    b.onclick = e => { e.preventDefault(); copyText(a.href, b); };
+    a.after(b);
+  });
+  const walker = document.createTreeWalker(bub, NodeFilter.SHOW_TEXT);   // 電腦路徑（H:\…）：點了在檔案總管裡選到它＋複製鈕
+  const nodes = []; while(walker.nextNode()){ PATH_RE.lastIndex = 0; if(PATH_RE.test(walker.currentNode.nodeValue)) nodes.push(walker.currentNode); }
+  for(const n of nodes){
+    PATH_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment(); let last = 0, mm;
+    const s = n.nodeValue;
+    while((mm = PATH_RE.exec(s))){
+      frag.append(s.slice(last, mm.index));
+      const p = mm[0].replace(/[.,]+$/, "");
+      const a = document.createElement("a"); a.href = "#"; a.className = "fp"; a.textContent = p; a.title = "在檔案總管中顯示";
+      a.onclick = e => { e.preventDefault(); api("/api/reveal", {path: p}).then(r => { if(!r.ok) alert(r.error || "打不開"); }).catch(() => alert("打不開")); };
+      const b = document.createElement("button"); b.className = "cp"; b.textContent = "📋"; b.title = "複製路徑";
+      b.onclick = e => { e.preventDefault(); copyText(p, b); };
+      frag.append(a, b); last = mm.index + mm[0].length - (mm[0].length - p.length);
+    }
+    frag.append(s.slice(last)); n.replaceWith(frag);
+  }
+  const t = titleOf(m);
+  if(t) bub.dataset.title = t;
+  if(bub.scrollHeight > 0) bub.classList.add("clampable");
+  bub.onclick = e => { if(document.body.classList.contains("fold") && !e.target.closest("a,button")) bub.classList.toggle("open"); };
 }
 // ---------- 書籤（存在中樞 logs/書籤.json，換瀏覽器也在） ----------
 let marks = [], roomNames = {};
@@ -337,7 +391,7 @@ async function saveMarks(body){
 async function loadMarks(){ try{ marks = (await api("/api/bookmarks")).bookmarks || []; renderMarks(); }catch(e){} }
 function toggleMark(m, idx, el){
   if(marked(idx)) return saveMarks({del: markId(idx)});
-  const text = (m.text || "").replace(/\s+/g, " ").slice(0, 80);
+  const text = (titleOf(m) || (m.text || "").replace(/\s+/g, " ")).slice(0, 80);   // 有 AI 小標題就用小標題
   saveMarks({add: {room, room_name: roomNames[room] || "", idx, who: m.who, time: m.time, text}});
 }
 function jumpMark(b, tries = 0){
@@ -429,6 +483,10 @@ async function loadUsage(){
 }
 $("#usageBtn").onclick = () => $("#usage").classList.toggle("open");
 $("#marksBtn").onclick = () => $("#marks").classList.toggle("open");
+(() => { let f = false; try{ f = localStorage.getItem("rt-fold") === "1"; }catch(e){}
+  document.body.classList.toggle("fold", f); $("#foldBtn").textContent = f ? "↕ 展開" : "↕ 收合";
+  $("#foldBtn").onclick = () => { const on = document.body.classList.toggle("fold");
+    $("#foldBtn").textContent = on ? "↕ 展開" : "↕ 收合"; try{ localStorage.setItem("rt-fold", on ? "1" : "0"); }catch(e){} }; })();
 loadMarks();
 loadUsage(); setInterval(loadUsage, 60000);
 let uiVer = 0;  // 第一次載入時的網頁版本
