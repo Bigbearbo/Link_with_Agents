@@ -2817,6 +2817,11 @@ if __name__ == "__main__":
                     log(f"研究時間戳：{(r.stdout or r.stderr or '').strip()[-200:]}")
             except Exception as e:
                 log(f"研究時間戳失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-20 06:28：同步點大家都忘了、只剩等的人記得 → 目標檔裡「請／等 某人」超過 6 小時就在群裡 @被等的人
+                import importlib
+                importlib.import_module("等待追蹤").remind(hub)
+            except Exception as e:
+                log(f"等待追蹤失敗：{type(e).__name__} {e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 

@@ -86,6 +86,12 @@ def feed(hub, n=30):
 def page(hub, who, key):
     who = who if who in NAMES else "Claude"
     w, todos, sos = waiting(hub, who), my_todos(who), rescues(who)
+    try:   # 使用者 11-20 06:28：同步點（別人目標檔裡寫「請／等 你」）也算「等你處理」，不受 24 小時限制
+        import importlib
+        w = [{"房間": "目標檔", "時間": f"{x['等了幾小時']:.0f} 小時前", "誰": x["等的人"], "內容": "⏳ 在等你：" + x["內容"]}
+             for x in importlib.import_module("等待追蹤").waits() if x["被等的人"] == who] + w
+    except Exception:
+        pass
     news, wakes = following(who)
     esc = _h.escape
     tabs = "".join(f'<a class="{"sel" if n == who else ""}" href="/board?ai={esc(n)}&k={esc(key)}">{esc(n)}</a>' for n in NAMES)
