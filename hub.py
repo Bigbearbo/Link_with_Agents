@@ -203,6 +203,16 @@ class Room:
                     "補完把 `H:\\Agent共用\\待補註解.md` 那行打勾。不用道歉，補註解就好。")).start()
             except OSError:
                 pass
+        if who == "使用者" and (text or "").lstrip().startswith("報錯"):
+            # 使用者 11-20 02:42：報錯接線生當第一線客服，決定回覆、併單、上報或追問（分流規則是 Codex 的 support_triage）
+            def _support(t=text, rn=self.name, w=entry["time"]):
+                try:
+                    import importlib
+                    msg = importlib.import_module("報錯接線生").handle(t, rn, w)
+                except Exception as e:
+                    msg = f"🎧 報錯接線生出錯了（{type(e).__name__}），這則請 @Claude 直接看。"
+                self.notice(msg)
+            threading.Thread(target=_support, daemon=True).start()
         if who not in ("系統", "有下文 Codex") and "@有下文" in (text or ""):
             # 使用者 11-20 02:36：給《有下文》視窗一個身分，讓其他 AI 能送信給它 → 房間裡 @有下文 就自動投一封信到它的信箱（Codex 建的檔案信箱）
             try:
