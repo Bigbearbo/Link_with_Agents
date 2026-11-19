@@ -2149,6 +2149,10 @@ if __name__ == "__main__":
                 render_perm_page()  # 每小時也刷新權限總覽（視窗裡按的允許會反映出來）
             except Exception as e:
                 log(f"權限總覽產生失敗：{e}")
+            try:
+                dialect.write_table()  # 方言轉換表（使用者 14:40：留紀錄提醒大家有這層轉換）
+            except Exception as e:
+                log(f"方言轉換表產生失敗：{e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
