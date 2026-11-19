@@ -69,6 +69,8 @@ class WindowAgent(rt.Agent):
                 r = nudge(self.name, self.room_id or "main", again=not new)
                 if r == "已送進視窗":  # 11-19 04:17：Gemini 本來就叫不醒，不算次數，免得誤報「叫了 3 次沒回」
                     NUDGE_COUNT[key] = n + 1
+                    import threading as _th
+                    _th.Thread(target=forward_unsent, args=(self.name, self.room_id or "main", p), daemon=True).start()
             self.step("叫醒視窗：" + r)
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
                 f.write(f"{time.strftime('%m-%d %H:%M:%S')} {self.name} {self.room_id or 'main'} 第{NUDGE_COUNT.get(key, 0)}次 {r}\n")
@@ -180,6 +182,44 @@ def opencode_busy(name):
         return any(isinstance(v, dict) and v.get("type") not in (None, "idle") for v in vals)
     except Exception:
         return None
+
+
+SKIP_FWD = ("沒有新訊息", "已讀到最新", "不需要回", "無需回覆", "不用回")
+
+
+def forward_unsent(name, room_id, ticket, wait=600):
+    """使用者 11-20 06:19「輝達今天的進度出錯了」——查 OpenCode 紀錄：06:08 起它有讀新訊息、也在視窗裡寫了回答，
+    但沒寫發送箱，所以群裡看不到。叫醒後等它跑完（最多 10 分鐘）；單還在（＝它沒在房間發言）就把它這次在視窗
+    寫的最後一段回答代轉進發送箱，中樞照常貼出、銷單；「沒有新訊息」之類的不轉。"""
+    import base64, json, urllib.request
+    t0 = time.time()
+    time.sleep(20)
+    while time.time() - t0 < wait and opencode_busy(name):
+        time.sleep(10)
+    time.sleep(15)   # 它自己寫發送箱、中樞貼出要一點時間
+    if not os.path.exists(ticket):
+        return
+    try:
+        c = json.load(open(NOTIFY[name], encoding="utf-8"))
+        auth = "Basic " + base64.b64encode(f"opencode:{c['password']}".encode()).decode()
+        url = f"http://127.0.0.1:{c['port']}"
+        get = lambda p: json.loads(urllib.request.urlopen(urllib.request.Request(url + p, headers={"Authorization": auth}), timeout=10).read())
+        ss = sorted(get("/session"), key=lambda s: s.get("time", {}).get("updated", 0), reverse=True)
+        msgs = get(f"/session/{ss[0]['id']}/message") if ss else []
+        texts = [p.get("text", "") for m in msgs if m.get("info", {}).get("role") == "assistant"
+                 and m.get("info", {}).get("time", {}).get("created", 0) / 1000 >= t0
+                 for p in m.get("parts", []) if p.get("type") == "text" and p.get("text", "").strip()]
+        text = texts[-1].strip() if texts else ""
+        if len(text) < 40 or any(s in text for s in SKIP_FWD):
+            return
+        out = os.path.join(HOMES[name], "群組", "發送", f"回覆_代轉{time.strftime('%H%M%S')}.json")
+        with open(out + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"room": room_id, "text": text + "\n\n（中樞代轉：寫在視窗裡、沒送出的回答）"}, f, ensure_ascii=False)
+        os.replace(out + ".tmp", out)
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%m-%d %H:%M:%S')} {name} {room_id} 沒送出，代轉 {len(text)} 字\n")
+    except Exception:
+        pass
 
 
 def nudge(name, room_id, again=False, custom=None):
