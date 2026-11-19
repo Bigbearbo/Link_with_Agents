@@ -90,13 +90,13 @@ def write_file(name, content, append=False, agent=None):
         q = os.path.realpath(os.path.join(WORK, name.strip().strip('"')))
         if (agent is not None and q.lower().startswith(os.path.realpath(SHARED_ROOT).lower() + os.sep)
                 and not any(b in q.lower() for b in NEVER) and not q.lower().endswith(CODE_EXT)):
-            # 共用區其他地方：記下來，這輪結束後請使用者同意（允許一次／以後都允許這個資料夾）
-            d = os.path.dirname(q)
-            agent.denials = getattr(agent, "denials", []) or []
-            if not any(x.get("dir") == d for x in agent.denials if isinstance(x, dict)):
-                agent.denials.append({"kind": "寫入", "dir": d})
-            return f"還不能寫：{q}。已向使用者申請寫入「{d}」，同意後下一輪再寫一次。"
-        return f"不能寫：{name}（只能寫 H:\\DeepSeek用、H:\\Agent共用\\DeepSeek，和使用者允許過的資料夾）"
+            # 使用者 11-20 07:40：「共用區照名字就是你們共用」→ 共用區（非程式檔、非禁區）直接可寫，不再逐資料夾申請；
+            # 別人的 OWNER.txt 檔與程式檔仍照舊擋（上面 _in_work／CODE_EXT／NEVER）。共用區有 git 與變動通知可回看。
+            if os.path.basename(q).lower() == "owner.txt":
+                return f"不能改別人的 OWNER.txt：{q}"
+            p = q
+        else:
+            return f"不能寫：{name}（只能寫 H:\\DeepSeek用、整個 H:\\Agent共用 的非程式檔；程式檔、ai-call、記憶等禁區不行）"
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "a" if append else "w", encoding="utf-8") as f:
         f.write(content + "\n")
