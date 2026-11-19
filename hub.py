@@ -1880,11 +1880,12 @@ button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8
 const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
-const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
 function quick(id,w){{const t=document.getElementById('t'+id);t.value=w+(t.value.trim()?'：'+t.value.trim():'');send(id);}}
 function toggleOld(b){{const on=document.body.classList.toggle('showold');b.textContent=(on?'收起':'顯示')+'回覆過的';}}
 async function sendAll(){{const ts=[...document.querySelectorAll('textarea')].filter(t=>t.value.trim());const s=document.getElementById('sall');
-if(!ts.length){{s.textContent='沒有填任何一項';return;}}s.textContent='送出 '+ts.length+' 項…';for(const t of ts){{await send(t.id.slice(1));}}s.textContent='✓ 送出 '+ts.length+' 項';}}
+if(!ts.length){{s.textContent='沒有填任何一項';return;}}s.textContent='送出 '+ts.length+' 項…';let ok=0;for(const t of ts){{if(await send(t.id.slice(1)))ok++;}}
+s.textContent=ok===ts.length?'✓ 送出 '+ok+' 項':'已送出 '+ok+' 項，'+(ts.length-ok)+' 項失敗（框裡還留著，再按一次就好）';}}
 document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&m&&!m.dataset.done){{
 try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.textContent=m.dataset.md;}}m.dataset.done=1;}}}}));
 </script></body></html>"""
@@ -1928,8 +1929,17 @@ def research_page(key):
     for t in sorted(todos, key=lambda t: ({"高": 0, "中": 1, "低": 2}.get(t.get("優先"), 3), t.get("id", 0))):
         log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))[:200]}</li>"
                        for r in (t.get("紀錄") or [])[-3:])
-        rows_t.append(f'<section data-q="{_h.escape(str(t.get("標題", "")) + str(t.get("負責", "")))}"><b>#{t["id"]}</b> [{_h.escape(str(t.get("優先", "")))}] {_h.escape(str(t.get("標題", "")))}'
-                      f'<div class="meta">負責：{_h.escape(str(t.get("負責", "")))}｜狀態：{_h.escape(str(t.get("狀態", "")))}</div>'
+        # 使用者 11-20 01:23：「是不是只剩標題了，太短看不懂」→ 展開看全部欄位、完整紀錄、專案接手卡
+        extra = "".join(f"<div><b>{k}</b>：{_h.escape(str(t.get(k)))}</div>" for k in ("誰能做", "成本", "怎麼驗", "依賴", "專案", "建立") if t.get(k))
+        allrec = "".join(f"<li>{_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))}</li>" for r in (t.get("紀錄") or []))
+        card = ""
+        if t.get("專案"):
+            cp = os.path.join(r"H:\Agent共用\專案", str(t["專案"]), "接手.md")
+            if os.path.exists(cp):
+                card = f'<div class="md" data-md="{_h.escape(open(cp, encoding="utf-8").read()[:15000])}"></div>'
+        rows_t.append(f'<section data-q="{_h.escape(str(t.get("標題", "")) + str(t.get("負責", "")))}"><details><summary><b>#{t["id"]}</b> [{_h.escape(str(t.get("優先", "")))}] {_h.escape(str(t.get("標題", "")))}'
+                      f'<div class="meta">負責：{_h.escape(str(t.get("負責", "")))}｜狀態：{_h.escape(str(t.get("狀態", "")))}｜點開看詳細</div></summary>'
+                      f'<div class="meta" style="margin:6px 0">{extra}</div>{f"<ul>{allrec}</ul>" if allrec else "<div class=meta>（還沒有進度紀錄）</div>"}{card}</details>'
                       f'{f"<ul>{log_}</ul>" if log_ else ""}{box("todo", t["id"])}</section>')
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>研究與待辦</title>
@@ -1956,7 +1966,7 @@ const K={json.dumps(key)};
 function tab(x){{document.getElementById('pi').hidden=x!=='i';document.getElementById('pt').hidden=x!=='t';
 document.getElementById('bi').classList.toggle('on',x==='i');document.getElementById('bt').classList.toggle('on',x==='t');}}
 function filt(){{const q=document.getElementById('q').value.trim().toLowerCase();document.querySelectorAll('section').forEach(s=>s.hidden=q&&!s.textContent.toLowerCase().includes(q)&&!(s.dataset.q||'').toLowerCase().includes(q));}}
-document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&!m.dataset.done){{
+document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&m&&!m.dataset.done){{
 try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.textContent=m.dataset.md;}}m.dataset.done=1;}}}}));
 async function send(kind,id){{const t=document.getElementById('t'+kind+id),w=document.getElementById('w'+kind+id).value,s=document.getElementById('s'+kind+id);
 if(!t.value.trim())return;s.textContent='送出中…';try{{const r=await fetch('/api/research_comment',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},
