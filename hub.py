@@ -283,7 +283,8 @@ class Room:
     def user_says(self, text, src, target="both", members=None):
         if re.match(r"\s*check\b", text or "", re.I):   # 使用者 21:47：開頭打 check（大小寫都行）＝核對用量顯示，錯了自動點名負責人
             self.add("使用者", text, src)
-            threading.Thread(target=self.run_usage_check, daemon=True).start()
+            who = re.sub(r'^\s*check\s*', '', text, flags=re.I).strip()
+            threading.Thread(target=lambda: self.run_usage_check(who), daemon=True).start()
             return
         if src == "Telegram" and target == "both":
             text, members = tg_members(self, text)          # 使用者 11-19 08:47：Telegram 用設定檔決定誰回、誰先回
@@ -665,11 +666,13 @@ class Room:
                     + ("；這個資料夾以後都可以寫，請按「以後都允許」或傳 /always" if always_ok else "")
                     + "；拒絕請按「拒絕」或傳 /deny。")
 
-    def run_usage_check(self):
+    def run_usage_check(self, only=""):
         import importlib
         try:
             uc = importlib.import_module("用量核對")
             rows = uc.check(usage_summary())
+            if only:   # Codex 21:48：check 輝達＝只查那位
+                rows = [r for r in rows if r[1].lower() in only.lower()] or rows
             self.notice(uc.report(rows))
             owners = {o for s, _, _, o in rows if s == "bad"}
             for o in owners:   # 錯了就叫負責人（Claude 走終端機、Codex 直接叫、Gemini 留單）
