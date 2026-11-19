@@ -68,6 +68,23 @@ def main():
 UNDO = {"\x07": "\\a", "\x08": "\\b", "\x0c": "\\f", "\x0b": "\\v", "\x00": "\\0", "\x1b": "\\x1b"}
 
 
+# 使用者 11-20 04:08（待討論 #30）：「可以直接修正，你寫好轉換規則，但要記得有被修正（清單介紹修正規則），需要時能去看；
+# 報錯是更嚴重的異常（程式處理不了的模糊區但能偵測），最後是執行時被擋下」
+# → 三層：①規則能確定就自動修＋留紀錄 ②偵測得到但原意不確定就報錯 ③都沒抓到的，執行時被擋下（py 編譯／JSON 解析失敗）。
+# 規則清單：H:\Agent共用\修正規則.md；每次自動修都寫一筆 logs\自動修正.jsonl（哪個檔、哪條規則、改了什麼）。
+FIX_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "自動修正.jsonl")
+
+
+def record(path, rule, what):
+    try:
+        os.makedirs(os.path.dirname(FIX_LOG), exist_ok=True)
+        import time as _t
+        with open(FIX_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"時間": _t.strftime("%Y-%m-%d %H:%M:%S"), "檔": os.path.abspath(path), "規則": rule, "改了": what}, ensure_ascii=False) + chr(10))
+    except OSError:
+        pass
+
+
 def fix_file(path, write=False):
     """回傳 (狀態, 說明)。狀態：ok（本來就好）、fixed（修好）、would（試修可行但沒寫）、fail（修不了）。"""
     raw = open(path, "rb").read()
@@ -84,6 +101,7 @@ def fix_file(path, write=False):
                 if fixes:
                     if write:
                         open(path, "wb").write(cand)
+                        record(path, "R3／R4 JSON 修復", "、".join(fixes))
                     return ("fixed" if write else "would"), "、".join(fixes) + "（Codex 的 JSON 修復）"
             except Exception:
                 pass   # 修不了就往下走控制字元反轉
@@ -127,6 +145,7 @@ def fix_file(path, write=False):
     desc = "、".join(f"{repr(c)}→{UNDO[c]} ×{hits.count(c)}" for c in sorted(set(hits)))
     if write:
         open(path, "w", encoding="utf-8", newline="").write(new)
+        record(path, "R1 反斜線陷阱反轉", desc)
         return "fixed", desc
     return "would", desc
 
