@@ -20,6 +20,7 @@ while ($true) {
     }
     Start-Sleep 5
 }
+Set-Content -Path (Join-Path $PSScriptRoot "planned-restart.flag") -Value (Get-Date -Format s) -Encoding utf8  # 看門狗看到就不當陣亡通報
 foreach ($h in @(Get-HubPy)) {
     $parent = $h.ParentProcessId
     Stop-Process -Id $h.ProcessId -Force -ErrorAction SilentlyContinue
