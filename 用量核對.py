@@ -5,7 +5,7 @@
   輝達：OpenCode 紀錄重算 vs 顯示；DeepSeek：OpenRouter 金鑰今天用量 vs 本機帳本（ds.audit）。
   python 用量核對.py      在終端機跑一次（不發群組）
 """
-import json, os, time
+import json, os, re, time
 
 SHARED = r"H:\Agent共用"
 OWNER = {"Claude": "Claude", "Codex": "Codex", "Gemini": "Gemini", "輝達": "Claude", "DeepSeek": "Claude"}   # 用量檔誰負責更新
@@ -58,12 +58,13 @@ def check(summary):
         pool = importlib.import_module("免費AI池")
         led = pool.ledger_counts()
         u = json.load(open(os.path.join(SHARED, "免費池-用量.json"), encoding="utf-8"))
-        wins = {w["label"].replace("（贈點）", ""): w for w in shown.get("免費池", {}).get("windows", [])}
+        wins = {w["label"].replace("（贈點）", "").replace("（NIM）", ""): w for w in shown.get("免費池", {}).get("windows", [])}
         today = time.strftime("%Y-%m-%d", time.gmtime())
         for n, s in u.get("服務", {}).items():
             real = led.get(n, 0)
             cnt = str((wins.get(n) or {}).get("count", ""))
-            disp = int(cnt.split(" 次")[0]) if cnt.split(" 次")[0].isdigit() else real   # 贈點欄顯示金額，不比次數
+            mm = re.search(r"本機今天 (\d+) 次", cnt)
+            disp = int(mm.group(1)) if mm else real   # 贈點欄顯示金額，不比次數
             if n not in wins:
                 out.append(("bad", f"免費池/{n}", "用量檔有、網頁沒顯示", "Claude"))
             elif disp != real:

@@ -203,6 +203,27 @@ class Room:
                     "補完把 `H:\\Agent共用\\待補註解.md` 那行打勾。不用道歉，補註解就好。")).start()
             except OSError:
                 pass
+        _pick = re.findall(r"@(groq|cohere|nvidia|cloudflare|google)\b", text or "", re.I) if who == "使用者" else []
+        if _pick:
+            # 使用者 11-20 04:35：免費池日次數型小 AI 做點名鈕，沒事叫出來看看好不好用 → 訊息裡 @groq 等就叫那家回一則（過隱私篩）
+            def _small(names=[x.lower() for x in dict.fromkeys(_pick)], t=text):
+                import importlib
+                ys = importlib.import_module("隱私篩")
+                ctx = "\n".join(f"{m.get('who')}：{(m.get('text') or '')[:300]}" for m in self.transcript[-8:] if m.get("who") != "系統")
+                ok, safe, why = ys.check(ctx[-3500:])
+                if not ok:
+                    self.notice(f"🔒 這段對話{why}，沒有送給免費小 AI。")
+                    return
+                sys.path.insert(0, r"H:\Agent共用\ai-call")
+                pool = importlib.import_module("免費AI池")
+                for n in names:
+                    try:
+                        r = pool.ask(n, f"你是免費小 AI「{n}」，在一個多個 AI 一起討論的聊天室，使用者點名你。"
+                                        f"用繁體中文、200 字內、直接回答使用者最後一句；不確定就說不確定。\n最近對話：\n{safe}", max_tokens=1200, timeout=60)
+                        self.add(f"小AI·{n}", (r or "（空白回覆）").strip(), "回覆")
+                    except Exception as e:
+                        self.notice(f"小AI·{n} 叫不動：{type(e).__name__} {str(e)[:80]}")
+            threading.Thread(target=_small, daemon=True).start()
         if who == "使用者" and (text or "").lstrip().startswith("報錯"):
             # 使用者 11-20 02:42：報錯接線生當第一線客服，決定回覆、併單、上報或追問（分流規則是 Codex 的 support_triage）
             def _support(t=text, rn=self.name, w=entry["time"]):
@@ -1615,10 +1636,14 @@ def usage_summary():
                 wins.append({"label": n + "（贈點）", "used": round(100 * spent / s["贈點"], 1), "elapsed": None, "state": "",
                              "resets": (f"{s['到期'][5:]} 到期" if s.get('到期') else "到期日待補"), "empty_at": "", "count": f"約 ${spent:.2f}／${s['贈點']:.0f}"})
                 continue
-            wins.append({"label": n, "used": used, "elapsed": None, "state": "", "resets": "08:00", "empty_at": "",
-                         "count": f"{c} 次" + (f"／剩 {rem}" if rem is not None else "")})
+            # Codex 04:36 核對：各家重置規則不同，不能都寫 08:00；本機次數和服務回報的剩餘分開標
+            RESET = {"groq": "每日 08:00（另有每分鐘限制）", "cloudflare": "每日 08:00（看 Neurons 不看次數）",
+                     "google": "每日 16:00（美西午夜）", "cohere": "試用每月 1,000 次", "nvidia": "日上限未驗證（NIM，不是輝達 OpenCode）"}
+            wins.append({"label": n + ("（NIM）" if n == "nvidia" else ""), "used": used, "elapsed": None, "state": "",
+                         "resets": RESET.get(n, "未查"), "empty_at": "",
+                         "count": f"本機今天 {c} 次" + (f"｜服務回報剩 {rem}" if rem is not None else "")})
         if wins:
-            out.append({"name": "免費池", "windows": wins, "verdict": "次數為今天（台北 08:00 換日）；有「剩」的是服務自己回報",
+            out.append({"name": "免費池", "windows": wins, "verdict": "「本機今天」＝我們的呼叫帳本（台北 08:00 換日）；「服務回報剩」＝該家回傳的剩餘，時間窗可能不同",
                         "updated": str(u.get("更新", ""))[5:16].replace("T", " "), "age_min": int((time.time() - os.path.getmtime(fp)) / 60)})
     except (OSError, ValueError):
         pass

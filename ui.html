@@ -238,7 +238,7 @@ body.fold .m-sys .bubble::after{display:none}
   </div>
   <div class="tools">
     <span class="seg" id="target">
-      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="deepseek" title="付費（便宜），Claude 管">只問 DeepSeek</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
+      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="deepseek" title="付費（便宜），Claude 管">只問 DeepSeek</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button><button id="smallToggle" title="免費池的小 AI：點名叫出來試試（使用者 11-20 04:35）">小AI ▸</button><span id="smallBtns" hidden><button class="sm" data-n="groq">groq</button><button class="sm" data-n="cloudflare">cloudflare</button><button class="sm" data-n="nvidia">nvidia</button><button class="sm" data-n="cohere">cohere</button><button class="sm" data-n="google">google</button></span>
     </span>
     <button id="order" title="切換誰先發言">Claude 先講</button>
     <span class="spacer"></span>
@@ -357,7 +357,7 @@ function appendMsg(m, idx){
 }
 function render(m, idx){
   // 不認得的發言者（例如共用區 inbox 的「視窗Claude」「GPT」）：用一般對話框，名字照寫
-  const w = WHO[m.who] || (m.src === "共用區" ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
+  const w = WHO[m.who] || ((m.src === "共用區" || /^小AI/.test(m.who || "")) ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
   const el = document.createElement("div");
   el.className = "msg " + w.cls + (m.kind === "note" ? " note" : "");
   el.dataset.idx = idx;
@@ -560,6 +560,19 @@ $("#marksBtn").onclick = () => $("#marks").classList.toggle("open");
     $("#foldBtn").textContent = on ? "↕ 展開" : "↕ 收合"; try{ localStorage.setItem("rt-fold", on ? "1" : "0"); }catch(e){} }; })();
 loadMarks();
 loadUsage(); setInterval(loadUsage, 60000);
+// 小 AI 點名鈕：收合式；按了把 @名字 放進輸入框、切到「只記下」（不叫醒主力 AI），等你送出才呼叫
+(() => {
+  const tg = document.getElementById("smallToggle"), box2 = document.getElementById("smallBtns");
+  if(!tg) return;
+  tg.onclick = e => { e.preventDefault(); box2.hidden = !box2.hidden; tg.textContent = box2.hidden ? "小AI ▸" : "小AI ◂"; };
+  box2.querySelectorAll("button.sm").forEach(b => b.onclick = e => {
+    e.preventDefault();
+    const inp = document.getElementById("box"), tag = "@" + b.dataset.n + " ";
+    if(!inp.value.includes(tag.trim())) inp.value = tag + inp.value;
+    const nb = document.querySelector('button[data-t="note"]'); if(nb) nb.click();
+    inp.focus();
+  });
+})();
 attn = {decide: 0, research: 0};
 async function loadAttn(){ try{ const a = await api("/api/attention"); const ch = a.decide !== attn.decide || a.research !== attn.research; attn = a; if(ch && lastRooms) renderRooms(lastRooms); }catch(e){} }
 loadAttn(); setInterval(loadAttn, 60000);
@@ -676,11 +689,11 @@ for(const k of GROUP_ORDER){
   b.after(s);
 }
 renderGroup();  // 這個房間已經套用過預設對象，就不再蓋掉使用者自己的選擇
-document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = () => {
+document.querySelectorAll("#target button[data-t]:not(.skip)").forEach(b => b.onclick = () => {
   target = b.dataset.t;
   $("#target").classList.toggle("solo-mode", target !== "both");
   box.placeholder = target === "note" ? "只記下，不會叫醒他們…（Enter 送出）" : "輸入訊息…（Enter 送出，Shift+Enter 換行）";
-  document.querySelectorAll("#target button:not(.skip)").forEach(x => x.classList.toggle("sel", x === b));
+  document.querySelectorAll("#target button[data-t]:not(.skip)").forEach(x => x.classList.toggle("sel", x === b));
   box.focus();
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
