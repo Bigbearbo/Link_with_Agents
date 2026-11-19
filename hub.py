@@ -289,6 +289,11 @@ class Room:
             text = f"（請 {'→'.join(names[p] for p in picked)} 依序回答）{text}"
         elif target in names:  # 標記只問誰，其他人之後讀到記錄才不會搞錯
             text = f"（只問 {names[target]}）{text}"
+        last_user = next((m for m in reversed(self.transcript) if m.get("who") == "使用者"), None)
+        try:  # 使用者 09:47：很久沒說話就介紹一下目前誰會回；連續講話就不用
+            gap = time.time() - time.mktime(time.strptime(time.strftime("%Y-") + last_user["time"], "%Y-%m-%d %H:%M"))
+        except (TypeError, KeyError, ValueError):
+            gap = 1e9
         self.add("使用者", text, src)
         self.auto_left = self.auto
         self.hops = 0  # 使用者每說一次話，AI 之間的點名接力重新計數
@@ -302,6 +307,10 @@ class Room:
         for a in seq:
             if a.busy and not self.start_side(a):
                 a.pending = True  # 分身也在忙：等手上的事做完再回
+        if gap > 2 * 3600 and seq:
+            how = {"Gemini": "（住 agy 視窗，看到單才回）", "輝達": "（住 OpenCode 視窗，會被叫醒）"}
+            self.notice("好一陣子沒講話了，提醒一下這次會回話的：" + " → ".join(a.name + how.get(a.name, "") for a in seq)
+                        + "。要換人：開頭寫 @名字，或 Telegram 用「開／關／先回 名字」。")
         self.chain([a for a in seq if not a.busy])
 
     # ---------- 分身：主線在忙時，先回答新問題（只讀、不搶主線的對話） ----------
