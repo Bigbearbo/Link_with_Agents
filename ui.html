@@ -325,7 +325,7 @@ const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'
 function md(t){
   // 使用者 22:20：網址後面緊接中文會被一起吃進連結（點了 404）→ 裸網址只取英數與網址符號，包成 <網址>
   t = (t || "").replace(/(^|[^(<"'\]`/])(https?:\/\/[A-Za-z0-9\-._~:/?#\[\]@!$&*+,;=%]+[A-Za-z0-9\-_~/#=&%])/g, "$1<$2>");
-  t = t.split(/(`[^`\n]*`)/).map((seg, i) => i % 2 ? seg : seg.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, "<strong>$1</strong>")).join("");
+  t = t.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((seg, i) => i % 2 ? seg : seg.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, "<strong>$1</strong>")).join("");
   try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(window.marked.parse(t, {breaks:true})); }catch(e){}
   return esc(t).replace(/\n/g,"<br>");
 }
