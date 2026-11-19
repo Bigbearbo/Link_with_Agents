@@ -54,7 +54,8 @@ from secret_store import load_token  # noqa: E402
 import terminal_bridge as tb  # noqa: E402
 import shared_watch as sw  # noqa: E402
 import importlib as _il
-dialect = _il.import_module("方言轉譯")  # 各 AI 口癖轉譯（使用者 11-19 14:38）
+dialect = _il.import_module("方言轉譯")
+relax = _il.import_module("權限放寬")  # 放寬提案＋被拒不重問（使用者 11-19 14:45）  # 各 AI 口癖轉譯（使用者 11-19 14:38）
 
 STATE = os.path.join(HERE, "tg_state.json")
 LOG_DIR = os.path.join(HERE, "logs")
@@ -190,6 +191,15 @@ class Room:
         """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
         kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
+        if who != "系統" and ("放寬" in (text or "")[:20]):
+            try:
+                msg = relax.handle(who, text, lambda n, dirs, by: grant_write(n, dirs, self.name, by))
+                if msg:
+                    threading.Timer(1, lambda m=msg: self.notice(m)).start()
+                    if "通過" in msg:
+                        threading.Timer(2, render_perm_page).start()
+            except Exception as e:
+                log(f"放寬提案處理失敗：{e}")
         if kind:
             entry["kind"] = kind
         with self.hub.lock:
@@ -613,6 +623,13 @@ class Room:
                 items.append(text)
                 rules.append(rule)
         agent.denials = []
+        when = relax.recently_denied(agent.name, items)
+        if when:   # 使用者 14:45：「申請不通過的不用太過重複，給他們另一個申請管道」
+            self.add("系統", f"（只問 {agent.name}）這幾項 {when} 被使用者拒絕過，24 小時內不再問他：{'、'.join(items)}。"
+                     "請改用別的做法；真的需要，在群組行首寫「放寬提案：<名字> 可寫 <資料夾>｜理由：…」，由另一位 AI 審核。", "系統")
+            self.stop_flag = False
+            self.chain([agent])
+            return
         with self.hub.lock:
             # DeepSeek 03:10：只有專案裡的資料夾可以「以後都允許」；共用區根目錄、課程等全隊設定一律每次問
             proj = os.path.realpath(r"H:\Agent共用\專案").lower() + os.sep
@@ -1621,7 +1638,7 @@ const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok
 </script></body></html>"""
 
 
-def grant_write(name, dirs, room=""):
+def grant_write(name, dirs, room="", by="使用者按以後都允許"):
     """使用者按「以後都允許」：把資料夾記進 agent-權限.json（agent 自己改不到這個檔）。"""
     p = os.path.join(HERE, "agent-權限.json")
     try:
@@ -1633,7 +1650,7 @@ def grant_write(name, dirs, room=""):
     for d in dirs:
         if d not in cur:
             cur.append(d)
-            log_.append({"資料夾": d, "時間": time.strftime("%Y-%m-%d %H:%M"), "房間": room, "由": "使用者按以後都允許"})
+            log_.append({"資料夾": d, "時間": time.strftime("%Y-%m-%d %H:%M"), "房間": room, "由": by})
     g[name]["更新"] = time.strftime("%Y-%m-%d %H:%M")
     with open(p, "w", encoding="utf-8") as f:
         json.dump(g, f, ensure_ascii=False, indent=1)
