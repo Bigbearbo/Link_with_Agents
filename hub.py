@@ -53,6 +53,8 @@ def make_nvidia(room):
 from secret_store import load_token  # noqa: E402
 import terminal_bridge as tb  # noqa: E402
 import shared_watch as sw  # noqa: E402
+import importlib as _il
+dialect = _il.import_module("方言轉譯")  # 各 AI 口癖轉譯（使用者 11-19 14:38）
 
 STATE = os.path.join(HERE, "tg_state.json")
 LOG_DIR = os.path.join(HERE, "logs")
@@ -1818,28 +1820,16 @@ if __name__ == "__main__":
                             continue  # 可能還在寫
                         # 使用者 11-19 14:36：「有口癖的 AI，我們應該用程式幫他放寬，而不是說他報告格式不對」
                         # （放寬前輝達有 45 張 .json 單其實是純文字，全被退件）
-                        raw = sw.clean_text(open(p, "rb").read())
-                        guess = ("main" if re.search(r"main|主討論", fn, re.I) else
-                                 "g1004308131170" if re.search(r"g100|互相", fn) else None)
-                        d = None
-                        if fn.lower().endswith(".json") or raw.lstrip().startswith("{"):
-                            try:
-                                d = _j.loads(raw)
-                            except ValueError:
-                                d = None   # 不是 JSON：整份當純文字發言
-                        if isinstance(d, dict):
-                            rid = str(d.get("room") or d.get("房間") or d.get("chat") or "")
-                            text = str(next((d[k] for k in ("text", "內容", "message", "content", "msg", "body") if d.get(k)), "")).strip()
-                        else:  # 純文字：第一行可寫「房間: xxx」
-                            first, _, rest = raw.partition("\n")
-                            has = re.match(r"\s*(房間|room)\s*[:=]\s*(\S+)", first, re.I)
-                            rid, text = (has.group(2) if has else ""), (rest if has else raw).strip()
-                        rid = {"互相討論": "g1004308131170", "互相討論群": "g1004308131170", "機器人互相討論群": "g1004308131170",
-                               "主討論": "main"}.get(rid, rid)
-                        if rid not in hub.rooms:   # 沒寫或寫錯房間：檔名猜 → 最後叫它的房間（Gemini 03:36）→ 互相討論群
-                            rid = guess or wa.LAST_ROOM.get(name) or "g1004308131170"
+                        # 14:38：轉譯集中在 方言轉譯.py（口癖記帳在 logs/口癖.jsonl；某人第一次出現的口癖會在群組提一句）
+                        if dialect.is_draft(fn):
+                            continue   # 草稿命名不發（Gemini 14:38 防誤發）
+                        rid, text, quirks = dialect.parse_send(fn, open(p, "rb").read(), set(hub.rooms), wa.LAST_ROOM.get(name))
                         if not text:
                             raise ValueError("沒有內容")
+                        new_q = dialect.log_quirks(name, fn, quirks)
+                        if new_q and hub.rooms.get("g1004308131170"):
+                            hub.rooms["g1004308131170"].notice(f"方言轉譯：{name} 第一次出現「{'、'.join(new_q)}」，已照常代貼（{fn}）。"
+                                                               "統計：PY H:\\Claude用\\三方討論\\方言轉譯.py 口癖")
                         cid = "box-" + _h.sha1(f"{name}|{rid}|{text}".encode()).hexdigest()[:20]
                         r = _u.Request(f"http://127.0.0.1:{PORT}/api/agent_says", headers={"X-Agent-Key": keys[name], "Content-Type": "application/json"},
                                        data=_j.dumps({"room": rid, "text": text[:6000], "client_id": cid}).encode())
