@@ -182,14 +182,14 @@ def patrol():
     found = []
     for f in glob.glob(os.path.join(SHARED, "研究想法庫", "[0-9][0-9][0-9]-*.md")):
         for ln in open(f, encoding="utf-8").read().splitlines():
-            if "【使用者留言" in ln and "（已處理）" not in ln:
+            if "【使用者留言" in ln and "（已處理" not in ln:
                 found.append(f"- {os.path.basename(f)[:3]}：{ln.strip()[:120]}")
     try:
         for t in json.load(open(os.path.join(SHARED, "待辦", "待辦.json"), encoding="utf-8")):
-            for r in (t.get("紀錄") or [])[-5:]:
-                txt = r.get("內容", "") if isinstance(r, dict) else str(r)
-                if "使用者留言" in txt and "（已處理）" not in txt and t.get("狀態") != "完成":
-                    found.append(f"- 待辦 #{t['id']}：{txt[:120]}")
+            recs = [(r.get("內容", "") if isinstance(r, dict) else str(r)) for r in (t.get("紀錄") or [])]
+            # 待辦的留言：後面有任何一筆新紀錄（AI 回應過）就算處理了
+            if recs and "使用者留言" in recs[-1] and t.get("狀態") != "完成":
+                found.append(f"- 待辦 #{t['id']}：{recs[-1][:120]}")
     except (OSError, ValueError):
         pass
     lines += found or ["（沒有）"]
