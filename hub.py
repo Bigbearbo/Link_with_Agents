@@ -796,10 +796,19 @@ class Hub:
                     if room is None:
                         break
                     if to == "invalid":
-                        room.notice(f"inbox 收到格式不對的檔（{os.path.basename(path)}），已移到 inbox/rejected/。"
-                                    "開頭要有 from:、to:（claude／codex／both／none）、再一行 ---")
+                        room.notice(f"inbox 收到空白或讀不出文字的檔（{os.path.basename(path)}），已移到 inbox/rejected/。")
                         sw.archive(path, ok=False)
                         continue
+                    if to == "gdoc":   # Google 文件捷徑：本機只有 doc_id，讀不到內文
+                        room.notice(f"inbox 收到 Google 文件捷徑（{os.path.basename(path)}，{sender}），本機讀不到內文："
+                                    f"https://docs.google.com/document/d/{body}\n請發單的 App 改存成 .md／.txt"
+                                    "（Drive 的 create_file 指定 text/plain，或寫在雲端「工單收件」用 .req.txt）。")
+                        sw.archive(path, ok=False)
+                        continue
+                    if to == "unclear":   # 讀得懂、但不知道給誰：轉單給輝達分派（使用者 11-19 14:16）
+                        body = (f"【inbox 轉單：{os.path.basename(path)}，寄件「{sender}」，沒寫清楚要給誰】\n"
+                                "@輝達 請判斷該交給誰，在本房行首 @ 那位並附一句理由；" + sw.FIX_HINT + "\n\n" + body)
+                        to = "nvidia"
                     log(f"inbox：{sender} → {to}")
                     room.add(sender, body, "共用區")
                     sw.archive(path)

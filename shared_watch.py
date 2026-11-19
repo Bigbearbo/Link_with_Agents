@@ -107,22 +107,76 @@ def read_inbox():
         if time.time() - os.path.getmtime(full) < 3:
             continue  # 可能還在寫
         try:
-            text = open(full, encoding="utf-8-sig", errors="replace").read()
+            raw = open(full, "rb").read()
         except OSError:
             continue
-        head, sep, body = text.partition("\n---")
-        meta = {}
-        for line in head.splitlines():
-            if ":" in line:
-                k, v = line.split(":", 1)
-                meta[k.strip().lower()] = v.strip()
-        sender = (meta.get("from") or "").strip()[:20]
-        to = (meta.get("to") or "none").strip().lower()
-        if not sep or not sender or to not in ("claude", "codex", "gemini", "nvidia", "both", "none"):
-            out.append((full, sender or "未知", "invalid", text[:300], None))
-        else:
-            out.append((full, sender, to, body.lstrip("-\n").strip(), (meta.get("room") or "").strip() or None))
+        out.append((full,) + parse_ticket(name, raw))
     return out
+
+
+# 使用者 11-19 14:16：「蘋果＋谷歌＋Windows，一些符號就轉不過去，把判斷機制放寬……有異常的可以轉單呼叫小 AI 如輝達進行分派和程式修補」
+TO_ALIAS = {"claude": "claude", "克勞德": "claude", "codex": "codex", "gemini": "gemini", "雙子": "gemini",
+            "nvidia": "nvidia", "輝達": "nvidia", "deepseek": "deepseek", "深度求索": "deepseek",
+            "both": "both", "all": "both", "全部": "both", "大家": "both", "所有人": "both",
+            "none": "none", "無": "none", "不用": "none", "dot": "dot"}
+KEY_ALIAS = {"from": "from", "寄件": "from", "寄件人": "from", "來自": "from", "發件": "from", "發件人": "from", "誰": "from",
+             "to": "to", "給": "to", "收件": "to", "收件人": "to", "交給": "to", "派給": "to",
+             "room": "room", "房間": "room", "房": "room"}
+FIX_HINT = "（解析器放寬後仍讀不懂的地方，輝達可在 H:\\免費模型用\\work\\inbox解析建議.md 寫修法，Claude 看了再改）"
+
+
+def clean_text(raw):
+    """各平台的怪符號先統一：BOM、CRLF、全形冒號／破折號、零寬字元、不換行空白、智慧引號。"""
+    for enc in ("utf-8-sig", "utf-16", "cp950"):
+        try:
+            t = raw.decode(enc)
+            if "\x00" not in t:
+                break
+        except UnicodeDecodeError:
+            continue
+    else:
+        t = raw.decode("utf-8", "replace")
+    t = t.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    for a, b in (("\u200b", ""), ("\u200c", ""), ("\u200d", ""), ("\ufeff", ""), ("\u00a0", " "), ("\u3000", " "),
+                 ("：", ":"), ("﹕", ":"), ("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'")):
+        t = t.replace(a, b)
+    return t
+
+
+def parse_ticket(name, raw):
+    """回傳 (from, to, 內容, room)。to 可能是 'gdoc'（Google 文件捷徑，本機讀不到內容）或 'unclear'（讀得到但不知道給誰）。"""
+    import re
+    if name.lower().endswith((".gdoc", ".gsheet", ".gslides")):
+        try:
+            doc = json.loads(raw.decode("utf-8", "replace")).get("doc_id", "")
+        except ValueError:
+            doc = ""
+        return ("Dot" if "DOT_" in name.upper() else "雲端 App", "gdoc", doc, None)
+    text = clean_text(raw)
+    lines = text.split("\n")
+    meta, body_start = {}, 0
+    for i, line in enumerate(lines[:15]):                       # 檔頭只看前 15 行
+        if re.fullmatch(r"[-—－─=_*]{3,}", line.replace(" ", "")) and meta:
+            body_start = i + 1
+            break
+        s = re.sub(r"^[\s>#*\-_`]*|[*_`]+(?=\s*:)", "", line).strip()   # \u5bb9\u5fcd markdown\uff1a**from**: \uff0f - to: \uff0f # from:
+        m = re.match(r"([A-Za-z\u4e00-\u9fff]{1,6})\s*[:=]\s*(.*)", s)
+        if m and KEY_ALIAS.get(m.group(1).lower()):
+            meta[KEY_ALIAS[m.group(1).lower()]] = m.group(2).strip().strip('"\'')
+            body_start = i + 1
+        elif s and meta:                                        # 檔頭後面沒有 --- 也接受：第一行不像欄位的就是內文
+            break
+    body = "\n".join(lines[body_start:]).strip() if meta else text.strip()
+    sender = (meta.get("from") or ("Dot" if name.upper().startswith("DOT_") else "")).strip()[:20]
+    want = (meta.get("to") or "").lower()
+    to = next((v for k, v in TO_ALIAS.items() if k in want), None) if want else None
+    if to is None and name.upper().startswith("DOT_REQUEST"):
+        to = "claude"                                           # 使用說明第 3 節的 DOT_REQUEST 四欄格式：給本機（Claude 先接）
+    if not body:
+        return (sender or "未知", "invalid", text[:300], None)
+    if not sender or to is None:
+        return (sender or "未知", "unclear", body, meta.get("room") or None)
+    return (sender, to, body, meta.get("room") or None)
 
 
 def archive(path, ok=True):
