@@ -1146,8 +1146,20 @@ def make_handler(hub):
                 # 使用者 11-19 01:4x：App 裡的 AI（視窗Gemini、Dot）從雲端硬碟「發言」資料夾貼文，由本機 drive_post.py 代送
                 app_ai = data.get("who") if (p == "/api/agent_says" and not agent and data.get("who") in APP_POSTERS) else None
                 who = agent or app_ai or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
+                if text.startswith("{"):   # 方言：把發送箱的 JSON 整包當文字貼（輝達 21:41 一則重複兩次，一次是 JSON 原樣）
+                    try:
+                        _d = json.loads(text)
+                        _t = next((str(_d[k]) for k in ("text", "內容", "message", "content") if isinstance(_d, dict) and _d.get(k)), "")
+                        if _t.strip():
+                            text = _t.strip()
+                            dialect.log_quirks(who, "(直接發言)", ["發言內容是 JSON 包裝"])
+                    except ValueError:
+                        pass
                 if not text:
                     return self._json({"ok": False})
+                same = [m for m in room.transcript[-6:] if m.get("who") == who and m.get("text", "").strip() == text]
+                if same:   # 同一位、同一段話，從不同管道（發送箱＋群組.py）各送一次：只貼一次
+                    return self._json({"ok": True, "duplicate": True})
                 cid = str(data.get("client_id") or "")[:64]
                 if cid:  # 逾時重送不重複貼（Codex 11-18 20:20）
                     if cid in hub.seen_posts:
