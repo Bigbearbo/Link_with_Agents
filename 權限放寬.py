@@ -35,7 +35,9 @@ def _save(d):
 
 def red_line(path, target):
     """回傳違反的紅線（空字串＝可以）。"""
-    p = os.path.normpath(path).lower()
+    if ".." in path or any(c in path for c in "*?<>\"") or not re.match(r"^[A-Za-z]:\\", path):
+        return "路徑要寫完整（例 H:\Agent共用\某資料夾），不能有 ..、萬用字元"   # Gemini 14:47：防越界
+    p = os.path.realpath(path).lower()
     if any(r.lower() in p for r in RED):
         return "碰到紅線字詞（金鑰、ai-call、記憶、導師助手、中樞程式…）"
     if p.rstrip("\\") in (r"h:\agent共用", "h:", "h:\\"):
@@ -49,8 +51,10 @@ def red_line(path, target):
 
 
 def recently_denied(agent, items):
-    """同一位、同一批項目 24 小時內被拒絕過 → 回傳那次的時間；沒有回 None。"""
+    """同一位、同一批項目被拒絕過、還在冷卻期 → 回傳那次的時間；沒有回 None。
+    冷卻：拒絕 1 次 24 小時；拒絕 2 次以上 7 天（Codex 14:48：同案沒有新理由，不因時間到了就重新問）。"""
     want = sorted(items)
+    n_denied = 0
     try:
         lines = open(PERM_LOG, encoding="utf-8").read().splitlines()
     except OSError:
@@ -61,9 +65,29 @@ def recently_denied(agent, items):
         except ValueError:
             continue
         if r.get("請求者") == agent and r.get("動作") == "拒絕" and sorted(r.get("項目", [])) == want:
-            t = time.mktime(time.strptime(r["時間"], "%Y-%m-%d %H:%M:%S"))
-            return r["時間"] if time.time() - t < DENY_QUIET else None
-    return None
+            n_denied += 1
+            if n_denied == 1:
+                first = r["時間"]
+    if not n_denied:
+        return None
+    t = time.mktime(time.strptime(first, "%Y-%m-%d %H:%M:%S"))
+    return first if time.time() - t < (DENY_QUIET if n_denied == 1 else 7 * 24 * 3600) else None
+
+
+def allowed_once_count(agent, items):
+    """同一批項目被「允許一次」幾次（Gemini 14:47：3 次以上就提示改走放寬提案）。"""
+    want, n = sorted(items), 0
+    try:
+        for line in open(PERM_LOG, encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if r.get("請求者") == agent and r.get("動作") == "允許一次" and sorted(r.get("項目", [])) == want:
+                n += 1
+    except OSError:
+        pass
+    return n
 
 
 def handle(who, text, grant):
@@ -72,8 +96,11 @@ def handle(who, text, grant):
     m = re.match(r"放寬提案\s*[:：]\s*(\S+)\s*可寫\s*([^\s｜|]+)\s*(?:[｜|]\s*理由\s*[:：]?\s*(.*))?", t, re.S)
     if m:
         target, path, why = m.group(1), m.group(2).rstrip("，。；"), (m.group(3) or "").strip()[:300]
+        # Codex 14:48：核可綁定確切路徑與範圍——提案建立後不能改，要改就重新提案（新編號、要重新核可）
         target = {"輝達": "輝達", "nvidia": "輝達", "deepseek": "DeepSeek", "gemini": "Gemini"}.get(target.lower(), target)
         bad = red_line(path, target)
+        if not bad:
+            path = os.path.realpath(path)
         if bad:
             return f"🔐 放寬提案不受理：{target} 可寫 {path}——{bad}。這類只能請使用者決定。"
         d = _load()

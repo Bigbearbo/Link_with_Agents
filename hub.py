@@ -658,7 +658,9 @@ class Room:
                 self.add("使用者", f"（只問 {agent.name}）以後這些資料夾你都可以寫：{items}。請繼續剛才的工作。", src)
             else:
                 agent.next_extra_write = writes
-                self.add("使用者", f"（只問 {agent.name}）我允許你這一次：{items}。請繼續剛才的工作。", src)
+                hint = ("（這項你已經被允許一次 3 次以上了，常用的話請在群組提「放寬提案」給其他 AI 審核，以後就不用每次問。）"
+                        if relax.allowed_once_count(agent.name, ap["items"]) >= 2 else "")
+                self.add("使用者", f"（只問 {agent.name}）我允許你這一次：{items}。請繼續剛才的工作。{hint}", src)
         elif allow:
             agent.extra_allow = list(ap["rules"])
             self.add("使用者", f"（只問 {agent.name}）我允許你這一次執行：{items}。請繼續剛才的工作。", src)
