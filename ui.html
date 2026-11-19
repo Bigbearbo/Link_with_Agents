@@ -27,6 +27,7 @@ header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var
 .rooms button.sel{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .rooms .badge{width:7px;height:7px;border-radius:50%;background:var(--codex);display:inline-block}
 .rooms .badge.ap{background:var(--claude)}
+.rooms .pagebtn{background:var(--sys-bg)}.rooms .spacer{flex:1}
 .rooms .new{font-size:11px;background:var(--me);color:#fff;border-radius:999px;padding:0 6px}
 header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.02em}
 .faces{display:flex;gap:4px}
@@ -231,9 +232,9 @@ body.fold .m-sys .bubble::after{display:none}
     <select id="rounds" title="輪數"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
     <button id="stop">停止</button>
     <button id="new">新討論</button>
-    <button id="decide" title="等你拍板的事，每項都能留言回覆">待討論</button>
-    <button id="research" title="研究想法庫和待辦：看全文、留言、叫 AI 來討論">研究</button>
-    <button id="changes" title="共用區變動，可依關鍵字、時間篩選">變動</button>
+    <button id="decide" hidden>待討論</button>
+    <button id="research" hidden>研究</button>
+    <button id="changes" hidden>變動</button>
   </div>
   <div class="row">
     <textarea id="box" rows="1" placeholder="輸入訊息…（Enter 送出，Shift+Enter 換行）"></textarea>
@@ -268,6 +269,15 @@ function renderRooms(rooms){
     b.innerHTML = `${r.busy ? '<span class="badge"></span>' : ""}${r.approval ? '<span class="badge ap"></span>' : ""}${esc(r.name)}${unread ? '<span class="new">新</span>' : ""}`;
     b.title = r.linked ? "已連到 Telegram" : "沒有連到 Telegram";
     b.onclick = () => switchRoom(r.id);
+    nav.appendChild(b);
+  }
+  // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
+  const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
+  for(const [p, label] of [["decide", "待討論"], ["research", "研究"], ["changes", "變動"]]){
+    const b = document.createElement("button");
+    b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
+    b.textContent = "📋 " + label; b.title = label + "（右側面板）";
+    b.onclick = () => { openSide(p); renderRooms(rooms); };
     nav.appendChild(b);
   }
 }
