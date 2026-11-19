@@ -2181,6 +2181,11 @@ if __name__ == "__main__":
                 dialect.write_table()  # 方言轉換表（使用者 14:40：留紀錄提醒大家有這層轉換）
             except Exception as e:
                 log(f"方言轉換表產生失敗：{e}")
+            try:   # 11-19：統一檢索的索引停在 11-18 05:45 沒人重建；重建約 30 秒，每小時一次
+                subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', r'H:\Agent共用\檢索\build_all.py'],
+                               timeout=600, capture_output=True, creationflags=0x08000000)
+            except Exception as e:
+                log(f"檢索索引重建失敗：{type(e).__name__} {e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
