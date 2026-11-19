@@ -92,7 +92,14 @@ def daily(hub):
     room = hub.rooms.get("g1004308131170")
     if room:
         nz = "、".join(f"{k} {v}" for k, v in m.items() if v not in (0, "0／0"))
-        room.notice(f"🩺 今日流程體檢：{nz or '各項都是 0'}\n{pick[:600]}\n全文 {p}。@Claude 能直接修的先修。")
+        room.notice(f"🩺 今日流程體檢：{nz or '各項都是 0'}\n{pick[:600]}\n全文 {p}。\n"
+                    "@Claude 請叫「流程優化員」子代理（.claude\\agents\\flow-optimizer.md）處理：權限內可還原的直接修＋記自決紀錄，"
+                    "跟使用者／權限有關的寫成提案（使用者 11-20 07:07）。")
+        try:   # 系統通知不會自己叫醒人：直接請終端機 Claude 接這一輪
+            room.stop_flag = False
+            room.chain([room.claude])
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
