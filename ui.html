@@ -325,7 +325,8 @@ const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'
 function md(t){
   // 使用者 22:20：網址後面緊接中文會被一起吃進連結（點了 404）→ 裸網址只取英數與網址符號，包成 <網址>
   t = (t || "").replace(/(^|[^(<"'\]`/])(https?:\/\/[A-Za-z0-9\-._~:/?#\[\]@!$&*+,;=%]+[A-Za-z0-9\-_~/#=&%])/g, "$1<$2>");
-  try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(t, {breaks:true})); }catch(e){}
+  t = t.split(/(`[^`\n]*`)/).map((seg, i) => i % 2 ? seg : seg.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, "<strong>$1</strong>")).join("");
+  try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(window.marked.parse(t, {breaks:true})); }catch(e){}
   return esc(t).replace(/\n/g,"<br>");
 }
 function isSharedChange(m){
@@ -373,7 +374,7 @@ function render(m, idx){
   const src = m.src === "Telegram" ? " · 來自 Telegram" : m.src === "電腦" ? " · 電腦" : m.src === "備援" ? " · 備援 Claude（終端機不在）" : m.src === "App" ? " · 來自 Codex App" : m.src === "共用區" ? " · 從共用區 inbox" : "";
   const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
   el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="body">
-    <div class="meta"><button class="bm${marked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
+    <div class="meta"><button class="bm${isMarked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
     <div class="bubble">${md(m.text)}</div><div class="live"></div></div>`;
   el.querySelector(".bm").onclick = () => toggleMark(m, idx, el);
   decorate(el.querySelector(".bubble"), m);
@@ -424,7 +425,8 @@ function decorate(bub, m){
 // ---------- 書籤（存在中樞 logs/書籤.json，換瀏覽器也在） ----------
 let marks = [], roomNames = {};
 const markId = idx => `${room}-${idx}`;
-function marked(idx){ return marks.some(b => b.id === markId(idx)); }
+function isMarked(idx){  // 使用者 11-20 06:35：原名 marked 蓋掉了 Markdown 函式庫 window.marked → ** 一直顯示成星號
+  return marks.some(b => b.id === markId(idx)); }
 // 使用者 23:04：「約 00:44 用完」少了日期，看起來像今晚就用完 → 不是今天就連日期一起顯示
 function whenStr(t){
   const now = new Date(), mmdd = String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
@@ -445,11 +447,11 @@ function renderMarks(){
 async function saveMarks(body){
   try{ const r = await api("/api/bookmarks", body); marks = r.bookmarks || []; }catch(e){ alert("書籤存不進去：" + e.message); return; }
   renderMarks();
-  document.querySelectorAll(".msg[data-idx]").forEach(el => { const b = el.querySelector(".bm"); if(b) b.classList.toggle("on", marked(+el.dataset.idx)); });
+  document.querySelectorAll(".msg[data-idx]").forEach(el => { const b = el.querySelector(".bm"); if(b) b.classList.toggle("on", isMarked(+el.dataset.idx)); });
 }
 async function loadMarks(){ try{ marks = (await api("/api/bookmarks")).bookmarks || []; renderMarks(); }catch(e){} }
 function toggleMark(m, idx, el){
-  if(marked(idx)) return saveMarks({del: markId(idx)});
+  if(isMarked(idx)) return saveMarks({del: markId(idx)});
   const text = (titleOf(m) || (m.text || "").replace(/\s+/g, " ")).slice(0, 80);   // 有 AI 小標題就用小標題
   saveMarks({add: {room, room_name: roomNames[room] || "", idx, who: m.who, time: m.time, text}});
 }
