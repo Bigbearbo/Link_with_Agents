@@ -29,7 +29,7 @@ def git(repo, *args):
 def manifest():
     m = {"schema": "research-fingerprint-manifest-v1", "captured_local": time.strftime("%Y-%m-%d %H:%M:%S"), "repos": []}
     for name, path in REPOS.items():
-        if not os.path.isdir(os.path.join(path, ".git")):
+        if not git(path, "rev-parse", "--git-dir"):   # Codex 03:32：螺旋語是 worktree，.git 是檔案不是資料夾
             m["repos"].append({"name": name, "error": "不是 git 倉庫"})
             continue
         refs = []

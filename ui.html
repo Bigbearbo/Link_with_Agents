@@ -280,7 +280,8 @@ function renderRooms(rooms){
     const unread = r.id !== room && seenTotals[r.id] !== undefined && r.total > seenTotals[r.id];
     if(seenTotals[r.id] === undefined) seenTotals[r.id] = r.total;
     b.className = r.id === room ? "sel" : "";
-    b.innerHTML = `${r.busy ? '<span class="badge"></span>' : ""}${r.approval ? '<span class="badge ap"></span>' : ""}${esc(r.name)}${unread ? '<span class="new">新</span>' : ""}`;
+    // 使用者 11-20 03:29：「新」加數字
+    b.innerHTML = `${r.busy ? '<span class="badge"></span>' : ""}${r.approval ? '<span class="badge ap"></span>' : ""}${esc(r.name)}${unread ? `<span class="new">新 ${Math.min(r.total - seenTotals[r.id], 99)}${r.total - seenTotals[r.id] > 99 ? "+" : ""}</span>` : ""}`;
     b.title = r.linked ? "已連到 Telegram" : "沒有連到 Telegram";
     b.onclick = () => switchRoom(r.id);
     nav.appendChild(b);
