@@ -1414,7 +1414,8 @@ def make_handler(hub):
                         pass
                 if not text:
                     return self._json({"ok": False})
-                same = [m for m in room.transcript[-6:] if m.get("who") == who and text in (m.get("text", "").strip(), str(m.get("raw", "")).strip())]
+                _nm = lambda s: re.sub(r"[\s*_`#>\-]", "", str(s or ""))[:400]   # 11-20 07:04／07:06：輝達同一段一則有粗體一則沒有 → 去掉排版符號再比
+                same = [m for m in room.transcript[-6:] if m.get("who") == who and _nm(text) in (_nm(m.get("text")), _nm(m.get("raw")))]
                 if same:   # 同一位、同一段話，從不同管道（發送箱＋群組.py）各送一次：只貼一次
                     return self._json({"ok": True, "duplicate": True})
                 cid = str(data.get("client_id") or "")[:64]
