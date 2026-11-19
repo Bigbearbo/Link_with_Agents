@@ -247,7 +247,8 @@ class Room:
             return []
         if self.name == SHARED_ROOM_NAME:
             return [self.claude]
-        seq = [a for a in self.order_both() if not (a is self.codex and codex_hot())]
+        nearly_out = (usage_pressure("codex") or 0) >= 0.95   # 使用者 11:51：快陣亡別叫（重開補答也算）
+        seq = [a for a in self.order_both() if not (a is self.codex and (codex_hot() or nearly_out))]
         return seq + [self.gemini]
 
     def seq_for(self, target):
