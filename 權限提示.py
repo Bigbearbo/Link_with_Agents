@@ -9,12 +9,15 @@ try:
     d = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
 except ValueError:
     d = {}
-msg = str(d.get("message", ""))
-if d.get("notification_type") not in (None, "permission_prompt") or ("permission" not in msg.lower() and "權限" not in msg and d.get("notification_type") != "permission_prompt"):
+who = sys.argv[1] if len(sys.argv) > 1 else "終端機 Claude"   # Codex 的 PermissionRequest 掛勾可用：python 權限提示.py "桌面 Codex"
+msg = str(d.get("message") or "")
+if not msg and d.get("tool_name"):
+    msg = f"{d.get('tool_name')} {json.dumps(d.get('tool_input', ''), ensure_ascii=False)[:160]}"
+if who == "終端機 Claude" and d.get("notification_type") not in (None, "permission_prompt"):
     sys.exit(0)
 try:
     key = open(os.path.join(HERE, "secrets", "web-key.txt"), encoding="utf-8").read().strip()
-    body = json.dumps({"room": "main", "text": f"🔐 終端機 Claude 停在權限確認框，等你在終端機按：{msg[:200]}"}).encode()
+    body = json.dumps({"room": "main", "text": f"🔐 {who} 停在權限確認框，等你到那個視窗按：{msg[:200]}"}).encode()
     req = urllib.request.Request("http://127.0.0.1:8765/api/claude_says", data=body,
                                  headers={"Content-Type": "application/json; charset=utf-8", "X-Key": key})
     urllib.request.urlopen(req, timeout=5).read()
