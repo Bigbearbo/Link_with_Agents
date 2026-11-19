@@ -990,6 +990,15 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/待討論" or u.path == "/decisions":
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                body = decisions_page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/ping":
                 self._json({"app": "roundtable-hub"})
             else:
@@ -1025,6 +1034,16 @@ def make_handler(hub):
                 return self._json({"ok": room.new_chat()})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦", bool(data.get("always")))})
+            if p == "/api/decide":
+                # 待討論頁的留言（使用者 11-19 08:05）：記進待辦紀錄，並以使用者身分貼到主討論讓大家看到
+                tid, text = int(data.get("id") or 0), (data.get("text") or "").strip()
+                if not tid or not text:
+                    return self._json({"ok": False})
+                r = subprocess.run([sys.executable.replace("pythonw.exe", "python.exe"), "-X", "utf8", r"H:\Agent共用\待辦\待辦.py",
+                                    "做", str(tid), "使用者回覆：" + text[:500]], capture_output=True, timeout=60,
+                                   creationflags=0x08000000 if os.name == "nt" else 0)
+                hub.room(MAIN).user_says(f"（待討論 #{tid} 的回覆）{text}", "電腦", "claude")
+                return self._json({"ok": r.returncode == 0})
             if p == "/api/agent_status":
                 # 視窗 agent：{"room", "text": "正在讀單…"} 顯示工作中＋這一步；{"done": true} 收掉
                 who = agent or (data.get("who") if data.get("who") in ("Gemini", "輝達") else None)
@@ -1380,6 +1399,46 @@ def render_perm_page():
     out += window_allow_lists()
     with open(PERM_PAGE, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
+
+
+def decisions_page(key):
+    """待討論頁（使用者 11-19 08:05：「待討論那個連結到一個視窗，弄個留言區，方便一起回覆」）。
+    列出待辦裡標題開頭「待討論」、還沒完成的項目，每項有紀錄和留言框；送出＝記進待辦紀錄＋貼到主討論給 Claude。"""
+    import html as _h
+    try:
+        items = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        items = []
+    rows = []
+    for t in items:
+        if not str(t.get("標題", "")).startswith("待討論") or t.get("狀態") == "完成":
+            continue
+        log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))}</li>"
+                       for r in (t.get("紀錄") or [])[-5:])
+        rows.append(f"""<section><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}</h3>
+<div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
+{f'<ul>{log_}</ul>' if log_ else ''}
+<textarea id="t{t['id']}" placeholder="你的回覆（例：同意／不要／改成…）"></textarea>
+<button onclick="send({t['id']})">送出</button> <span id="s{t['id']}"></span></section>""")
+    body = "\n".join(rows) or "<p>目前沒有待討論的項目。</p>"
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>待討論</title><style>
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:860px;margin:0 auto;padding:16px}}
+section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}}
+h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
+textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
+button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
+</style></head><body><h2>待討論（等你拍板）</h2>
+<p class="meta">每項寫完按送出：會記進待辦紀錄，也貼到主討論給 Claude 處理。可以一次回好幾項。</p>
+{body}
+<script>
+const K={json.dumps(key)};
+async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
+s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
+const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+</script></body></html>"""
 
 
 def grant_write(name, dirs, room=""):

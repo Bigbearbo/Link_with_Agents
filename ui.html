@@ -188,6 +188,7 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
     <select id="rounds" title="輪數"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
     <button id="stop">停止</button>
     <button id="new">新討論</button>
+    <button id="decide" title="等你拍板的事，每項都能留言回覆">待討論</button>
   </div>
   <div class="row">
     <textarea id="box" rows="1" placeholder="輸入訊息…（Enter 送出，Shift+Enter 換行）"></textarea>
@@ -486,6 +487,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
   box.focus();
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
+$("#decide").onclick = () => window.open("/待討論?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "decide");
 $("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
 $("#apAlways").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, always: true, room}); };
 $("#apDeny").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: false, room}); };
