@@ -2677,6 +2677,13 @@ if __name__ == "__main__":
                                timeout=600, capture_output=True, creationflags=0x08000000)
             except Exception as e:
                 log(f"檢索索引重建失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-20 03:14 預防硬碟陣亡：Codex 備份了 Git 到 D；聊天日誌、書籤不在 Git 裡 → 每小時增量複製到 D（不刪 D 上的舊檔、不含 secrets）
+                dst = r"D:\Codex用\outputs\research-backups\三方討論-日誌"
+                for sub in ("logs", "logs-按日"):
+                    subprocess.run(["robocopy", os.path.join(HERE, sub), os.path.join(dst, sub), "/E", "/XO", "/R:1", "/W:1", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"],
+                                   timeout=300, capture_output=True, creationflags=0x08000000)
+            except Exception as e:
+                log(f"日誌備份失敗：{type(e).__name__} {e}")
             try:   # 使用者 11-20 03:09「你們去弄」：每天一份第三方時間戳（只送指紋），今天蓋過就跳過
                 r = subprocess.run([sys.executable.replace('pythonw.exe', 'python.exe'), '-X', 'utf8', os.path.join(HERE, '研究時間戳.py')],
                                    timeout=180, capture_output=True, text=True, encoding='utf-8', creationflags=0x08000000)
