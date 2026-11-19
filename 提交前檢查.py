@@ -62,5 +62,45 @@ def main():
     return 0
 
 
+# ---- 自動修（使用者 11-20 02:10：用「方言轉換」的概念，不只檢查，能確定的就自動修）----
+# 反斜線陷阱是一種固定的「轉譯錯誤」：原文的 \a \b \f \v \0 被跳脫成單一控制字元。
+# 這個對應是一對一的，所以可以反轉回去；修完一定要再編譯／解析一次，過了才寫回，不過就保留原檔並回報。
+UNDO = {"\x07": "\\a", "\x08": "\\b", "\x0c": "\\f", "\x0b": "\\v", "\x00": "\\0", "\x1b": "\\x1b"}
+
+
+def fix_file(path, write=False):
+    """回傳 (狀態, 說明)。狀態：ok（本來就好）、fixed（修好）、would（試修可行但沒寫）、fail（修不了）。"""
+    raw = open(path, "rb").read()
+    text = raw.decode("utf-8", "replace")
+    hits = [c for c in text if c in UNDO]
+    other = [c for c in text if ord(c) in BAD and c not in UNDO]
+    if not hits:
+        return ("fail", f"有其他控制字元 {sorted(set(map(repr, other)))}，原意不確定，不自動修") if other else ("ok", "沒問題")
+    new = "".join(UNDO.get(c, c) for c in text)
+    if path.lower().endswith(".py"):
+        try:
+            compile(new, path, "exec")
+        except SyntaxError as e:
+            return "fail", f"反轉後還是編譯不過（{e.msg}，第 {e.lineno} 行），保留原檔"
+    if path.lower().endswith(".json"):
+        try:
+            json.loads(new)
+        except ValueError as e:
+            return "fail", f"反轉後 JSON 還是壞的（{e}），保留原檔"
+    desc = "、".join(f"{repr(c)}→{UNDO[c]} ×{hits.count(c)}" for c in sorted(set(hits)))
+    if write:
+        open(path, "w", encoding="utf-8", newline="").write(new)
+        return "fixed", desc
+    return "would", desc
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["修"]:   # PY 提交前檢查.py 修 檔案... [--寫]
+        w = "--寫" in sys.argv
+        bad = 0
+        for f in [a for a in sys.argv[2:] if a != "--寫"]:
+            st, msg = fix_file(f, w)
+            bad += st == "fail"
+            print({"ok": "✅", "fixed": "🔧 已修", "would": "🔍 可修（加 --寫 才寫回）", "fail": "❌"}[st], f, msg)
+        sys.exit(1 if bad else 0)
     sys.exit(main())
