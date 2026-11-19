@@ -54,7 +54,7 @@ def parse_send(fn, raw, rooms, last_room=None):
             quirks.append(f"內容欄叫 {tk}")
     else:
         first, _, rest = raw.partition("\n")
-        has = re.match(r"\s*(房間|room)\s*[:=]\s*(\S+)", first, re.I)
+        has = re.match(r"\s*(房間|room)\s*[:=：]\s*(\S+)", first, re.I)
         rid, text = (has.group(2) if has else ""), (rest if has else raw).strip()
     alias = {**ROOM_ALIAS, **extra_rules()["房間別名"]}
     if rid in alias and alias[rid] != rid:

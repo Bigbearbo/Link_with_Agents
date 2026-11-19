@@ -149,10 +149,16 @@ def clean_text(raw):
     else:
         t = raw.decode("utf-8", "replace")
     t = t.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
-    for a, b in (("\u200b", ""), ("\u200c", ""), ("\u200d", ""), ("\ufeff", ""), ("\u00a0", " "), ("\u3000", " "),
-                 ("：", ":"), ("﹕", ":"), ("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'")):
-        t = t.replace(a, b)
+    for a in ("​", "‌", "‍", "﻿"):   # 只拿掉看不見的字元；內文的全形標點保留（21:4x：曾把發言裡的全形冒號改成半形）
+        t = t.replace(a, "")
     return t
+
+
+def punct(line):
+    """只用在讀檔頭欄位時：全形冒號、智慧引號、不換行空白統一。"""
+    for a, b in ((" ", " "), ("　", " "), ("：", ":"), ("﹕", ":"), ("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'")):
+        line = line.replace(a, b)
+    return line
 
 
 def parse_ticket(name, raw):
@@ -171,7 +177,7 @@ def parse_ticket(name, raw):
         if re.fullmatch(r"[-—－─=_*]{3,}", line.replace(" ", "")) and meta:
             body_start = i + 1
             break
-        s = re.sub(r"^[\s>#*\-_`]*|[*_`]+(?=\s*:)", "", line).strip()   # \u5bb9\u5fcd markdown\uff1a**from**: \uff0f - to: \uff0f # from:
+        s = re.sub(r"^[\s>#*\-_`]*|[*_`]+(?=\s*:)", "", punct(line)).strip()   # \u5bb9\u5fcd markdown\uff1a**from**: \uff0f - to: \uff0f # from:
         m = re.match(r"([A-Za-z\u4e00-\u9fff]{1,6})\s*[:=]\s*(.*)", s)
         if m and KEY_ALIAS.get(m.group(1).lower()):
             meta[KEY_ALIAS[m.group(1).lower()]] = m.group(2).strip().strip('"\'')
