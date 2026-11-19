@@ -1455,6 +1455,22 @@ def usage_summary():
             "verdict": f"今天 ${d:.3f}／${dl}，本月 ${m:.3f}／${ml}", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "DeepSeek", "missing": True})
+    try:   # 免費池：統一用量檔（使用者 23:23：各家自己管剩餘，統一格式由網頁讀；剩餘優先用服務回報）
+        fp = r"H:\Agent共用\免費池-用量.json"
+        u = json.load(open(fp, encoding="utf-8"))
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        wins = []
+        for n, s in u.get("服務", {}).items():
+            c = s.get("今天次數", 0) if s.get("日") == today else 0
+            lim, rem = s.get("上限"), s.get("剩餘") if s.get("日") == today else s.get("上限")
+            used = round(100 * (lim - rem) / lim, 1) if lim and rem is not None else 0
+            wins.append({"label": n, "used": used, "elapsed": None, "state": "", "resets": "08:00", "empty_at": "",
+                         "count": f"{c} 次" + (f"／剩 {rem}" if rem is not None else "")})
+        if wins:
+            out.append({"name": "免費池", "windows": wins, "verdict": "次數為今天（台北 08:00 換日）；有「剩」的是服務自己回報",
+                        "updated": str(u.get("更新", ""))[5:16].replace("T", " "), "age_min": int((time.time() - os.path.getmtime(fp)) / 60)})
+    except (OSError, ValueError):
+        pass
     return {"agents": out, "time": time.strftime("%H:%M")}
 
 
