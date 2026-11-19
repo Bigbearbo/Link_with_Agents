@@ -160,7 +160,14 @@ def wake_loop(hub, log):
                 if not hit:
                     continue
                 kw, why = hit
-                urgent, news = news_router(name, wake, all_hits(name, wake, changes, msgs))
+                hits = all_hits(name, wake, changes, msgs)
+                urgent, news = news_router(name, wake, hits)
+                # 每次路由決定都記下來（使用者 02:51：小 AI 判對的也要看能不能寫成規則，讓程式逐漸取代小 AI）
+                os.makedirs(os.path.join(HERE, "logs", "派報"), exist_ok=True)
+                with open(os.path.join(HERE, "logs", "派報", "路由紀錄.jsonl"), "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"時間": time.strftime("%Y-%m-%d %H:%M"), "給": name, "關鍵字": kw, "候選": hits,
+                                        "叫醒": urgent, "誰決定": "規則" if news.startswith("（固定規則") else "小AI",
+                                        "判對": None}, ensure_ascii=False) + "\n")
                 if not urgent:   # 小 AI 判斷不急 → 放進下一期摘要，不叫醒
                     os.makedirs(os.path.join(HERE, "logs", "派報"), exist_ok=True)
                     with open(os.path.join(HERE, "logs", "派報", f"{name}-下一期.md"), "a", encoding="utf-8") as f:
