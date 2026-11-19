@@ -511,19 +511,35 @@ class Room:
                     pass
 
     # ---------- 回答：兩位各自獨立，不互相排隊 ----------
-    def chain(self, seq):
+    def chain(self, seq, front=False):
         """依序請 seq 裡的 agent 發言。空著的馬上開始，前一位答完才換下一位；
         忙碌中的那位不擋後面的人：記一筆「待回應」，手上的事做完再回一輪，看到中間所有新訊息。"""
-        while seq and not self.stop_flag:
-            agent, rest = seq[0], seq[1:]
+        # 使用者 11-20 06:17：「輪流說話有點亂，變成同步說話」——原因：Claude 回覆裡 @Codex 會另開一條接力，
+        # 原本那條也照樣往下叫 Gemini／輝達 → 同時發言。改成排隊共用 self.queue，點名的人插到隊伍最前面、已經排著的不另開。
+        with self.hub.lock:
+            q = getattr(self, "queue", None)
+            if q is None or q is not seq:   # 新的一條
+                cur = getattr(self, "queue_cur", None)
+                if cur is not None and cur.busy and q is not None:   # 隊伍裡有人正在講：併進去，他講完會接著叫下一位
+                    new = [a for a in seq if a not in q]
+                    if front:
+                        q[:0] = new
+                    else:
+                        q.extend(new)
+                    return
+                self.queue = q = list(seq)   # 不去重：「讓他們繼續討論」本來就是 Claude、Codex 重複好幾輪；沒人在講：開新隊伍（丟掉停止時留下的舊隊伍）
+        while q and not self.stop_flag:
+            agent = q.pop(0)
             with self.hub.lock:
                 if agent.busy:
-                    seq = rest  # 已經在做了（例如自動輪流已叫起它），不重複
-                    continue
+                    continue  # 已經在做了（例如自動輪流已叫起它），不重複
                 agent.busy = True
-            threading.Thread(target=self.agent_loop, args=(agent, lambda r=rest: self.chain(r)),
+                self.queue_cur = agent
+            threading.Thread(target=self.agent_loop, args=(agent, lambda: self.chain(self.queue)),
                              daemon=True).start()
             return
+        if self.stop_flag:
+            q.clear()
 
     def agent_loop(self, agent, then):
         try:
@@ -692,7 +708,7 @@ class Room:
                 for a in called:
                     if a.busy:
                         a.pending = True
-                threading.Thread(target=lambda q=todo: self.chain(q), daemon=True).start()
+                threading.Thread(target=lambda q=todo: self.chain(q, front=True), daemon=True).start()  # 插隊到下一位，不另開同時發言
         if poster or self.auto <= 0 or self.auto_left <= 0 or self.stop_flag or not (said or "").strip():
             return
         if agent in (self.gemini, self.nvidia, self.deepseek):  # 自動輪流只在 Claude、Codex 之間；Gemini 說完不再接力
