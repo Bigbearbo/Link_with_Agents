@@ -43,8 +43,9 @@ def parse_send(fn, raw, rooms, last_room=None):
             if fn.lower().endswith(".json"):
                 quirks.append(".json 裡寫純文字")
     if isinstance(d, dict):
-        rk = next((k for k in ROOM_KEYS if d.get(k)), None)
-        tk = next((k for k in TEXT_KEYS if d.get(k)), None)
+        ex = extra_rules()
+        rk = next((k for k in ROOM_KEYS + tuple(ex["房間欄"]) if d.get(k)), None)
+        tk = next((k for k in TEXT_KEYS + tuple(ex["內容欄"]) if d.get(k)), None)
         rid = str(d.get(rk) or "") if rk else ""
         text = str(d.get(tk) or "").strip() if tk else ""
         if rk and rk != "room":
@@ -55,13 +56,83 @@ def parse_send(fn, raw, rooms, last_room=None):
         first, _, rest = raw.partition("\n")
         has = re.match(r"\s*(房間|room)\s*[:=]\s*(\S+)", first, re.I)
         rid, text = (has.group(2) if has else ""), (rest if has else raw).strip()
-    if rid in ROOM_ALIAS and ROOM_ALIAS[rid] != rid:
+    alias = {**ROOM_ALIAS, **extra_rules()["房間別名"]}
+    if rid in alias and alias[rid] != rid:
         quirks.append("房間寫中文名")
-    rid = ROOM_ALIAS.get(rid, rid)
+    rid = alias.get(rid, rid)
     if rid not in rooms:
         quirks.append("沒寫房間" if not rid else f"房間寫錯（{rid}）")
         rid = guess or last_room or "g1004308131170"
     return rid, text, quirks
+
+
+# ---------- 轉譯提案：AI 之間格式對不上被退件時，自己申請改轉譯規則，另一位 AI 審核 ----------
+# 使用者 11-19 14:48：「我是指你們之間的申請，就是格式不符合被拒絕那種，讓他們申請更改審查格式的程式」
+EXTRA = os.path.join(HERE, "logs", "方言規則-追加.json")   # 中樞資料夾，AI 自己改不到；只有核可後由中樞寫入
+PROPOSALS = os.path.join(HERE, "logs", "轉譯提案.json")
+AIS = {"Claude", "Codex", "Gemini", "輝達", "DeepSeek"}
+KINDS = {"內容欄": "內容欄", "房間欄": "房間欄", "房間別名": "房間別名"}
+
+
+def extra_rules():
+    try:
+        d = json.load(open(EXTRA, encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    return {"內容欄": d.get("內容欄", []), "房間欄": d.get("房間欄", []), "房間別名": d.get("房間別名", {})}
+
+
+def handle_proposal(who, text, rooms):
+    r"""群組發言：
+       轉譯提案：內容欄 加 answer｜理由：…        （JSON 裡放發言內容的欄名）
+       轉譯提案：房間欄 加 target｜理由：…
+       轉譯提案：房間別名 討論群 = g1004308131170｜理由：…
+       核可轉譯 #N ／ 否決轉譯 #N 理由
+    規則以外的改法（例如新的檔案格式）：寫到 H:\Agent共用\權限\審查程式提案\，另一位 AI 審過後 @Claude 改程式。"""
+    t = (text or "").strip()
+    try:
+        d = json.load(open(PROPOSALS, encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {"next": 1, "items": {}}
+    m = re.match(r"轉譯提案\s*[:：]\s*(內容欄|房間欄|房間別名)\s*加?\s*([^｜|]+?)\s*(?:[｜|]\s*理由\s*[:：]?\s*(.*))?$", t, re.S)
+    if m:
+        kind, val, why = m.group(1), m.group(2).strip(), (m.group(3) or "").strip()[:300]
+        if kind == "房間別名":
+            mm = re.match(r"(\S+)\s*[=＝→]\s*(\S+)$", val)
+            if not mm or mm.group(2) not in rooms:
+                return "🔤 轉譯提案不受理：房間別名要寫成「別名 = 房間id」，房間 id 要存在（例 g1004308131170、main）。"
+            val = [mm.group(1), mm.group(2)]
+        elif not re.fullmatch(r"[A-Za-z_一-鿿][\w一-鿿]{0,30}", val):
+            return "🔤 轉譯提案不受理：欄名只能是一個字詞（英文、數字、底線、中文）。"
+        n = d["next"]
+        d["next"] += 1
+        d["items"][str(n)] = {"提案人": who, "種類": kind, "值": val, "理由": why, "時間": time.strftime("%Y-%m-%d %H:%M"), "狀態": "待審"}
+        json.dump(d, open(PROPOSALS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        shown = f"{val[0]} → {val[1]}" if isinstance(val, list) else val
+        return (f"🔤 轉譯提案 #{n}（{who} 提）：{kind} 加「{shown}」。理由：{why or '（沒寫）'}\n"
+                f"請 {who} 以外的 AI 審核：行首寫「核可轉譯 #{n}」或「否決轉譯 #{n} 理由」。")
+    m = re.match(r"(核可|否決)轉譯\s*#?(\d+)\s*(.*)", t, re.S)
+    if not m:
+        return None
+    ok, n, note = m.group(1) == "核可", m.group(2), m.group(3).strip()[:200]
+    it = d["items"].get(n)
+    if not it or it["狀態"] != "待審":
+        return f"🔤 找不到待審的轉譯提案 #{n}。"
+    if who not in AIS or who == it["提案人"]:
+        return f"🔤 #{n} 要由提案人以外的本機 AI 審核（{who} 不行）。"
+    it.update({"狀態": "通過" if ok else "否決", "審核": who, "審核意見": note, "審核時間": time.strftime("%Y-%m-%d %H:%M")})
+    json.dump(d, open(PROPOSALS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    if not ok:
+        return f"🔤 轉譯提案 #{n} 被 {who} 否決：{note or '（沒寫理由）'}"
+    ex = extra_rules()
+    if it["種類"] == "房間別名":
+        ex["房間別名"][it["值"][0]] = it["值"][1]
+    elif it["值"] not in ex[it["種類"]]:
+        ex[it["種類"]].append(it["值"])
+    ex["更新"] = f"{time.strftime('%Y-%m-%d %H:%M')} #{n} {it['提案人']} 提、{who} 核可"
+    json.dump(ex, open(EXTRA, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    write_table()
+    return f"🔤 轉譯提案 #{n} 通過（{who} 核可），馬上生效；方言轉換表已更新。"
 
 
 def is_draft(fn):
@@ -141,11 +212,18 @@ def write_table():
            "原因：使用者 11-19 14:36～14:40「有口癖的 AI，應該用程式幫他放寬，而不是說他報告格式不對」「模型腦袋已經固定，再加一條指令不如程式轉換」。",
            "", "## 轉換規則", "| 口癖 | 轉成 | 在哪裡 |", "|---|---|---|"]
     out += [f"| {a} | {b} | {w} |" for a, b, w in RULES]
+    ex = extra_rules()
+    if ex["內容欄"] or ex["房間欄"] or ex["房間別名"]:
+        out += ["", "## AI 互審追加的規則（轉譯提案通過的）",
+                f"- 內容欄：{'、'.join(ex['內容欄']) or '無'}", f"- 房間欄：{'、'.join(ex['房間欄']) or '無'}",
+                "- 房間別名：" + ("、".join(f"{k} → {v}" for k, v in ex["房間別名"].items()) or "無")]
+    out += ["", "## 被退件了怎麼辦", "- 格式對不上被退件：在群組行首寫「轉譯提案：內容欄 加 <欄名>｜理由：…」（或 房間欄、房間別名 <別名> = <房間id>），提案人以外的本機 AI 寫「核可轉譯 #N」就生效。",
+            "- 規則以外的改法（新的檔案格式等）：寫到 `H:\\Agent共用\\權限\\審查程式提案\\`，另一位 AI 審過後 @Claude 改程式。"]
     out += ["", "## 誰有哪些口癖（logs/口癖.jsonl 統計）", "| AI | 口癖 | 次數 | 最近一次 |", "|---|---|---|---|"]
     out += [f"| {a} | {q} | {n} | {last[(a, q)]} |" for (a, q), n in c.most_common()] or ["| （還沒有紀錄） | | | |"]
     out += ["", "## 給大家", "- 自己送出時還是照正式格式寫（寬進嚴出）；這層轉換是保險，不是鼓勵亂寫。",
             "- 某種口癖很常見 → 考慮固化成正式格式；轉錯一次 → 記進 `規則反例.md`，再改程式。",
-            "- 想加新的轉換：在群組 @Claude 說明口癖長什麼樣、附原始檔。"]
+            "- 想加新的轉換：走上面的「轉譯提案」，不用等 Claude。"]
     open(TABLE, "w", encoding="utf-8").write("\n".join(out) + "\n")
     return TABLE
 

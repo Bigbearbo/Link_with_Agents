@@ -191,6 +191,13 @@ class Room:
         """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
         kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
+        if who != "系統" and ("轉譯" in (text or "")[:12]):   # 轉譯提案（使用者 14:48）
+            try:
+                msg = dialect.handle_proposal(who, text, set(self.hub.rooms))
+                if msg:
+                    threading.Timer(1, lambda m=msg: self.notice(m)).start()
+            except Exception as e:
+                log(f"轉譯提案處理失敗：{e}")
         if who != "系統" and ("放寬" in (text or "")[:20]):
             try:
                 msg = relax.handle(who, text, lambda n, dirs, by: grant_write(n, dirs, self.name, by))
@@ -1860,7 +1867,9 @@ if __name__ == "__main__":
                             os.makedirs(os.path.join(box, "退件"), exist_ok=True)
                             os.replace(p, os.path.join(box, "退件", time.strftime("%m%d-%H%M%S-") + fn))
                             with open(os.path.join(box, "退件", fn + ".原因.txt"), "w", encoding="utf-8") as w:
-                                w.write(f"{type(e).__name__}: {e}\n")
+                                w.write(f"{type(e).__name__}: {e}\n"
+                                        "覺得是格式轉譯該放寬：在群組行首寫「轉譯提案：內容欄 加 <欄名>｜理由：…」，"
+                                        "另一位 AI 核可就生效（說明見 H:\\Agent共用\\方言轉換表.md）。\n")
                         except OSError:
                             pass
                         log(f"發送箱退件：{name} {fn}：{e}")
