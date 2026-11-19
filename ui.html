@@ -221,6 +221,7 @@ body.fold .m-sys .bubble::after{display:none}
     <button id="stop">停止</button>
     <button id="new">新討論</button>
     <button id="decide" title="等你拍板的事，每項都能留言回覆">待討論</button>
+    <button id="research" title="研究想法庫和待辦：看全文、留言、叫 AI 來討論">研究</button>
     <button id="changes" title="共用區變動，可依關鍵字、時間篩選">變動</button>
   </div>
   <div class="row">
@@ -620,6 +621,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 $("#changes").onclick = () => window.open("/變動?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "changes");
 $("#decide").onclick = () => window.open("/待討論?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "decide");
+$("#research").onclick = () => window.open("/研究?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "research");
 $("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
 $("#apAlways").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, always: true, room}); };
 $("#apDeny").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: false, room}); };

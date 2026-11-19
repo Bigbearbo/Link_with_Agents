@@ -1116,6 +1116,15 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path in ("/研究", "/research"):   # 使用者 11-20 00:36：研究與待辦入口
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                body = research_page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/待討論" or u.path == "/decisions":
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1185,6 +1194,31 @@ def make_handler(hub):
                 return self._json({"ok": True, "bookmarks": bm})
             if p == "/api/approve":
                 return self._json({"ok": room.answer_approval(bool(data.get("allow")), "電腦", bool(data.get("always")))})
+            if p == "/api/research_comment":
+                kind, iid, text = data.get("kind"), str(data.get("id") or "").strip(), (data.get("text") or "").strip()
+                who = data.get("who") if data.get("who") in ("claude", "codex", "gemini", "nvidia", "deepseek", "both", "note") else "claude"
+                if kind not in ("idea", "todo") or not iid.isdigit() or not text:
+                    return self._json({"ok": False, "error": "缺內容"})
+                stamp = time.strftime("%m-%d %H:%M")
+                if kind == "idea":
+                    import glob as _g
+                    hits = _g.glob(os.path.join(IDEAS_DIR, f"{int(iid):03d}-*.md"))
+                    if not hits:
+                        return self._json({"ok": False, "error": "找不到這個研究想法"})
+                    with open(hits[0], "a", encoding="utf-8") as f:   # 留言接在檔尾（原文不動）
+                        f.write(f"\n- 【使用者留言 {stamp}】{text}\n")
+                    label = f"研究想法 {int(iid):03d}（{os.path.basename(hits[0])[4:-3]}）"
+                else:
+                    subprocess.run([sys.executable.replace("pythonw.exe", "python.exe"), "-X", "utf8", r"H:\Agent共用\待辦\待辦.py",
+                                    "做", iid, "使用者留言：" + text[:500]], capture_output=True, timeout=60,
+                                   creationflags=0x08000000 if os.name == "nt" else 0)
+                    label = f"待辦 #{iid}"
+                room = hub.room(MAIN)
+                if who == "note":
+                    room.user_says(f"（{label} 的留言）{text}", "電腦", "note")
+                else:
+                    room.user_says(f"（{label} 的留言，請一起討論）{text}", "電腦", who)
+                return self._json({"ok": True})
             if p == "/api/decide":
                 # 待討論頁的留言（使用者 11-19 08:05）：記進待辦紀錄，並以使用者身分貼到主討論讓大家看到
                 tid, text = int(data.get("id") or 0), (data.get("text") or "").strip()
@@ -1772,6 +1806,79 @@ const K={json.dumps(key)};
 async function send(id){{const t=document.getElementById('t'+id),s=document.getElementById('s'+id);if(!t.value.trim())return;
 s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify({{id,text:t.value}})}});
 const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗';if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
+</script></body></html>"""
+
+
+IDEAS_DIR = r"H:\Agent共用\研究想法庫"
+
+
+def research_page(key):
+    """研究入口（使用者 11-20 00:36：「研究計畫、待辦那些也幫我弄個好的入口（聊天視窗分頁），方便我去研究和留言，以及叫 AI 出來討論」）。
+    兩個分頁：研究想法庫（每項可展開全文）、待辦（沒完成的）。每項有留言框＋「叫誰來討論」；送出＝記進該項＋以使用者身分貼到主討論叫那位。"""
+    import html as _h
+    ideas = []
+    try:
+        for line in open(os.path.join(IDEAS_DIR, "README.md"), encoding="utf-8"):
+            m = re.match(r"\|\s*(\d{3})\s*\|\s*\[(.+?)\]\((.+?)\)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|", line)
+            if m:
+                ideas.append(m.groups())
+    except OSError:
+        pass
+    try:
+        todos = [t for t in json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8")) if t.get("狀態") != "完成"]
+    except (OSError, ValueError):
+        todos = []
+    who_opts = "".join(f'<option value="{v}">{n}</option>' for v, n in
+                       (("claude", "Claude"), ("codex", "Codex"), ("gemini", "Gemini"), ("nvidia", "輝達"), ("deepseek", "DeepSeek"), ("both", "大家"), ("note", "不叫人，只記下")))
+
+    def box(kind, iid):
+        return (f'<div class="row"><textarea id="t{kind}{iid}" placeholder="想法、問題、要誰做什麼…"></textarea></div>'
+                f'<div class="row">叫 <select id="w{kind}{iid}">{who_opts}</select> 來討論 '
+                f'<button onclick="send(\'{kind}\',\'{iid}\')">送出</button> <span id="s{kind}{iid}"></span></div>')
+    rows_i = []
+    for num, title, fn, src, st in reversed(ideas):
+        try:
+            body = open(os.path.join(IDEAS_DIR, os.path.basename(fn)), encoding="utf-8").read()
+        except OSError:
+            body = "（讀不到檔案）"
+        rows_i.append(f'<section data-q="{_h.escape(num + title + src + st)}"><details><summary><b>{num}</b>　{_h.escape(title)}　<span class="st">{_h.escape(st)}</span>'
+                      f'<span class="meta">　{_h.escape(src)}</span></summary><div class="md" data-md="{_h.escape(body)}"></div></details>{box("idea", num)}</section>')
+    rows_t = []
+    for t in sorted(todos, key=lambda t: ({"高": 0, "中": 1, "低": 2}.get(t.get("優先"), 3), t.get("id", 0))):
+        log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))[:200]}</li>"
+                       for r in (t.get("紀錄") or [])[-3:])
+        rows_t.append(f'<section data-q="{_h.escape(str(t.get("標題", "")) + str(t.get("負責", "")))}"><b>#{t["id"]}</b> [{_h.escape(str(t.get("優先", "")))}] {_h.escape(str(t.get("標題", "")))}'
+                      f'<div class="meta">負責：{_h.escape(str(t.get("負責", "")))}｜狀態：{_h.escape(str(t.get("狀態", "")))}</div>'
+                      f'{f"<ul>{log_}</ul>" if log_ else ""}{box("todo", t["id"])}</section>')
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>研究與待辦</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script><style>
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:16px}}
+section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0}}
+summary{{cursor:pointer}} .meta{{color:var(--mute);font-size:13px}} .st{{font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em;margin:4px 0}}
+.md{{border-top:1px solid var(--line);margin-top:8px;padding-top:6px;font-size:14px;overflow-wrap:anywhere}} .md h1,.md h2,.md h3{{font-size:15px}}
+textarea{{width:100%;box-sizing:border-box;min-height:44px;margin-top:6px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit}}
+select,button{{font:inherit;border-radius:8px;padding:4px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}}
+button{{background:var(--acc);color:#fff;border:0;cursor:pointer}} .tabs button{{background:var(--card);color:var(--ink);border:1px solid var(--line)}}
+.tabs button.on{{background:var(--acc);color:#fff}} input{{font:inherit;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);width:220px}}
+</style></head><body><h2>研究與待辦</h2>
+<p class="meta">每項都能留言、指定叫誰來討論。送出＝記進那一項，也以你的名義貼到主討論（選「只記下」就不叫人）。</p>
+<div class="tabs"><button id="bi" class="on" onclick="tab('i')">研究想法（{len(ideas)}）</button> <button id="bt" onclick="tab('t')">待辦（{len(todos)}）</button>
+<input id="q" placeholder="篩選關鍵字" oninput="filt()"></div>
+<div id="pi">{"".join(rows_i) or "<p>沒有研究想法。</p>"}</div><div id="pt" hidden>{"".join(rows_t) or "<p>沒有待辦。</p>"}</div>
+<script>
+const K={json.dumps(key)};
+function tab(x){{document.getElementById('pi').hidden=x!=='i';document.getElementById('pt').hidden=x!=='t';
+document.getElementById('bi').classList.toggle('on',x==='i');document.getElementById('bt').classList.toggle('on',x==='t');}}
+function filt(){{const q=document.getElementById('q').value.trim().toLowerCase();document.querySelectorAll('section').forEach(s=>s.hidden=q&&!s.textContent.toLowerCase().includes(q)&&!(s.dataset.q||'').toLowerCase().includes(q));}}
+document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{{const m=d.querySelector('.md');if(d.open&&!m.dataset.done){{
+try{{m.innerHTML=DOMPurify.sanitize(marked.parse(m.dataset.md));}}catch(e){{m.textContent=m.dataset.md;}}m.dataset.done=1;}}}}));
+async function send(kind,id){{const t=document.getElementById('t'+kind+id),w=document.getElementById('w'+kind+id).value,s=document.getElementById('s'+kind+id);
+if(!t.value.trim())return;s.textContent='送出中…';try{{const r=await fetch('/api/research_comment',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},
+body:JSON.stringify({{kind,id,text:t.value,who:w}})}});const j=await r.json();s.textContent=j.ok?'✓ 已送出':'送出失敗：'+(j.error||'');if(j.ok)t.value='';}}catch(e){{s.textContent='送出失敗';}}}}
 </script></body></html>"""
 
 
