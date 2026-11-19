@@ -1,0 +1,5 @@
+{
+ "說明": "每個房間的 Codex 用哪個模型、推理多深（使用者 11-19 23:17）。改這裡就好，下一次 Codex 回話生效，不用重開中樞。沒寫的房間用 Codex 自己的預設（~/.codex/config.toml，目前 gpt-6.1-sol＋xhigh）。可選模型：gpt-6.2-sol（快、主力）、gpt-6.2-astra（最強）；推理：low／medium／high／xhigh／max／ultra。",
+ "main": {"model": "gpt-6.2-sol", "effort": "medium"},
+ "g1004308131170": {"model": "gpt-6.2-sol", "effort": "medium"}
+}

@@ -241,17 +241,38 @@ class ClaudeAgent(Agent):
         return (result.get("result") or "").strip()
 
 
+CODEX_ROOM_SETTINGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codex-房間設定.json")
+
+
+def codex_room_opts(room_id):
+    """每個房間的 Codex 模型與推理深度（使用者 11-19 23:17：主房間用哪個模型、想多深，Claude 把設定套上去）。
+    codex-房間設定.json＝{"main": {"model": "gpt-6.2-sol", "effort": "medium"}, ...}；沒寫就用 Codex 自己的預設（~/.codex/config.toml）。"""
+    try:
+        c = json.load(open(CODEX_ROOM_SETTINGS, encoding="utf-8")).get(room_id or "", {})
+    except (OSError, ValueError):
+        return []
+    out = []
+    if c.get("model"):
+        out += ["-m", str(c["model"])]
+    if c.get("effort"):
+        out += ["-c", f'model_reasoning_effort="{c["effort"]}"']
+    return out
+
+
 class CodexAgent(Agent):
+    room_id = None   # Room 建立時填上，用來查 codex-房間設定.json
+
     def run(self, prompt):
         mode = "workspace-write" if self.write else "read-only"
+        opts = codex_room_opts(self.room_id)
         if self.fork_from:
             cmd = [CODEX_EXE, "exec", "fork", self.fork_from, "--json", "--ephemeral", "--skip-git-repo-check",
-                   "-c", f'sandbox_mode="{mode}"', "-"]
+                   "-c", f'sandbox_mode="{mode}"', *opts, "-"]
         elif self.session:
             cmd = [CODEX_EXE, "exec", "resume", self.session, "--json", "--skip-git-repo-check",
-                   "-c", f'sandbox_mode="{mode}"', "-"]
+                   "-c", f'sandbox_mode="{mode}"', *opts, "-"]
         else:
-            cmd = [CODEX_EXE, "exec", "--json", "--skip-git-repo-check", "-s", mode, "-C", WORKDIR, "-"]
+            cmd = [CODEX_EXE, "exec", "--json", "--skip-git-repo-check", "-s", mode, "-C", WORKDIR, *opts, "-"]
         err = self._spawn(cmd, prompt)
         msgs, errors = [], []
         for ev in self._lines():

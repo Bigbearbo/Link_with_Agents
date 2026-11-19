@@ -133,6 +133,7 @@ class Room:
         self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
         self.claude.session, self.claude.seen = d.get("claude_session"), int(d.get("claude_seen") or 0)
         self.codex.session, self.codex.seen = d.get("codex_session"), int(d.get("codex_seen") or 0)
+        self.codex.room_id = self.id   # 每房 Codex 模型設定（codex-房間設定.json）
         self.gemini = make_gemini(self)
         self.gemini.session, self.gemini.seen = d.get("gemini_session"), int(d.get("gemini_seen") or 0)
         self.nvidia = make_nvidia(self)  # 只有點名才回
@@ -425,6 +426,7 @@ class Room:
             return False
         with self.hub.lock:
             self.claude, self.codex = rt.ClaudeAgent("Claude"), rt.CodexAgent("Codex")
+            self.codex.room_id = self.id
             self.gemini = make_gemini(self)
             self.nvidia = make_nvidia(self)
             self.deepseek = DeepSeekAgent("DeepSeek")
