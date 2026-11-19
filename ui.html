@@ -226,7 +226,7 @@ body.fold .m-sys .bubble::after{display:none}
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
 <div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
-<aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button>
+<aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button><button data-p="board">訊息版</button>
 <span class="spacer"></span><button id="sideMax" title="放大成整頁／還原（左邊聊天縮掉）">⤢</button><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
 </aside>
 <aside id="marks"><h3>🔖 書籤 <button id="marksMin" title="縮小／展開">－</button></h3><div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div></aside>
@@ -290,7 +290,7 @@ function renderRooms(rooms){ lastRooms = rooms;
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
   // Codex 01:37 補漏：四頁各自的圖示；另加「本房設定」直接定位到這個房間那一列
-  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"]]){
+  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"], ["board", "訊息版", "📰"]]){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
     b.textContent = ic + " " + label; b.title = label + "（右側面板）";
@@ -685,7 +685,7 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
+const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name, hash, keep){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(hash){   // 定位到某一列（本房設定）
