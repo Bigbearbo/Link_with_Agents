@@ -224,3 +224,77 @@ class Throttle:
             self.last_sent[k] = now
         self.pending, self.first_at = {}, None
         return added, changed
+
+
+# ---------- 變動紀錄與查詢（使用者 11-19 09:06：群組只放簡介，查詢可以加條件，例如跟 DeepSeek 相關、時間範圍） ----------
+CHANGE_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "共用區變動.jsonl")
+
+
+def headline(path):
+    """檔案前 5 行裡的「摘要：」，沒有就空字串。"""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(5), f):
+                t = line.strip().lstrip("#\"' ").strip()
+                if t.startswith("摘要："):
+                    return t[3:][:100]
+    except OSError:
+        pass
+    return ""
+
+
+def log_changes(added, changed):
+    """每一筆變動記一行：時間、新／改、路徑、負責人、摘要。"""
+    os.makedirs(os.path.dirname(CHANGE_LOG), exist_ok=True)
+    t = time.strftime("%Y-%m-%d %H:%M")
+    with open(CHANGE_LOG, "a", encoding="utf-8") as f:
+        for kind, items in (("新", added), ("改", changed)):
+            for rel in items:
+                full = os.path.join(SHARED, rel)
+                f.write(json.dumps({"時間": t, "類": kind, "路徑": rel.replace("\\", "/"),
+                                    "負責": owner_of(full), "摘要": headline(full)}, ensure_ascii=False) + "\n")
+
+
+def brief(added, changed):
+    """群組用的簡介：幾個檔、主要在哪幾個資料夾。"""
+    top = {}
+    for rel in list(added) + list(changed):
+        k = rel.replace("\\", "/").split("/")[0]
+        top[k] = top.get(k, 0) + 1
+    main = "、".join(f"{k}（{n}）" for k, n in sorted(top.items(), key=lambda x: -x[1])[:4])
+    return (f"共用區有變動：新 {len(added)}、改 {len(changed)}，主要在 {main}。"
+            "細節用網頁「變動」頁查（可篩誰、關鍵字、時間），或 `PY H:\Claude用\三方討論\變動查詢.py 關鍵字 --since 11-19`。")
+
+
+def query_changes(q="", since="", until="", kind="", limit=200):
+    """篩變動紀錄：q 比對路徑／負責人／摘要（不分大小寫）；since／until 寫 11-19、11-19 08:00 或 2026-11-19；kind＝新／改。新的在前。"""
+    def norm(s, end=False):
+        s = s.strip()
+        if not s:
+            return ""
+        if len(s) <= 5:                          # 11-19
+            s = time.strftime("%Y-") + s
+        elif len(s) <= 11 and s[2] == "-":       # 11-19 08:00
+            s = time.strftime("%Y-") + s
+        return s + (" 99:99" if end and len(s) == 10 else "")
+    since, until = norm(since), norm(until, True)
+    out = []
+    try:
+        lines = open(CHANGE_LOG, encoding="utf-8").read().splitlines()
+    except OSError:
+        return out
+    for line in reversed(lines):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if since and r["時間"] < since or until and r["時間"] > until:
+            continue
+        if kind and r["類"] != kind:
+            continue
+        if q and q.lower() not in (r["路徑"] + r.get("負責", "") + r.get("摘要", "")).lower():
+            continue
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out

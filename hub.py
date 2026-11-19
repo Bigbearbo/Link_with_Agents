@@ -765,7 +765,8 @@ class Hub:
                     throttle.feed(added, changed)
                     batch = throttle.ready()
                     if batch and self.shared_room():
-                        self.shared_room().notice("共用區有變動：\n" + sw.summarize(*batch))
+                        sw.log_changes(*batch)                   # 11-19 09:06：每筆記下來，群組只放簡介，細節去「變動」頁查
+                        self.shared_room().notice(sw.brief(*batch))
                 sw.save_seen(seen_path, snap)
                 prev = snap
                 for path, sender, to, body, want_room in sw.read_inbox():
@@ -1000,6 +1001,15 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path in ("/變動", "/changes"):
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                body = changes_page(q).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/待討論" or u.path == "/decisions":
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1462,6 +1472,35 @@ def tg_members(room, text):
         return text, None                                  # 有點名：照點名走（原本的規則）
     order = [first] + [w for w in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") if w in on and w != first]
     return text, [w for w in order if w in on or w == first]
+
+
+def changes_page(q):
+    """共用區變動查詢頁（使用者 11-19 09:06）：關鍵字（路徑／負責人／摘要）、起訖時間、新或改。用 shared_watch.query_changes，跟命令列同一份。"""
+    import html as _h
+    g = lambda k: (q.get(k, [""])[0] or "").strip()
+    key, kw, since, until, kind = g("k"), g("q"), g("since"), g("until"), g("kind")
+    rows = sw.query_changes(kw, since, until, kind, 300)
+    trs = "".join(f"<tr><td>{_h.escape(r['時間'][5:])}</td><td>{r['類']}</td><td>{_h.escape(r['路徑'])}</td>"
+                  f"<td>{_h.escape(r.get('負責', ''))}</td><td>{_h.escape(r.get('摘要', ''))}</td></tr>" for r in rows)
+    sel = lambda v: " selected" if kind == v else ""
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>共用區變動</title><style>
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:1100px;margin:0 auto;padding:16px}}
+form{{display:flex;flex-wrap:wrap;gap:8px;align-items:center}} input,select{{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}}
+table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,th{{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}
+.mute{{color:var(--mute);font-size:13px}}
+</style></head><body><h2>共用區變動</h2>
+<form><input type="hidden" name="k" value="{_h.escape(key)}">
+<input name="q" placeholder="關鍵字（例：deepseek、課程、輝達）" value="{_h.escape(kw)}">
+<input name="since" placeholder="從（11-19 或 11-19 08:00）" value="{_h.escape(since)}" size="16">
+<input name="until" placeholder="到" value="{_h.escape(until)}" size="16">
+<select name="kind"><option value="">新＋改</option><option{sel('新')}>新</option><option{sel('改')}>改</option></select>
+<button>查詢</button></form>
+<p class="mute">關鍵字比對路徑、負責人、檔頭摘要；新的在上面，最多 300 筆。紀錄從 11-19 09:1x 開始（之前的變動只在群組訊息裡）。命令列：<code>PY H:\\Claude用\\三方討論\\變動查詢.py 關鍵字 --since 11-19</code></p>
+<table><tr><th>時間</th><th>類</th><th>路徑</th><th>負責</th><th>摘要</th></tr>{trs or '<tr><td colspan=5 class="mute">沒有符合的變動</td></tr>'}</table>
+</body></html>"""
 
 
 def decisions_page(key):
