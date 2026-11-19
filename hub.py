@@ -2065,6 +2065,20 @@ def settings_page(key):
         cr = json.load(open(os.path.join(HERE, "codex-房間設定.json"), encoding="utf-8"))
     except (OSError, ValueError):
         cr = {}
+    # 使用者 11-20 04:01：職責表放進設定頁（Codex 04:03 建的 團隊職責.json）；「這次實際派給誰」連到待辦
+    try:
+        duty = json.load(open(r"H:\Agent共用\團隊職責.json", encoding="utf-8"))
+        todos = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        duty, todos = {"members": []}, []
+    def _open_for(m):
+        keys = [m.get("name", ""), m.get("contact", "").lstrip("@")]
+        hit = [t for t in todos if t.get("狀態") != "完成" and any(k and k.split("（")[0] in str(t.get("負責", "")) for k in keys)]
+        return "、".join(f"#{t['id']}" for t in hit[:8]) + (" …" if len(hit) > 8 else "") or "—"
+    duty_rows = "".join(
+        f'<tr><td><b>{_h.escape(m.get("name", ""))}</b><br><span class="meta">{_h.escape(m.get("contact", ""))}</span></td>'
+        f'<td>{_h.escape(m.get("role", ""))}<ul style="margin:2px 0 0 18px;padding:0">{"".join(f"<li>{_h.escape(x)}</li>" for x in m.get("owns", []))}</ul></td>'
+        f'<td class="meta">{_open_for(m)}</td></tr>' for m in duty.get("members", []))
     models = ["（Codex 預設）", "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol"]
     efforts = ["（預設）", "low", "medium", "high", "xhigh"]
     rows = []
@@ -2111,6 +2125,9 @@ h3{{margin:2px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} 
 select,input{{font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}} input{{width:100%;box-sizing:border-box}}
 button{{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:4px 12px;cursor:pointer;font:inherit}} li{{margin:4px 0;font-size:14px}}
 </style></head><body><h2>設定</h2>
+<section><h3>團隊職責：誰平常負責什麼</h3>
+<p class="meta">常態分工（{_h.escape(str(duty.get("updated_at", ""))[:16].replace("T", " "))} 更新，維護：{_h.escape(str(duty.get("maintained_by", "")))}）；右欄是這個人手上還沒完成的待辦，臨時派工以待辦為準。要改分工跟 Claude 說，或直接改 `H:\Agent共用\團隊職責.json`。</p>
+<table><tr><td class="meta">誰</td><td class="meta">負責</td><td class="meta">手上的待辦</td></tr>{duty_rows}</table></section>
 <section><h3>每個房間的 Codex 用什麼模型</h3>
 <p class="meta">影響：那個房間裡 Codex 回話的速度、品質、額度消耗。生效：<b>下一次 Codex 回話</b>，不用重開。檔案 `codex-房間設定.json`。</p>
 <table><tr><td class="meta">房間</td><td class="meta">模型</td><td class="meta">推理深度</td><td></td></tr>{"".join(rows)}</table></section>
