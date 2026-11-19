@@ -51,6 +51,28 @@ def check(summary):
             out.append(("ok", "輝達", f"對得上（今天 {used} 次；以 OpenCode 紀錄為準，網站數字請你偶爾手動看一眼）", "Claude"))
     except Exception as e:
         out.append(("bad", "輝達", f"重算失敗（{type(e).__name__}）", "Claude"))
+    try:   # 免費池（Codex 01:37 補漏）：顯示的今天次數 vs 帳本重數；沒有服務端資料的標「未驗證」，不推論付費
+        import sys
+        sys.path.insert(0, os.path.join(SHARED, "ai-call"))
+        import importlib
+        pool = importlib.import_module("免費AI池")
+        led = pool.ledger_counts()
+        u = json.load(open(os.path.join(SHARED, "免費池-用量.json"), encoding="utf-8"))
+        wins = {w["label"].replace("（贈點）", ""): w for w in shown.get("免費池", {}).get("windows", [])}
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        for n, s in u.get("服務", {}).items():
+            real = led.get(n, 0)
+            cnt = str((wins.get(n) or {}).get("count", ""))
+            disp = int(cnt.split(" 次")[0]) if cnt.split(" 次")[0].isdigit() else real   # 贈點欄顯示金額，不比次數
+            if n not in wins:
+                out.append(("bad", f"免費池/{n}", "用量檔有、網頁沒顯示", "Claude"))
+            elif disp != real:
+                out.append(("bad", f"免費池/{n}", f"顯示今天 {disp} 次、帳本重數 {real} 次", "Claude"))
+            else:
+                src = "服務回報剩餘" if s.get("來源") == "服務回報" else ("本機帳本估花費" if s.get("贈點") else "未驗證（服務沒回報剩餘，只有本機計數）")
+                out.append(("ok" if s.get("來源") == "服務回報" else "warn", f"免費池/{n}", f"今天 {real} 次對得上；{src}", "Claude"))
+    except Exception as e:
+        out.append(("warn", "免費池", f"對帳沒跑成（{type(e).__name__}）", "Claude"))
     try:   # DeepSeek：OpenRouter 金鑰的今天用量 vs 本機帳本
         import sys
         sys.path.insert(0, os.path.join(SHARED, "ai-call", "deepseek"))

@@ -1103,6 +1103,15 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/api/around":   # 書籤跳到 300 則以外的舊訊息：回傳前後各 6 則（Codex 01:37 補漏）
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                rm = hub.rooms.get(q.get("room", [MAIN])[0])
+                if rm is None:
+                    return self._json({"error": "沒有這個房間"}, 404)
+                i = int(q.get("idx", ["0"])[0])
+                lo = max(0, i - 6)
+                self._json({"start": lo, "idx": i, "messages": rm.transcript[lo:i + 7]})
             elif u.path == "/api/bookmarks":   # 書籤（使用者 11-19 22:01）
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
@@ -1554,12 +1563,18 @@ def usage_summary():
         u = json.load(open(fp, encoding="utf-8"))
         today = time.strftime("%Y-%m-%d", time.gmtime())
         wins = []
+        try:   # 次數只認帳本（check 11-20 01:4x 抓到 anthropic 顯示 5、帳本 13：用量檔只在部分呼叫時更新）
+            sys.path.insert(0, r"H:\Agent共用\ai-call")
+            _pool = _il.import_module("免費AI池")
+            led = _pool.ledger_counts()
+        except Exception:
+            led = _pool = None
         for n, s in u.get("服務", {}).items():
-            c = s.get("今天次數", 0) if s.get("日") == today else 0
+            c = led.get(n, 0) if led is not None else (s.get("今天次數", 0) if s.get("日") == today else 0)
             lim, rem = s.get("上限"), s.get("剩餘") if s.get("日") == today else s.get("上限")
             used = round(100 * (lim - rem) / lim, 1) if lim and rem is not None else 0
             if s.get("贈點"):   # Claude／OpenAI 贈點：顯示本機估算花費／額度
-                spent = s.get("已用美元") or 0
+                spent = _pool.credit_spent(n) if _pool else (s.get("已用美元") or 0)
                 wins.append({"label": n + "（贈點）", "used": round(100 * spent / s["贈點"], 1), "elapsed": None, "state": "",
                              "resets": (f"{s['到期'][5:]} 到期" if s.get('到期') else "到期日待補"), "empty_at": "", "count": f"約 ${spent:.2f}／${s['贈點']:.0f}"})
                 continue
@@ -1890,7 +1905,7 @@ textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;backgr
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
 </style></head><body><h2>待討論（等你拍板）</h2>
 <p class="meta">每項可以打字送出，或直接按「同意／暫時擱置／你們再討論／反對」（有打字會一起附上）。回覆過的先收起來，等我們有新進度才再出現。</p>
-<p><button onclick="sendAll()">全部送出（有填的都送）</button> <button class="q" onclick="document.getElementById('hist').hidden=!document.getElementById('hist').hidden">批示歷史（{len(hist)}）</button> <button class="q" onclick="toggleOld(this)">顯示回覆過的（{sum(1 for r in rows if 'class="replied"' in r)}）</button> <span id="sall2"></span></p>
+<p><button onclick="sendAll()">全部送出（有填的都送）</button> <button class="q" id="histBtn" onclick="document.getElementById('hist').hidden=!document.getElementById('hist').hidden">批示歷史（{len(hist)}）</button> <button class="q" onclick="toggleOld(this)">顯示回覆過的（{sum(1 for r in rows if 'class="replied"' in r)}）</button> <span id="sall2"></span></p>
 <section id="hist" hidden><h3>你的批示歷史（新的在前）</h3><ol>{hist_html or "<li>還沒有</li>"}</ol>
 {'<button class="q" onclick="more()">看更多</button>' if len(hist) > 20 else ''}</section>
 {body}
@@ -1902,6 +1917,10 @@ s.textContent='送出中…';try{{const r=await fetch('/api/decide',{{method:'PO
 const j=await r.json();if(j.ok){{s.textContent='';const sec=t.closest('section');let box=sec.querySelector('.sentbox');
 if(!box){{box=document.createElement('div');box.className='sentbox';sec.appendChild(box);}}
 const n=document.createElement('div');n.className='sent';n.textContent='✓ 已送出（'+new Date().toTimeString().slice(0,5)+'）：'+t.value;box.appendChild(n);
+const ol=document.querySelector('#hist ol');if(ol){{const li=document.createElement('li');li.className='h';const mt=document.createElement('span');mt.className='meta';
+mt.textContent=new Date().toTimeString().slice(0,5)+'（剛送出）｜'+((sec.querySelector('h3')||{{}}).textContent||'').slice(0,40);li.append(mt,document.createElement('br'),t.value);
+if(ol.firstElementChild&&!ol.firstElementChild.classList.contains('h'))ol.firstElementChild.remove();ol.prepend(li);
+const hb=document.getElementById('histBtn');if(hb)hb.textContent='批示歷史（'+ol.querySelectorAll('li.h').length+'）';}}
 t.value='';sec.classList.add('shrunk');}}
 else s.textContent='送出失敗';return !!j.ok;}}catch(e){{s.textContent='送出失敗';return false;}}}}
 document.querySelectorAll('section h3').forEach(h=>h.addEventListener('click',()=>h.closest('section').classList.remove('shrunk')));
@@ -1932,9 +1951,11 @@ def research_page(key):
     except OSError:
         pass
     try:
-        todos = [t for t in json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8")) if t.get("狀態") != "完成"]
+        _all = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+        todos = [t for t in _all if t.get("狀態") != "完成"]
+        done_t = [t for t in _all if t.get("狀態") == "完成"][-40:][::-1]
     except (OSError, ValueError):
-        todos = []
+        todos, done_t = [], []
     who_opts = "".join(f'<option value="{v}">{n}</option>' for v, n in
                        (("note", "先記下（AI 巡視時會看）"), ("claude", "現在叫 Claude"), ("codex", "現在叫 Codex"), ("gemini", "現在叫 Gemini"), ("nvidia", "現在叫輝達"), ("deepseek", "現在叫 DeepSeek"), ("both", "現在叫大家")))
 
@@ -1951,6 +1972,14 @@ def research_page(key):
         rows_i.append(f'<section data-q="{_h.escape(num + title + src + st)}"><details><summary><b>{num}</b>　{_h.escape(title)}　<span class="st">{_h.escape(st)}</span>'
                       f'<span class="meta">　{_h.escape(src)}</span></summary><div class="md" data-md="{_h.escape(body)}"></div></details>{box("idea", num)}</section>')
     rows_t = []
+
+    def plain(t):
+        recs = [str(r.get("內容", r) if isinstance(r, dict) else r) for r in (t.get("紀錄") or [])]
+        why = next((x.split("白話：", 1)[1] for x in reversed(recs) if "白話：" in x), "")
+        why = re.split(r"[。；\n]", why)[0] if why else ""
+        now = re.sub(r"^\d\d-\d\d \d\d:\d\d \S+?：", "", recs[-1]) if recs else "還沒有進度"
+        out = (f"<div class=\"plain\">💬 {_h.escape(why[:110])}</div>" if why else "")
+        return out + f"<div class=\"plain\">📍 目前：{_h.escape(now[:110])}</div>"
     for t in sorted(todos, key=lambda t: ({"高": 0, "中": 1, "低": 2}.get(t.get("優先"), 3), t.get("id", 0))):
         log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))[:200]}</li>"
                        for r in (t.get("紀錄") or [])[-3:])
@@ -1963,7 +1992,7 @@ def research_page(key):
             if os.path.exists(cp):
                 card = f'<div class="md" data-md="{_h.escape(open(cp, encoding="utf-8").read()[:15000])}"></div>'
         rows_t.append(f'<section data-q="{_h.escape(str(t.get("標題", "")) + str(t.get("負責", "")))}"><details><summary><b>#{t["id"]}</b> [{_h.escape(str(t.get("優先", "")))}] {_h.escape(str(t.get("標題", "")))}'
-                      f'<div class="meta">負責：{_h.escape(str(t.get("負責", "")))}｜狀態：{_h.escape(str(t.get("狀態", "")))}｜點開看詳細</div></summary>'
+                      f'{plain(t)}<div class="meta">負責：{_h.escape(str(t.get("負責", "")))}｜狀態：{_h.escape(str(t.get("狀態", "")))}｜點開看詳細</div></summary>'
                       f'<div class="meta" style="margin:6px 0">{extra}</div>{f"<ul>{allrec}</ul>" if allrec else "<div class=meta>（還沒有進度紀錄）</div>"}{card}</details>'
                       f'{f"<ul>{log_}</ul>" if log_ else ""}{box("todo", t["id"])}</section>')
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1985,7 +2014,10 @@ button{{background:var(--acc);color:#fff;border:0;cursor:pointer}} .tabs button{
 <p class="meta">像在每一項旁邊寫便條：意見、方向、「這該怎麼做？」都可以，不用寫成公文。預設「先記下」，Claude 每小時巡視時會看新留言、整理後更新那一項；急的再選「現在叫誰」。</p>
 <div class="tabs"><button id="bi" class="on" onclick="tab('i')">研究想法（{len(ideas)}）</button> <button id="bt" onclick="tab('t')">待辦（{len(todos)}）</button>
 <input id="q" placeholder="篩選關鍵字" oninput="filt()"></div>
-<div id="pi">{"".join(rows_i) or "<p>沒有研究想法。</p>"}</div><div id="pt" hidden>{"".join(rows_t) or "<p>沒有待辦。</p>"}</div>
+<div id="pi">{"".join(rows_i) or "<p>沒有研究想法。</p>"}</div><div id="pt" hidden>{"".join(rows_t) or "<p>沒有待辦。</p>"}
+<details style="margin-top:14px"><summary><b>已完成的待辦（最近 {len(done_t)} 項，點開回看）</b></summary>
+{"".join(f'<section><details><summary><b>#{t["id"]}</b> {_h.escape(str(t.get("標題", "")))}{plain(t)}</summary><ul>' + "".join(f"<li>{_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))}</li>" for r in (t.get("紀錄") or [])) + '</ul></details></section>' for t in done_t)}
+</details></div>
 <script>
 const K={json.dumps(key)};
 function tab(x){{document.getElementById('pi').hidden=x!=='i';document.getElementById('pt').hidden=x!=='t';
@@ -2016,7 +2048,7 @@ def settings_page(key):
             continue
         c = cr.get(rid, {})
         opt = lambda vals, cur: "".join(f'<option{" selected" if v == cur else ""}>{_h.escape(v)}</option>' for v in vals)
-        rows.append(f'<tr><td>{_h.escape(r.name)}</td><td><select id="m_{rid}">{opt(models, c.get("model") or models[0])}</select></td>'
+        rows.append(f'<tr id="row_{rid}"><td>{_h.escape(r.name)}</td><td><select id="m_{rid}">{opt(models, c.get("model") or models[0])}</select></td>'
                     f'<td><select id="e_{rid}">{opt(efforts, c.get("effort") or efforts[0])}</select></td>'
                     f'<td><button onclick="saveCodex(\'{rid}\')">存</button> <span id="s_{rid}"></span></td></tr>')
     wakes = []
@@ -2067,7 +2099,8 @@ async function post(body,s){{s.textContent='存檔中…';try{{const r=await fet
 const j=await r.json();s.textContent=j.ok?'✓ 已存':'失敗：'+(j.error||'');}}catch(e){{s.textContent='失敗';}}}}
 function saveCodex(r){{post({{kind:'codex',room:r,model:document.getElementById('m_'+r).value,effort:document.getElementById('e_'+r).value}},document.getElementById('s_'+r));}}
 function saveWake(n){{post({{kind:'wake',name:n,keywords:document.getElementById('k_'+n).value,cooldown:document.getElementById('c_'+n).value}},document.getElementById('sw_'+n));}}
-</script></body></html>"""
+function hl(){{document.querySelectorAll('tr.hl').forEach(x=>x.classList.remove('hl'));const r=location.hash&&document.querySelector(location.hash);if(r){{r.classList.add('hl');r.scrollIntoView({{block:'center'}});}}}}hl();window.addEventListener('hashchange',hl);
+</script><style>tr.hl td{{background:rgba(255,200,0,.25)}}</style></body></html>"""
 
 
 def grant_write(name, dirs, room="", by="使用者按以後都允許"):

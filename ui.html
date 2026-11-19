@@ -175,6 +175,12 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 @media (min-width:1380px){#marksBtn{display:none}}
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
+.oldctx{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.oldctx .box{background:var(--bg);color:var(--ink);border-radius:12px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.oldctx .hd{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.oldctx .hd .x{margin-left:auto}
+.oldctx .bd{overflow:auto;padding:12px}
+.msg.hit .bubble{outline:2px solid var(--me);outline-offset:2px}
 .msg.flash .bubble{outline:2px solid var(--me);outline-offset:2px;transition:outline-color 1.5s}
 :root{--sidew:560px}
 #sidePane{position:fixed;right:0;top:56px;bottom:0;width:min(var(--sidew),100vw);background:var(--panel);border-left:1px solid var(--line);
@@ -281,13 +287,17 @@ function renderRooms(rooms){
   }
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
-  for(const [p, label] of [["decide", "待討論"], ["research", "研究"], ["changes", "變動"], ["settings", "設定"]]){
+  // Codex 01:37 補漏：四頁各自的圖示；另加「本房設定」直接定位到這個房間那一列
+  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"]]){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
-    b.textContent = "📋 " + label; b.title = label + "（右側面板）";
+    b.textContent = ic + " " + label; b.title = label + "（右側面板）";
     b.onclick = () => { openSide(p); renderRooms(rooms); };
     nav.appendChild(b);
   }
+  const rs = document.createElement("button"); rs.className = "pagebtn"; rs.textContent = "⚙️ 本房"; rs.title = "打開設定，定位到目前這個房間";
+  rs.onclick = () => { openSide("settings", "row_" + room, true); renderRooms(rooms); };
+  nav.appendChild(rs);
 }
 const WHO = {
   "使用者": {cls:"m-me", face:"f-me", ch:"你", name:"你"},
@@ -435,11 +445,23 @@ function jumpMark(b, tries = 0){
   const el = list.querySelector(`.msg[data-idx="${b.idx}"]`);
   if(!el){
     if(tries < 6) return setTimeout(() => jumpMark(b, tries + 1), 500);
-    return alert("這則太早了，畫面上沒有載入（只留最近 300 則）。完整紀錄在 logs 資料夾，或用搜尋找：" + b.text.slice(0, 30));
+    return showAround(b);   // Codex 01:37 補漏：太舊的書籤 → 跳出視窗載入前後各 6 則
   }
   el.scrollIntoView({behavior: "smooth", block: "center"});
   el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600);
   $("#marks").classList.remove("open");
+}
+async function showAround(b){
+  let d;
+  try{ d = await api(`/api/around?room=${encodeURIComponent(b.room)}&idx=${b.idx}`); }catch(e){ return alert("載入舊訊息失敗：" + e.message); }
+  const ov = document.createElement("div"); ov.className = "oldctx";
+  ov.innerHTML = `<div class="box"><div class="hd"><b>書籤附近的舊訊息</b>（${esc(b.room_name || b.room)}，第 ${b.idx + 1} 則前後）<button class="x" title="回到最新">✕ 回到最新</button></div><div class="bd"></div></div>`;
+  const bd = ov.querySelector(".bd");
+  d.messages.forEach((m, k) => { const el = render(m, d.start + k); if(d.start + k === b.idx) el.classList.add("flash", "hit"); bd.appendChild(el); });
+  const close = () => ov.remove();
+  ov.querySelector(".x").onclick = close; ov.onclick = e => { if(e.target === ov) close(); };
+  document.body.appendChild(ov); $("#marks").classList.remove("open");
+  const hit = bd.querySelector(".hit"); if(hit) hit.scrollIntoView({block: "center"});
 }
 function showEmpty(){
   list.innerHTML = `<div class="empty"><div class="big">開始一段討論</div>
@@ -656,9 +678,14 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
 const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
-function openSide(name){
+function openSide(name, hash, keep){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
-  if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open", "side-max"); return; }
+  if(hash){   // 定位到某一列（本房設定）
+    const ex = pane.querySelector(`iframe[data-p="${name}"]`);
+    if(ex){ try{ ex.contentWindow.location.hash = hash; }catch(e){} }
+    else setTimeout(() => { const f = pane.querySelector(`iframe[data-p="${name}"]`); if(f) f.onload = () => { try{ f.contentWindow.location.hash = hash; }catch(e){} }; }, 0);
+  }
+  if(pane.dataset.cur === name && !pane.hidden && !keep){ pane.hidden = true; document.body.classList.remove("side-open", "side-max"); return; }
   pane.hidden = false; pane.dataset.cur = name; document.body.classList.add("side-open");
   pane.querySelectorAll(".side-tabs button[data-p]").forEach(b => b.classList.toggle("sel", b.dataset.p === name));
   // Codex 00:47：切換會重載、草稿消失 → 每頁一個 iframe，只切換顯示，寫到一半的留言保留
