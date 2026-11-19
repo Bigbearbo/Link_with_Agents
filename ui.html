@@ -371,6 +371,11 @@ function decorate(bub, m){
 let marks = [], roomNames = {};
 const markId = idx => `${room}-${idx}`;
 function marked(idx){ return marks.some(b => b.id === markId(idx)); }
+// 使用者 23:04：「約 00:44 用完」少了日期，看起來像今晚就用完 → 不是今天就連日期一起顯示
+function whenStr(t){
+  const now = new Date(), mmdd = String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+  return (t.length >= 11 && t.slice(0, 5) !== mmdd) ? t.slice(-11) : t.slice(-5);
+}
 function renderMarks(){
   const box = $("#marksList");
   if(!marks.length){ box.className = "none"; box.textContent = "還沒有書籤。滑到發言上，點名字前面的 🔖 加入。"; return; }
@@ -470,7 +475,7 @@ async function loadUsage(){
         const cls = w.state === "超速" ? "hot" : w.state === "略快" ? "warn" : "";
         const tick = (w.elapsed != null) ? `<span class="u-tick" style="left:calc(${Math.min(100,w.elapsed)}% - 1px)"></span>` : "";
         const right = w.count ? w.count : `${Math.round(w.used)}%`;
-        const sub = [w.state && w.state !== "正常" ? w.state : "", w.empty_at ? `約 ${esc(w.empty_at.slice(-5))} 用完` : "",
+        const sub = [w.state && w.state !== "正常" ? w.state : "", w.empty_at ? `約 ${esc(whenStr(w.empty_at))} 用完` : "",
                      w.resets ? `${esc(w.resets)} 重置` : ""].filter(Boolean).join("・");
         return `<div class="u-win"><div class="u-row"><span>${esc(w.label)}</span><b>${right}</b></div>
           <div class="u-bar"><div class="u-fill ${cls}" style="width:${Math.min(100,w.used)}%"></div>${tick}</div>
