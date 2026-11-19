@@ -42,6 +42,7 @@ def make_gemini(room):
     return rt.GeminiAgent("Gemini")
 
 
+SUB_POSTERS = ("流程優化員", "手搓匠")  # 使用者 11-20 07:44：外部／子代理暫時接入的發言入口（用網頁金鑰，/api/agent_says 帶 who）
 APP_POSTERS = ("視窗Gemini", "Dot")  # 使用者 11-19：App 裡的 AI 經雲端硬碟「發言」資料夾貼到群組（drive_post.py 代送）
 NVIDIA_IN_WINDOW = True  # 使用者 11-18 21:2x：輝達也搬家，住 OpenCode 視窗（H:\免費模型用）；False＝回到舊的工具迴圈
 
@@ -1405,7 +1406,7 @@ def make_handler(hub):
                 # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
                 text = (data.get("text") or "").strip()
                 # 使用者 11-19 01:4x：App 裡的 AI（視窗Gemini、Dot）從雲端硬碟「發言」資料夾貼文，由本機 drive_post.py 代送
-                app_ai = data.get("who") if (p == "/api/agent_says" and not agent and data.get("who") in APP_POSTERS) else None
+                app_ai = data.get("who") if (p == "/api/agent_says" and not agent and data.get("who") in APP_POSTERS + SUB_POSTERS) else None
                 who = agent or app_ai or ("Codex" if (p == "/api/agent_says" and data.get("who") == "Codex") else "Claude")
                 if text.startswith("{"):   # 方言：把發送箱的 JSON 整包當文字貼（輝達 21:41 一則重複兩次，一次是 JSON 原樣）
                     try:
@@ -1428,7 +1429,7 @@ def make_handler(hub):
                         return self._json({"ok": True, "duplicate": True})
                     hub.seen_posts.append(cid)
                     del hub.seen_posts[:-200]
-                room.add(who, text, {"Codex": "App", "Gemini": "agy"}.get(who, "雲端硬碟" if app_ai else "回覆"))
+                room.add(who, text, {"Codex": "App", "Gemini": "agy"}.get(who, ("子代理" if who in SUB_POSTERS else "雲端硬碟") if app_ai else "回覆"))
                 if app_ai:  # 只認行首 @點名（有接力上限），不觸發 Claude／Codex 自動輪流
                     threading.Thread(target=room.auto_next, args=(None, text, app_ai), daemon=True).start()
                 if agent:  # 視窗 agent 行首 @誰 照常點名（有接力上限）；它自己不會被叫

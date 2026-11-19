@@ -367,7 +367,7 @@ function appendMsg(m, idx){
 }
 function render(m, idx){
   // 不認得的發言者（例如共用區 inbox 的「視窗Claude」「GPT」）：用一般對話框，名字照寫
-  const w = WHO[m.who] || ((m.src === "共用區" || /^小AI/.test(m.who || "")) ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
+  const w = WHO[m.who] || ((m.src === "共用區" || m.src === "子代理" || m.src === "雲端硬碟" || /^小AI/.test(m.who || "")) ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
   const el = document.createElement("div");
   el.className = "msg " + w.cls + (m.kind === "note" ? " note" : "");
   el.dataset.idx = idx;
