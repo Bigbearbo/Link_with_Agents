@@ -1795,6 +1795,7 @@ def decisions_page(key):
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:860px;margin:0 auto;padding:16px}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}}
+section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
@@ -1858,6 +1859,7 @@ def research_page(key):
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:16px}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0}}
+section{{overflow-wrap:anywhere;min-width:0}} .row{{display:flex;flex-wrap:wrap;align-items:center;gap:6px}} select{{max-width:100%}} body{{overflow-x:hidden}}
 summary{{cursor:pointer}} .meta{{color:var(--mute);font-size:13px}} .st{{font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em;margin:4px 0}}
 .md{{border-top:1px solid var(--line);margin-top:8px;padding-top:6px;font-size:14px;overflow-wrap:anywhere}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:44px;margin-top:6px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit}}
