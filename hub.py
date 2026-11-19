@@ -203,7 +203,11 @@ class Room:
                     "補完把 `H:\\Agent共用\\待補註解.md` 那行打勾。不用道歉，補註解就好。")).start()
             except OSError:
                 pass
-        _pick = re.findall(r"@(groq|cohere|nvidia|cloudflare|google)\b", text or "", re.I) if who == "使用者" else []
+        _pick = [("nvidia" if x.lower() == "nim" else x) for x in
+                 re.findall(r"@(groq|cohere|nvidia|nim|cloudflare|google)\b", text or "", re.I)] if who == "使用者" else []  # @nim＝NVIDIA NIM，不會被當成 @輝達
+        if who == "使用者":   # 「問大家」名單裡設成「群」的小 AI（user_says 放進來，用一次就清掉）
+            _pick += getattr(self, "_group_small", [])
+            self._group_small = []
         if _pick:
             # 使用者 11-20 04:35：免費池日次數型小 AI 做點名鈕，沒事叫出來看看好不好用 → 訊息裡 @groq 等就叫那家回一則（過隱私篩）
             def _small(names=[x.lower() for x in dict.fromkeys(_pick)], t=text):
@@ -366,6 +370,8 @@ class Room:
                 text = text[m.end():]
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
+                # 使用者 11-20 04:47：小 AI 也有「群／略」；s:nvidia 是 NVIDIA NIM，和輝達（nvidia）分開
+                self._group_small = [m[2:] for m in members if m in ("s:groq", "s:cohere", "s:nvidia", "s:cloudflare", "s:google")]
                 picked = [m for m in members if m in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot")]  # 照名單順序（Telegram「先回」排第一）
                 # 11-19 08:56 Codex 抓到：使用者寫「點名deepseek，…」（句中自然語句）沒被認出來 → 句中「點名 X」把 X 排第一個
                 nm = re.search(r"點名\s*[@＠]?\s*(claude|codex|gemini|nvidia|輝達|deepseek)", text, re.I)

@@ -102,6 +102,12 @@ footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16p
 .seg button.skip{padding:0 6px;font-size:11px;color:var(--muted);border-left:1px dashed var(--line);min-width:0}
 .seg button.skip{background:rgba(46,158,107,.16);color:#1f7a52;font-weight:600}
 #target.solo-mode button.skip{opacity:.35}
+/* 小 AI：往右浮出，不擠原橫條；窄畫面改往上 */
+#smallWrap{position:relative;display:inline-flex}
+#smallBtns{position:absolute;left:calc(100% + 4px);top:0;z-index:60;display:flex;white-space:nowrap;background:var(--panel);box-shadow:var(--shadow)}
+#smallBtns[hidden]{display:none}
+#smallBtns .smi{display:inline-flex}
+@media (max-width:900px){#smallBtns{left:0;top:auto;bottom:calc(100% + 4px);flex-direction:column}}
 /* 只問按鈕的用量警示：底線顏色＝那位的額度狀況（只提示，不擋） */
 #target button.risk1{box-shadow:inset 0 -3px 0 #d99a1e}
 #target button.risk2{box-shadow:inset 0 -3px 0 #d9483b;color:#d9483b}
@@ -238,8 +244,10 @@ body.fold .m-sys .bubble::after{display:none}
   </div>
   <div class="tools">
     <span class="seg" id="target">
-      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="deepseek" title="付費（便宜），Claude 管">只問 DeepSeek</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button><button id="smallToggle" title="免費池的小 AI：點名叫出來試試（使用者 11-20 04:35）">小AI ▸</button><span id="smallBtns" hidden><button class="sm" data-n="groq">groq</button><button class="sm" data-n="cloudflare">cloudflare</button><button class="sm" data-n="nvidia">nvidia</button><button class="sm" data-n="cohere">cohere</button><button class="sm" data-n="google">google</button></span>
+      <button data-t="both" class="sel">問大家</button><button data-t="claude">只問 Claude</button><button data-t="codex">只問 Codex</button><button data-t="gemini">只問 Gemini</button><button data-t="nvidia">只問 輝達</button><button data-t="deepseek" title="付費（便宜），Claude 管">只問 DeepSeek</button><button data-t="dot" title="Dot 不即時在線：會留點名單，它巡檢時才回">只問 Dot</button><button data-t="note" title="只存進討論，不叫醒任何人；下次叫他們時會一起看到">只記下</button>
     </span>
+    <!-- 使用者 11-20 04:47：小 AI 按鈕往右浮出、不佔原橫條；每家附「群／略」 -->
+    <span id="smallWrap"><button id="smallToggle" title="免費池的小 AI：點名叫出來試試（使用者 11-20 04:35）">小AI ▸</button><span id="smallBtns" class="seg" hidden><span class="smi"><button class="sm" data-n="groq">groq</button></span><span class="smi"><button class="sm" data-n="cloudflare">cloudflare</button></span><span class="smi"><button class="sm" data-n="nvidia" title="NVIDIA NIM（和「輝達」OpenCode 是不同通道）">nvidia NIM</button></span><span class="smi"><button class="sm" data-n="cohere">cohere</button></span><span class="smi"><button class="sm" data-n="google">google</button></span></span></span>
     <button id="order" title="切換誰先發言">Claude 先講</button>
     <span class="spacer"></span>
     <button id="more">讓他們繼續討論</button>
@@ -564,10 +572,13 @@ loadUsage(); setInterval(loadUsage, 60000);
 (() => {
   const tg = document.getElementById("smallToggle"), box2 = document.getElementById("smallBtns");
   if(!tg) return;
-  tg.onclick = e => { e.preventDefault(); box2.hidden = !box2.hidden; tg.textContent = box2.hidden ? "小AI ▸" : "小AI ◂"; };
+  const lab = () => tg.textContent = (box2.hidden ? "小AI ▸" : "小AI ◂") + (tg.dataset.on || "");
+  tg.onclick = e => { e.preventDefault(); box2.hidden = !box2.hidden; lab(); };
+  lab();
+  document.addEventListener("click", e => { if(!box2.hidden && !document.getElementById("smallWrap").contains(e.target)){ box2.hidden = true; lab(); } });
   box2.querySelectorAll("button.sm").forEach(b => b.onclick = e => {
     e.preventDefault();
-    const inp = document.getElementById("box"), tag = "@" + b.dataset.n + " ";
+    const inp = document.getElementById("box"), tag = "@" + (b.dataset.n === "nvidia" ? "nim" : b.dataset.n) + " ";
     if(!inp.value.includes(tag.trim())) inp.value = tag + inp.value;
     const nb = document.querySelector('button[data-t="note"]'); if(nb) nb.click();
     inp.focus();
@@ -667,9 +678,13 @@ const GROUP_ORDER = ["claude", "codex", "gemini", "nvidia", "deepseek", "dot"];
 const GROUP_NAME = {claude:"Claude", codex:"Codex", gemini:"Gemini", nvidia:"輝達", deepseek:"DeepSeek", dot:"Dot"};
 let group = {claude:true, codex:true, gemini:true, nvidia:false, deepseek:false, dot:false};
 try{ Object.assign(group, JSON.parse(localStorage.getItem("rt-group") || "{}")); }catch(e){}
-function groupMembers(){ return GROUP_ORDER.filter(k => group[k]); }
+// 小 AI 也能進「問大家」：鍵加 s: 前綴，NVIDIA NIM（s:nvidia）和輝達 OpenCode（nvidia）分開開關；預設都「略」
+const SMALL_ORDER = ["s:groq", "s:cloudflare", "s:nvidia", "s:cohere", "s:google"];
+for(const k of SMALL_ORDER){ GROUP_NAME[k] = "小AI·" + (k === "s:nvidia" ? "NVIDIA NIM" : k.slice(2)); if(!(k in group)) group[k] = false; }
+try{ Object.assign(group, JSON.parse(localStorage.getItem("rt-group") || "{}")); }catch(e){}
+function groupMembers(){ return GROUP_ORDER.concat(SMALL_ORDER).filter(k => group[k]); }
 function renderGroup(){
-  document.querySelectorAll("#target button.skip").forEach(s => {
+  document.querySelectorAll("#target button.skip, #smallBtns button.skip").forEach(s => {
     const k = s.dataset.a, on = group[k];
     s.classList.toggle("off", !on);
     s.textContent = on ? "群" : "略";
@@ -677,6 +692,9 @@ function renderGroup(){
   });
   const all = document.querySelector('#target button[data-t="both"]');
   const names = groupMembers().map(k => GROUP_NAME[k]);
+  const sOn = SMALL_ORDER.filter(k => group[k]).length, tgl = document.getElementById("smallToggle");
+  if(tgl){ tgl.dataset.on = sOn ? ` ·群${sOn}` : "";
+    tgl.textContent = (document.getElementById("smallBtns").hidden ? "小AI ▸" : "小AI ◂") + tgl.dataset.on; }
   if(all){ all.textContent = `問大家（${names.length}）`; all.title = "會問：" + (names.join("、") || "（沒人，改問 Claude）"); }
 }
 for(const k of GROUP_ORDER){
@@ -685,6 +703,15 @@ for(const k of GROUP_ORDER){
   const s = document.createElement("button");
   s.className = "skip"; s.dataset.a = k;
   s.onclick = e => { e.stopPropagation(); group[k] = !group[k];
+    try{ localStorage.setItem("rt-group", JSON.stringify(group)); }catch(err){} renderGroup(); };
+  b.after(s);
+}
+for(const k of SMALL_ORDER){
+  const b = document.querySelector(`#smallBtns button.sm[data-n="${k.slice(2)}"]`);
+  if(!b) continue;
+  const s = document.createElement("button");
+  s.className = "skip"; s.dataset.a = k;
+  s.onclick = e => { e.stopPropagation(); e.preventDefault(); group[k] = !group[k];
     try{ localStorage.setItem("rt-group", JSON.stringify(group)); }catch(err){} renderGroup(); };
   b.after(s);
 }
