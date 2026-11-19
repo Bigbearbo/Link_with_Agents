@@ -173,6 +173,14 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
 .msg.flash .bubble{outline:2px solid var(--me);outline-offset:2px;transition:outline-color 1.5s}
+#sidePane{position:fixed;right:0;top:56px;bottom:0;width:min(560px,100vw);background:var(--panel);border-left:1px solid var(--line);
+  z-index:20;display:flex;flex-direction:column;box-shadow:-4px 0 16px rgba(0,0,0,.08)}
+#sidePane[hidden]{display:none}
+#sidePane .side-tabs{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}
+#sidePane .side-tabs button{border-radius:999px;padding:3px 12px}
+#sidePane .side-tabs button.sel{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#sideFrame{flex:1;border:0;width:100%;background:var(--bg)}
+@media (min-width:1100px){body.side-open main,body.side-open footer{margin-right:560px}body.side-open #usage{display:none}}
 .cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px}.cp:hover{opacity:1}
 a.fp{font-family:Consolas,monospace;font-size:.92em}
 /* 收合模式：每則只顯示 小標題＋三行，點一下展開 */
@@ -203,6 +211,9 @@ body.fold .m-sys .bubble::after{display:none}
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
 <div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
+<aside id="sidePane" hidden><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button>
+<span class="spacer"></span><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
+<iframe id="sideFrame" title="側邊頁"></iframe></aside>
 <aside id="marks"><h3>🔖 書籤</h3><div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div></aside>
 <footer><div class="composer">
   <div id="approval" class="approval" hidden>
@@ -619,9 +630,20 @@ document.querySelectorAll("#target button:not(.skip)").forEach(b => b.onclick = 
   box.focus();
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
-$("#changes").onclick = () => window.open("/變動?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "changes");
-$("#decide").onclick = () => window.open("/待討論?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "decide");
-$("#research").onclick = () => window.open("/研究?k=" + encodeURIComponent(new URLSearchParams(location.search).get("k") || ""), "research");
+// 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
+const SIDE_PAGES = {decide: ["待討論", "/待討論"], research: ["研究", "/研究"], changes: ["變動", "/變動"]};
+function openSide(name){
+  const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
+  if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open"); return; }
+  pane.hidden = false; pane.dataset.cur = name; document.body.classList.add("side-open");
+  pane.querySelectorAll(".side-tabs button[data-p]").forEach(b => b.classList.toggle("sel", b.dataset.p === name));
+  const f = $("#sideFrame"), url = SIDE_PAGES[name][1] + "?k=" + k;
+  if(f.dataset.url !== url){ f.dataset.url = url; f.src = url; }
+}
+for(const n of Object.keys(SIDE_PAGES)) $("#" + n).onclick = () => openSide(n);
+document.querySelectorAll("#sidePane .side-tabs button[data-p]").forEach(b => b.onclick = () => openSide(b.dataset.p));
+$("#sideClose").onclick = () => { $("#sidePane").hidden = true; document.body.classList.remove("side-open"); };
+$("#sideReload").onclick = () => { const f = $("#sideFrame"); f.src = f.dataset.url || f.src; };
 $("#apAllow").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, room}); };
 $("#apAlways").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: true, always: true, room}); };
 $("#apDeny").onclick = () => { $("#approval").hidden = true; api("/api/approve", {allow: false, room}); };
