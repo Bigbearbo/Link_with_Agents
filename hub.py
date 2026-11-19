@@ -1939,7 +1939,7 @@ if __name__ == "__main__":
         def recent_msgs(hours=2):
             out = []
             cut = time.time() - hours * 3600
-            for rid in ("main", "g1004308131170"):
+            for rid in ("g1004308131170",):  # Codex 09:14：主討論是使用者的私人對話，不外送給免費模型；只送機器人互相討論群
                 r = hub.rooms.get(rid)
                 for m in (r.transcript[-80:] if r else []):
                     if m.get("who") == "系統":
@@ -1959,9 +1959,14 @@ if __name__ == "__main__":
             if not msgs:
                 return "（最近 2 小時群組沒有新訊息）"
             try:
-                return paper.brief_for(name, rule.get("關鍵字") or [], msgs, sw.digest(rule, since)) or "（派報員這次沒產出）"
+                ch = sw.digest(rule, since)
+                out = paper.brief_for(name, rule.get("關鍵字") or [], msgs, ch)
+                with open(os.path.join(HERE, "logs", "派報.jsonl"), "a", encoding="utf-8") as f:  # Codex 09:14：實測省多少、錯漏多少
+                    f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": name, "原文字數": sum(len(x[2]) for x in msgs) + len(ch),
+                                        "導讀字數": len(out or ""), "訊息則數": len(msgs)}, ensure_ascii=False) + "\n")
+                return out or "（⚠ 派報員整理失敗：小模型沒產出——不代表沒有新事，請自己看群組）"
             except Exception as e:
-                return f"（派報員失敗：{type(e).__name__}）"
+                return f"（⚠ 派報員整理失敗：{type(e).__name__}——不代表沒有新事，請自己看群組）"
 
         while True:
             if cycle % 4 == 0:                              # 每 2 小時派一次報（含 DeepSeek，寫到它家 派報.md）
