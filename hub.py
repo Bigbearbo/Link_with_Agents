@@ -2237,6 +2237,8 @@ if __name__ == "__main__":
                     log(f"訂閱摘要失敗 {name}：{type(e).__name__} {e}")
             time.sleep(1800)
     threading.Thread(target=subscription_loop, daemon=True).start()
+    import 派報生   # 使用者 11-20 00:22：訂閱＋提前喚醒規則（各自的 訂閱.json「喚醒」）
+    threading.Thread(target=lambda: 派報生.wake_loop(hub, log), daemon=True).start()
 
     def dispatch_loop():
         """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。

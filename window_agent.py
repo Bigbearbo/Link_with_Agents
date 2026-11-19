@@ -54,7 +54,16 @@ class WindowAgent(rt.Agent):
         n = NUDGE_COUNT.get(key, 0)
         if (new or time.time() - LAST_NUDGE.get(key, 0) > NUDGE_GAP) and n < NUDGE_MAX:
             if opencode_busy(self.name):
-                r = "它正在忙，這次先不叫（下次有人找它時再試）"
+                r = "它正在忙，2 分鐘後單還在就再叫一次"
+                # Gemini 11-20 00:20：21:41 被跳過後沒人再點名，單變成孤兒掛到半夜 → 2 分鐘後還在、它也不忙了就補叫
+                def retry(name=self.name, rid=self.room_id or "main", path=p, k=key):
+                    if os.path.exists(path) and not opencode_busy(name):
+                        LAST_NUDGE[k] = time.time()
+                        rr = nudge(name, rid, again=True)
+                        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "叫醒.log"), "a", encoding="utf-8") as f:
+                            f.write(f"{time.strftime('%m-%d %H:%M:%S')} {name} {rid} 忙完補叫 {rr}\n")
+                import threading as _th
+                _th.Timer(120, retry).start()
             else:
                 LAST_NUDGE[key] = time.time()
                 r = nudge(self.name, self.room_id or "main", again=not new)
