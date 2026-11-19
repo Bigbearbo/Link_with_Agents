@@ -1412,21 +1412,28 @@ TG_SHOW = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "
 
 
 def tg_members(room, text):
-    """Telegram 的回話名單（使用者 11-19 08:47）。設定存在 telegram-設定.json：{"開": [...], "先回": "claude"}。
-    ・訊息開頭「開 Gemini」「關 Codex」「開 輝達 DeepSeek」：改名單，回一則目前設定，這則不叫 AI。
-    ・開頭「先回 Gemini」：設定誰第一個回。
+    """Telegram 的回話名單（使用者 11-19 08:47；Codex 08:49 補：開頭指令後面可以接正文、每個房間分開存）。
+    設定存在 telegram-設定.json：{房間id: {"開": [...], "先回": "claude"}}。
+    ・開頭「開 Gemini」「關 Codex」「先回 Gemini」（可連寫多段，用 ；，或換行隔開），後面可以接正文：先存設定、回一行目前設定，再把正文照新設定派送。
     ・開頭點名（@Gemini …）：照點名回答，並把第一個被點名的設成「先回」。
     ・都沒有：照名單問大家，「先回」排第一。回傳 (要繼續處理的文字或 None, 名單)。"""
     try:
-        cfg = json.load(open(TG_SETTINGS, encoding="utf-8"))
+        allcfg = json.load(open(TG_SETTINGS, encoding="utf-8"))
+        if "開" in allcfg:                      # 舊格式（整份一組）→ 轉成按房間存
+            allcfg = {room.id: allcfg}
     except (OSError, ValueError):
-        cfg = {"開": ["claude", "codex", "gemini"], "先回": "claude"}
+        allcfg = {}
+    cfg = allcfg.get(room.id) or {"開": ["claude", "codex", "gemini"], "先回": "claude"}
     on, first = list(cfg.get("開", [])), cfg.get("先回", "claude")
-    m = re.match(r"\s*(開|關|先回)\s*[:：]?\s*((?:[A-Za-z]+|輝達)(?:[\s,，、]+(?:[A-Za-z]+|輝達))*)\s*$", text)
-    if m:
+    changed = False
+    pat = re.compile(r"\s*(開|關|先回)\s*[:：]?\s*((?:[A-Za-z]+|輝達)(?:[ \t,，、]+(?:[A-Za-z]+|輝達))*)\s*(?:[；;。\n]|$)")
+    while True:
+        m = pat.match(text)
+        if not m:
+            break
         who = [TG_NAMES[w.lower()] for w in re.findall(r"[A-Za-z]+|輝達", m.group(2)) if w.lower() in TG_NAMES]
         if not who:
-            return text, on
+            break
         if m.group(1) == "開":
             on += [w for w in who if w not in on]
         elif m.group(1) == "關":
@@ -1434,15 +1441,18 @@ def tg_members(room, text):
         else:
             first = who[0]
             on += [first] if first not in on else []
-        cfg.update({"開": on, "先回": first, "更新": time.strftime("%m-%d %H:%M")})
-        json.dump(cfg, open(TG_SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-        room.notice("Telegram 回話設定：開＝" + "、".join(TG_SHOW[w] for w in on) + f"；先回＝{TG_SHOW.get(first, first)}"
-                    "（指令：「開 名字」「關 名字」「先回 名字」；點名誰，誰就變成先回）")
-        return None, on
+        text, changed = text[m.end():].lstrip(" ，,、；;\n"), True
     mm = re.match(r"\s*@\s*([A-Za-z]+|輝達)", text)
-    if mm and mm.group(1).lower() in TG_NAMES and mm.group(1).lower() not in ("all",):
-        cfg["先回"] = TG_NAMES[mm.group(1).lower()]
-        json.dump(cfg, open(TG_SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    if mm and mm.group(1).lower() in TG_NAMES:
+        first, changed = TG_NAMES[mm.group(1).lower()], True
+    if changed:
+        allcfg[room.id] = {"開": on, "先回": first, "更新": time.strftime("%m-%d %H:%M")}
+        json.dump(allcfg, open(TG_SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        room.notice("Telegram 回話設定（這個房間）：開＝" + ("、".join(TG_SHOW[w] for w in on) or "（沒有）")
+                    + f"；先回＝{TG_SHOW.get(first, first)}（指令：「開 名字」「關 名字」「先回 名字」，後面可以接正文；點名誰，誰就變成先回）")
+    if not text.strip():
+        return None, on
+    if mm:
         return text, None                                  # 有點名：照點名走（原本的規則）
     order = [first] + [w for w in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") if w in on and w != first]
     return text, [w for w in order if w in on or w == first]
