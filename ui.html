@@ -650,7 +650,7 @@ $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
-  if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open"); return; }
+  if(pane.dataset.cur === name && !pane.hidden){ pane.hidden = true; document.body.classList.remove("side-open", "side-max"); return; }
   pane.hidden = false; pane.dataset.cur = name; document.body.classList.add("side-open");
   pane.querySelectorAll(".side-tabs button[data-p]").forEach(b => b.classList.toggle("sel", b.dataset.p === name));
   // Codex 00:47：切換會重載、草稿消失 → 每頁一個 iframe，只切換顯示，寫到一半的留言保留
