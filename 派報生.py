@@ -10,7 +10,7 @@ r"""派報生：每位 AI 訂閱自己想追的消息，並自己設定「什麼
   - 自己造成的變動、自己的發言不算；同一位冷卻時間內只叫一次
   python 派報生.py 巡視      總指揮巡視報告（印出並寫 H:\Agent共用\總指揮日誌.md）
 """
-import json, os, re, time
+import json, os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHARED = r"H:\Agent共用"
@@ -77,6 +77,49 @@ def matches(name, wake, changes, msgs):
     return None
 
 
+def all_hits(name, wake, changes, msgs, limit=6):
+    """所有符合的消息（給小 AI 編新聞用），最多 limit 則。"""
+    out, seen = [], set()
+    kws = [k for k in wake.get("關鍵字", []) if k]
+    src = wake.get("來源") or ["變動", "群組"]
+    if "變動" in src:
+        for r in changes:
+            if name and name in (r.get("負責") or ""):
+                continue
+            hay = f"{r.get('路徑', '')} {r.get('負責', '')} {r.get('摘要', '')}"
+            if any(k.lower() in hay.lower() for k in kws) and hay not in seen:
+                seen.add(hay)
+                out.append(f"共用區{r.get('類', '')}｜{r.get('路徑', '')}｜{r.get('負責', '')}｜{(r.get('摘要') or '')[:120]}")
+    if "群組" in src:
+        for who, t, text in msgs:
+            if who != name and any(k.lower() in (text or "").lower() for k in kws):
+                out.append(f"機器人群 {who} {t}｜{(text or '').strip()[:300]}")
+    return out[:limit]
+
+
+def news_router(name, wake, hits):
+    """使用者 11-20 02:47／02:48：「小 AI 當報紙新聞員，幫忙整理其他 AI 感興趣的資訊，再依條件發送；
+    報錯其實就是一種即時派報，小 AI 先檢查決定要不要叫醒 AI」「就是程式喚醒再加一層小 AI 當路由」。
+    程式關鍵字先篩出候選 → 小 AI 編成新聞（發生了什麼／為什麼跟你有關／原文在哪）並決定：即時叫醒 or 放進下一期摘要。
+    只送共用區變動摘要和機器人群內容（不送主討論私聊）；用免費 groq。小 AI 失敗就退回原本的程式叫醒。
+    回 (叫醒?, 新聞文字)。"""
+    try:
+        import importlib
+        sys.path.insert(0, r"H:\Agent共用\ai-call")
+        pool = importlib.import_module("免費AI池")
+        interest = wake.get("興趣") or "、".join(wake.get("關鍵字", []))
+        prompt = (f"你是派報新聞員，替 AI 同事「{name}」整理消息。{name} 關心：{interest}。\n"
+                  f"即時叫醒的條件：{wake.get('叫醒條件') or '需要他現在動手（他負責的東西壞了、有人在等他、點名問他），只是資訊更新就放下一期摘要'}。\n"
+                  "候選消息：\n" + "\n".join("- " + h for h in hits) +
+                  '\n只回 JSON：{"叫醒": true 或 false, "新聞": "2～4 行繁體中文：發生了什麼；為什麼跟他有關；原文在哪（照抄路徑或誰幾點說的）"}')
+        raw = pool.ask("groq", prompt, max_tokens=1200, timeout=40)
+        m = re.search(r"\{.*\}", raw or "", re.S)
+        j = json.loads(m.group(0))
+        return bool(j.get("叫醒")), str(j.get("新聞") or "").strip()
+    except Exception:
+        return True, ""
+
+
 def wake_loop(hub, log):
     """中樞背景執行：每 2 分鐘掃一次，符合就叫醒（視窗 agent 用叫醒通道，其他用群組點名）。"""
     import window_agent as wa
@@ -105,9 +148,19 @@ def wake_loop(hub, log):
                 hit = matches(name, wake, changes, msgs)
                 if not hit:
                     continue
-                cooldown[name] = time.time()
                 kw, why = hit
-                text = f"【派報生】你訂的「{kw}」有新消息：{why}。要不要處理你自己決定；規則在 {SUBS[name]}。"
+                urgent, news = news_router(name, wake, all_hits(name, wake, changes, msgs))
+                if not urgent:   # 小 AI 判斷不急 → 放進下一期摘要，不叫醒
+                    os.makedirs(os.path.join(HERE, "logs", "派報"), exist_ok=True)
+                    with open(os.path.join(HERE, "logs", "派報", f"{name}-下一期.md"), "a", encoding="utf-8") as f:
+                        f.write(f"\n## {time.strftime('%m-%d %H:%M')}（訂閱「{kw}」）\n{news or why}\n")
+                    with open(WAKE_LOG, "a", encoding="utf-8") as f:
+                        f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": name, "關鍵字": kw, "原因": why,
+                                            "結果": "小 AI 判斷不急，放下一期摘要"}, ensure_ascii=False) + "\n")
+                    continue
+                cooldown[name] = time.time()
+                text = (f"【派報生】{news}\n（你訂的「{kw}」；小 AI 判斷要現在叫你。規則在 {SUBS[name]}）" if news else
+                        f"【派報生】你訂的「{kw}」有新消息：{why}。要不要處理你自己決定；規則在 {SUBS[name]}。")
                 if name in wa.HOMES:
                     r = wa.nudge(name, "g1004308131170", custom=text)
                 elif room and name in ("DeepSeek", "Codex", "Claude"):
