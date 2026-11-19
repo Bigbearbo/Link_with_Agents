@@ -191,6 +191,16 @@ class Room:
         """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
         kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
+        if who == "使用者" and CORRECTION_RE.search(text or ""):
+            # 使用者 16:36：「AI 被更正後……先道歉反省保證改進，可能寫入記憶，然後沒了」→ 被更正就留一張待補註解，不靠 AI 自己記得
+            try:
+                with open(r"H:\Agent共用\待補註解.md", "a", encoding="utf-8") as f:
+                    f.write(f"- [ ] {self.name} {entry['time']}：{(text or '')[:80].replace(chr(10), ' ')}\n")
+                threading.Timer(1, lambda: self.notice(
+                    "📝 這則像是更正：本輪回覆的 AI 請順手補一條 `誤會更正.md`（或 `註解.md`），標題寫被誤會那則的房間和時間；"
+                    "補完把 `H:\\Agent共用\\待補註解.md` 那行打勾。不用道歉，補註解就好。")).start()
+            except OSError:
+                pass
         if who != "系統" and ("轉譯" in (text or "")[:12]):   # 轉譯提案（使用者 14:48）
             try:
                 msg = dialect.handle_proposal(who, text, set(self.hub.rooms))
@@ -1480,6 +1490,7 @@ def render_perm_page():
         f.write("\n".join(out) + "\n")
 
 
+CORRECTION_RE = re.compile(r"^(我是指|我是說|我指的是|不是這個意思|你(們)?誤會|你(們)?搞錯|你(們)?理解錯|我的意思是|不是啦|不對，)|誤會了|搞錯了|歪錯重點")   # 使用者更正的說法（16:36 待補註解）
 ROUTE_HINT = r"H:\免費模型用\路由建議.json"   # 輝達當路由員：{"先回": "deepseek", "原因": "..."}，2 小時內有效
 
 
