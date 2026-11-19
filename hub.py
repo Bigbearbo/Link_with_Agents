@@ -251,6 +251,10 @@ class Room:
         self.add("使用者", text, src, kind="note")
 
     def user_says(self, text, src, target="both", members=None):
+        if src == "Telegram" and target == "both":
+            text, members = tg_members(self, text)          # 使用者 11-19 08:47：Telegram 用設定檔決定誰回、誰先回
+            if text is None:
+                return
         picked = []  # 開頭連續點名＝串接：「@Gemini @輝達 …」依序回答，後面的看得到前面的回答；@all／@大家＝四位
         if target == "both":  # 也接受開頭寫「（只問 Gemini）」
             while True:
@@ -264,7 +268,7 @@ class Room:
                 text = text[m.end():]
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
-                picked = [m for m in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") if m in members]
+                picked = [m for m in members if m in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot")]  # 照名單順序（Telegram「先回」排第一）
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
                 if "codex" in picked and codex_hot():
                     threading.Timer(1, lambda: self.notice("提醒：Codex 週額度吃緊，這次因為你勾了它還是會叫；"
@@ -1399,6 +1403,49 @@ def render_perm_page():
     out += window_allow_lists()
     with open(PERM_PAGE, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
+
+
+TG_SETTINGS = os.path.join(HERE, "telegram-設定.json")
+TG_NAMES = {"claude": "claude", "codex": "codex", "gemini": "gemini", "輝達": "nvidia", "nvidia": "nvidia",
+            "deepseek": "deepseek", "dot": "dot"}
+TG_SHOW = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "nvidia": "輝達", "deepseek": "DeepSeek", "dot": "Dot"}
+
+
+def tg_members(room, text):
+    """Telegram 的回話名單（使用者 11-19 08:47）。設定存在 telegram-設定.json：{"開": [...], "先回": "claude"}。
+    ・訊息開頭「開 Gemini」「關 Codex」「開 輝達 DeepSeek」：改名單，回一則目前設定，這則不叫 AI。
+    ・開頭「先回 Gemini」：設定誰第一個回。
+    ・開頭點名（@Gemini …）：照點名回答，並把第一個被點名的設成「先回」。
+    ・都沒有：照名單問大家，「先回」排第一。回傳 (要繼續處理的文字或 None, 名單)。"""
+    try:
+        cfg = json.load(open(TG_SETTINGS, encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = {"開": ["claude", "codex", "gemini"], "先回": "claude"}
+    on, first = list(cfg.get("開", [])), cfg.get("先回", "claude")
+    m = re.match(r"\s*(開|關|先回)\s*[:：]?\s*((?:[A-Za-z]+|輝達)(?:[\s,，、]+(?:[A-Za-z]+|輝達))*)\s*$", text)
+    if m:
+        who = [TG_NAMES[w.lower()] for w in re.findall(r"[A-Za-z]+|輝達", m.group(2)) if w.lower() in TG_NAMES]
+        if not who:
+            return text, on
+        if m.group(1) == "開":
+            on += [w for w in who if w not in on]
+        elif m.group(1) == "關":
+            on = [w for w in on if w not in who]
+        else:
+            first = who[0]
+            on += [first] if first not in on else []
+        cfg.update({"開": on, "先回": first, "更新": time.strftime("%m-%d %H:%M")})
+        json.dump(cfg, open(TG_SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        room.notice("Telegram 回話設定：開＝" + "、".join(TG_SHOW[w] for w in on) + f"；先回＝{TG_SHOW.get(first, first)}"
+                    "（指令：「開 名字」「關 名字」「先回 名字」；點名誰，誰就變成先回）")
+        return None, on
+    mm = re.match(r"\s*@\s*([A-Za-z]+|輝達)", text)
+    if mm and mm.group(1).lower() in TG_NAMES and mm.group(1).lower() not in ("all",):
+        cfg["先回"] = TG_NAMES[mm.group(1).lower()]
+        json.dump(cfg, open(TG_SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        return text, None                                  # 有點名：照點名走（原本的規則）
+    order = [first] + [w for w in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") if w in on and w != first]
+    return text, [w for w in order if w in on or w == first]
 
 
 def decisions_page(key):
