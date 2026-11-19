@@ -193,12 +193,38 @@ class DeepSeekAgent(rt.Agent):
 
     def build_prompt(self, transcript):
         self._transcript = list(transcript)
-        new = transcript[self.seen:][-8:]
+        # 使用者 11-19 09:07：「共用區有變動」不要整串塞給它，改照它自己的條件篩（變動條件.json），想看更多再改條件或自己查
+        new = [m for m in transcript[self.seen:] if not (m["who"] == "系統" and m["text"].startswith("共用區有變動"))][-8:]
         body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)
         return (GUIDE.format(steps=MAX_STEPS, topic=rt.RESEARCH_TOPIC or "（見使用者說明）") + big_brother_rules()
                 + f"\n現在時間 {time.strftime('%m-%d %H:%M')}。{usage_text()}\n\n"
                 f"自從你上次發言後的新訊息（最多列最後 8 則；更早的請用工具查）：\n\n{body}"
+                + self.changes_digest()
                 + rt.work_memory("DeepSeek", body) + "\n\n現在輪到你（DeepSeek）。")
+
+    CHANGE_RULE = os.path.join(HOME, "變動條件.json")
+
+    def changes_digest(self):
+        """依 H:\\DeepSeek用\\變動條件.json 篩上次醒來後的共用區變動。檔案格式（DeepSeek 自己改）：
+        {"關鍵字": ["DeepSeek", "AI評比", "課程"], "類": "", "最多": 10}；關鍵字是「任一個符合就列」，空的＝全部。"""
+        import shared_watch as sw
+        try:
+            rule = json.load(open(self.CHANGE_RULE, encoding="utf-8"))
+        except (OSError, ValueError):
+            rule = {"關鍵字": ["DeepSeek", "AI評比", "團隊目標", "待辦"], "類": "", "最多": 10}
+        since = getattr(self, "_changes_since", "") or time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 6 * 3600))
+        self._changes_since = time.strftime("%Y-%m-%d %H:%M")
+        kws = rule.get("關鍵字") or [""]
+        rows, seen = [], set()
+        for kw in kws:
+            for r in sw.query_changes(kw, since, "", rule.get("類", ""), 50):
+                if r["路徑"] not in seen:
+                    seen.add(r["路徑"])
+                    rows.append(r)
+        rows = sorted(rows, key=lambda r: r["時間"], reverse=True)[:int(rule.get("最多", 10))]
+        lines = "\n".join(f"- {r['時間'][5:]} {r['類']} {r['路徑']}" + (f"｜{r['摘要']}" if r.get("摘要") else "") for r in rows)
+        return (f"\n\n共用區變動（依你的條件 `{self.CHANGE_RULE}`：關鍵字 {kws}；想看更多就改那個檔，"
+                f"或用【讀檔】看 `H:\\Claude用\\三方討論\\logs\\共用區變動.jsonl`）：\n" + (lines or "（沒有符合的）"))
 
     def _call(self, messages):
         try:
