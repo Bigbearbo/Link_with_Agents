@@ -1848,9 +1848,13 @@ def decisions_page(key):
         lastu = max((i for i, x in enumerate(texts) if "使用者回覆" in x or "使用者留言" in x), default=-1)
         # 使用者 11-20 01:16：回覆過的先收起；之後 AI 寫了「【請使用者看】」（新進度要你再決定）才再出現
         replied = lastu >= 0 and not any("【請使用者看】" in x for x in texts[lastu + 1:])
+        # 使用者 11-20 01:29：AI 先討論、給批示意見，使用者按同意就好 → 最新一筆【AI建議】放在按鈕上方
+        adv = next((x.split("【AI建議】", 1)[1] for x in reversed(texts) if "【AI建議】" in x), "")
+        adv_html = f'<div class="adv">🤝 AI 建議：{_h.escape(adv.strip())}</div>' if adv else '<div class="meta">（AI 還沒給建議）</div>' 
         rows.append(f"""<section class="{'replied' if replied else ''}"><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}{'　<span class="meta">（你回覆過，等我們處理）</span>' if replied else ''}</h3>
 <div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
 {details}{f'<ul>{log_}</ul>' if log_ else ''}
+{adv_html}
 <textarea id="t{t['id']}" placeholder="你的回覆（例：同意／不要／改成…）"></textarea>
 <button onclick="send({t['id']})">送出</button>
 <span class="quick">{"".join(f'<button class="q" onclick="quick({t[chr(105)+chr(100)]},this.textContent)">{w}</button>' for w in ("同意", "暫時擱置", "你們再討論", "反對"))}</span>
@@ -1878,6 +1882,7 @@ section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
 summary{{cursor:pointer;margin:6px 0;color:var(--acc)}}
 section.replied{{display:none}} body.showold section.replied{{display:block;opacity:.65}}
+.adv{{background:var(--bg);border:1px dashed var(--acc);border-radius:8px;padding:6px 10px;margin-top:8px;font-size:14px}}
 .quick{{margin-left:6px}} .sent{{background:var(--bg);border-left:3px solid var(--acc);padding:6px 10px;margin-top:8px;white-space:pre-wrap}} #hist li{{margin:6px 0}} button.q{{background:var(--card);color:var(--ink);border:1px solid var(--line);margin-left:4px}} .md{{border-left:3px solid var(--line);padding-left:10px;font-size:14px}} .md h1,.md h2,.md h3{{font-size:15px}}
 textarea{{width:100%;box-sizing:border-box;min-height:60px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}}
 button{{margin-top:6px;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}}
