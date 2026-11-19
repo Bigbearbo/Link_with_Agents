@@ -1818,6 +1818,7 @@ def changes_page(q):
 :root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:1100px;margin:0 auto;padding:16px}}
+@media(max-width:640px){{body{{padding:8px;overflow-x:hidden}} p{{display:flex;flex-wrap:wrap;gap:6px}} button{{white-space:nowrap}} input,textarea{{max-width:100%;box-sizing:border-box}} .tblwrap{{overflow-x:auto}} td{{word-break:normal;overflow-wrap:anywhere}} td:first-child{{white-space:nowrap}}}}
 form{{display:flex;flex-wrap:wrap;gap:8px;align-items:center}} input,select{{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}}
 table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,th{{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}
 .mute{{color:var(--mute);font-size:13px}}
@@ -1829,7 +1830,7 @@ table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,t
 <select name="kind"><option value="">新＋改</option><option{sel('新')}>新</option><option{sel('改')}>改</option></select>
 <button>查詢</button></form>
 <p class="mute">關鍵字比對路徑、負責人、檔頭摘要；新的在上面，最多 300 筆。紀錄從 11-19 09:1x 開始（之前的變動只在群組訊息裡）。命令列：<code>PY H:\\Claude用\\三方討論\\變動查詢.py 關鍵字 --since 11-19</code></p>
-<table><tr><th>時間</th><th>類</th><th>路徑</th><th>負責</th><th>摘要</th></tr>{trs or '<tr><td colspan=5 class="mute">沒有符合的變動</td></tr>'}</table>
+<div class="tblwrap"><table><tr><th>時間</th><th>類</th><th>路徑</th><th>負責</th><th>摘要</th></tr>{trs or '<tr><td colspan=5 class="mute">沒有符合的變動</td></tr>'}</table></div>
 </body></html>"""
 
 
@@ -1892,6 +1893,7 @@ def decisions_page(key):
 :root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:860px;margin:0 auto;padding:16px}}
+@media(max-width:640px){{body{{padding:8px;overflow-x:hidden}} p{{display:flex;flex-wrap:wrap;gap:6px}} button{{white-space:nowrap}} input,textarea{{max-width:100%;box-sizing:border-box}} .tblwrap{{overflow-x:auto}} td{{word-break:normal;overflow-wrap:anywhere}} td:first-child{{white-space:nowrap}}}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}}
 section{{overflow-wrap:anywhere;min-width:0}} body{{overflow-x:hidden}}
 h3{{margin:0 0 4px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} ul{{color:var(--mute);font-size:13px;padding-left:1.2em}}
