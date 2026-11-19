@@ -19,6 +19,19 @@ INBOX, OUTBOX = os.path.join(BASE, "inbox"), os.path.join(BASE, "outbox")
 HEARTBEAT = os.path.join(BASE, "heartbeat.txt")
 ALIVE_SECONDS = 90         # 心跳多久內算「終端機在線」
 REPLY_TIMEOUT = 20 * 60    # 等終端機回覆最多多久，逾時改用備援 Claude
+# 上一次已經逾時、終端機還沒回過任何一則：下一輪只等短一點就交備援。
+# 11-20 04:42–05:45 終端機程序在但沒人接，連續三輪各空等 20 分鐘（流程優化員 11-20）。
+RETRY_TIMEOUT = 3 * 60
+_stalled = set()   # 逾時沒回的請求 id；終端機回了任何一則（含遲到的）就清掉
+
+
+def _timeout_now():
+    if not _stalled:
+        return REPLY_TIMEOUT
+    if any(os.path.exists(os.path.join(OUTBOX, r + ".txt")) for r in _stalled):  # 遲到的回覆：終端機回來了
+        _stalled.clear()
+        return REPLY_TIMEOUT
+    return RETRY_TIMEOUT
 
 
 def _ensure():
@@ -46,8 +59,9 @@ def ask_terminal(room_name, body, should_stop, on_wait=None):
     os.replace(tmp, os.path.join(INBOX, rid + ".json"))
     out = os.path.join(OUTBOX, rid + ".txt")
     t0 = time.time()
+    limit = _timeout_now()
     try:
-        while time.time() - t0 < REPLY_TIMEOUT:
+        while time.time() - t0 < limit:
             if should_stop():
                 return None
             if os.path.exists(out):
@@ -55,12 +69,15 @@ def ask_terminal(room_name, body, should_stop, on_wait=None):
                 with open(out, encoding="utf-8") as f:
                     text = f.read().strip()
                 os.replace(out, out + ".done")
+                _stalled.clear()
                 return text or "（終端機 Claude 回了空白）"
             if on_wait:
                 on_wait(int(time.time() - t0))
             if not terminal_alive() and time.time() - t0 > 30:
                 return None  # 終端機中途離線
             time.sleep(1)
+        _stalled.add(rid)
+
         return None
     finally:
         try:
