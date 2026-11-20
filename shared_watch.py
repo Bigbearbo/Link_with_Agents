@@ -330,8 +330,10 @@ class Alarm:
         now = now or time.time()
         r = rules()
         sens = lambda rel: skipped(rel, r["sensitive"])
-        gone = [k for k in prev if k not in snap and not skipped(k, r["skip"])
+        tmpish = lambda k: (".tmp" in k or "__pycache__" in k or "/~$" in k or k.endswith((".pyc", ".tmp", ".part", ".crdownload")))
+        gone = [k for k in prev if k not in snap and not skipped(k, r["skip"]) and not tmpish(k)   # 11-20 09:58 誤報：雲端硬碟的 .tmp.driveupload 暫存檔
                 and not os.path.exists(os.path.join(SHARED, k))]   # 讀檔失敗被掃漏的不算刪
+        self.recent = [(t, k) for t, k in self.recent if not tmpish(k)]
         out = []
         self.recent = [(t, k) for t, k in self.recent if now - t < self.WINDOW] + [(now, k) for k in gone]
         if len(self.recent) >= r["mass_delete"] and now >= self.mass_until:
