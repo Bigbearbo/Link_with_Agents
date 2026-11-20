@@ -18,6 +18,8 @@ import os
 import re
 import time
 
+import usage_activity
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "logs", "異常狀態.json")
 LOG = os.path.join(HERE, "logs", "hub.log")
@@ -87,7 +89,7 @@ def _summary_fail(lines):
 
 def detect():
     lines = _recent_log_lines()
-    return _usage_stale() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
+    return _usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
 
 
 def check():
@@ -213,7 +215,7 @@ button{{padding:4px 10px}}
 <section><h3>📝 發現哪裡怪？</h3><input id=who placeholder="你是誰（例：使用者、Codex）" value="使用者"><br><br>
 <textarea id=txt rows=3 placeholder="哪裡怪、怎麼重現（越具體越好）"></textarea><br><button onclick="rep()">提交到報錯系統</button> <span id=st class=m></span></section>
 <section><h3>✅ 最近恢復</h3><table><tr><th>異常碼</th><th>說明</th><th>時間</th><th>誰修的</th><th>怎麼修</th></tr>{drows}</table></section>
-<p class=m>給 AI 讀的版本：H:\Agent共用\系統異常.md（中樞每 10 分鐘更新）</p>
+<p class=m>給 AI 讀的版本：H:\\Agent共用\\系統異常.md（中樞每 10 分鐘更新）</p>
 <script>const K={json.dumps(key)};
 async function post(b){{const r=await fetch('/api/errors',{{method:'POST',headers:{{'X-Key':K,'Content-Type':'application/json'}},body:JSON.stringify(b)}});return r.json();}}
 async function rep(){{const t=document.getElementById('txt').value.trim();if(!t)return;document.getElementById('st').textContent='送出中…';

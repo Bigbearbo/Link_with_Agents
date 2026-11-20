@@ -7,6 +7,8 @@ r"""用量摘要給 AI 讀（使用者 11-21 01:41：「用量儀表板這種也
 import json
 import time
 
+import usage_activity
+
 SRC = r"H:\Agent共用\{}-用量.json"
 OUT = r"H:\Agent共用\用量狀態.md"
 NOTE = r"H:\Agent共用\用量註記.json"   # 使用者 11-21 01:44：註記欄處理例外（例：Codex 打算把額度用完）
@@ -119,23 +121,47 @@ def ai_text():
     if f:
         sv = f.get("服務", {})
         L.append("- 免費池今天：" + "、".join(f"{k} {v.get('今天次數', 0)}" + (f"/{v['上限']}" if v.get("上限") else "") for k, v in sv.items()))
-    L += ["", "速度＝已用% ÷ 時間已過%；>1 表示照這速度會在重置前用完。派工建議只是參考，使用者點名優先。", "例外（例：打算把週額度用完、要保留額度）寫在 H:\Agent共用\用量註記.json 自己那列：註記／建議（會覆寫派工建議）／到期。"]
+    L += ["", "速度＝已用% ÷ 時間已過%；>1 表示照這速度會在重置前用完。派工建議只是參考，使用者點名優先。", "例外（例：打算把週額度用完、要保留額度）寫在 H:\\Agent共用\\用量註記.json 自己那列：註記／建議（會覆寫派工建議）／到期。"]
     return "\n".join(L) + "\n"
 
 
 HIST = r"H:\Agent共用\用量歷史.jsonl"   # 使用者 11-21 06:33：用量加時間快照（每小時一筆），之後可做圖表或看近期變化
 
 
+CODEX_USAGE = r"H:\Agent共用\codex-用量\codex_usage.py"
+
+
+def refresh_codex_if_due(min_gap):
+    """活動監看閒置或到期時，仍在小時快照前補讀 Codex 額度。"""
+    import subprocess
+    import sys
+
+    age = _age_hours((_load("codex") or {}).get("更新"))
+    if age is not None and 0 <= age * 3600 < min_gap:
+        return
+    try:
+        subprocess.run(
+            [sys.executable, "-I", "-B", "-X", "utf8", CODEX_USAGE, "update"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=45, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        # 用量來源保留最後一次成功讀數及它的時間。
+        pass
+
+
 def snapshot(min_gap=3300):
-    """距上一筆超過 min_gap 秒才寫一筆：{時間, 列:[[誰,窗口,已用%,速度,狀態]...]}。中樞每 10 分鐘呼叫，實際約每小時一筆。"""
+    """距上一筆超過 min_gap 秒才寫一筆：{時間, 列:[[誰,窗口,已用%,速度,狀態,重置時間,來源時間,過期]...]}。中樞每 10 分鐘呼叫，實際約每小時一筆。"""
     import os
     try:
         if os.path.exists(HIST) and time.time() - os.path.getmtime(HIST) < min_gap:
             return False
     except OSError:
         pass
+    refresh_codex_if_due(min_gap)
     rec = {"時間": time.strftime("%Y-%m-%d %H:%M"),
-           "列": [[w, win, u, s, st] for w, win, u, s, st, _r, _upd in rows()]}
+           "活動": usage_activity.snapshot_activity(time.time()),
+           "列": [[w, win, u, s, st, reset, upd, _stale(upd) if upd else None] for w, win, u, s, st, reset, upd in rows()]}
     with open(HIST, "a", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     return True
@@ -154,7 +180,12 @@ def recent(hours=6):
         except ValueError:
             continue
         times.append(r["時間"][11:16])
-        for w, win, u, *_ in r["列"]:
+        for row in r["列"]:
+            w, win, u = row[:3]
+            if len(row) < 8 or not row[6]:
+                u = "—（來源時間未記錄）"
+            elif row[7]:
+                u = "—（來源過期）"
             out.setdefault((w, win), []).append(u)
     return out, times
 
