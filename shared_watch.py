@@ -61,13 +61,19 @@ def scan(prev):
                 continue
             old = prev.get(rel)
             if old and abs(old[0] - mt) < 1e-6:
+                if len(old) < 3:   # 舊快照沒有大小：補上（告警要比「縮小」）
+                    try:
+                        old = list(old[:2]) + [os.path.getsize(full)]
+                    except OSError:
+                        pass
                 now[rel] = old
                 continue
             try:
                 sha = _sha(full)
+                size = os.path.getsize(full)
             except OSError:
                 continue
-            now[rel] = [mt, sha]
+            now[rel] = [mt, sha, size]
             if not old:
                 added.append(rel)
             elif old[1] != sha:
@@ -223,19 +229,22 @@ def save_seen(path, snap):
 import fnmatch
 
 RULES_FILE = os.path.join(SHARED, "通知規則.txt")
+# 敏感位置：被刪或一次縮小一半以上就立即告警（Codex 11-20 07:43）。通知規則.txt 的「敏感: 樣式」可再加。
+SENSITIVE_DEFAULT = ("通知規則.txt", "使用者備忘.md", "誤會更正.md", "AI自決紀錄.md", "待辦/待辦.json", "連動清單.md",
+                     "團隊目標.md", "權限總覽.md", "OWNER.txt")
 _rules_cache = {"mtime": None, "rules": None}
 
 
 def rules():
     """回傳 {"skip": [樣式…], "cooldown": 秒, "batch": 秒}；檔案壞掉或不存在就用預設。"""
-    default = {"skip": [], "cooldown": 3600, "batch": 120}
+    default = {"skip": [], "cooldown": 3600, "batch": 120, "sensitive": list(SENSITIVE_DEFAULT), "mass_delete": 10}
     try:
         mt = os.path.getmtime(RULES_FILE)
     except OSError:
         return default
     if _rules_cache["mtime"] == mt:
         return _rules_cache["rules"]
-    r = dict(default, skip=[])
+    r = dict(default, skip=[], sensitive=list(SENSITIVE_DEFAULT))
     try:
         for line in open(RULES_FILE, encoding="utf-8-sig", errors="replace"):
             line = line.strip()
@@ -249,6 +258,10 @@ def rules():
                 r["cooldown"] = max(0, float(v)) * 60
             elif k == "合併秒數":
                 r["batch"] = max(0, float(v))
+            elif k == "敏感" and v:          # 只能加，不能拿掉內建的（避免改規則把告警關掉）
+                r["sensitive"].append(v)
+            elif k == "大量刪檔":
+                r["mass_delete"] = max(3, int(float(v)))
     except (OSError, ValueError):
         return default
     _rules_cache.update(mtime=mt, rules=r)
@@ -298,6 +311,61 @@ class Throttle:
             self.last_sent[k] = now
         self.pending, self.first_at = {}, None
         return added, changed
+
+
+# ---------- 立即告警（使用者 11-20 07:42「檔案監看程式可以即時介入」；Codex 07:43「短時間大量刪檔或改到敏感位置才立即通知負責 AI 和 Claude」） ----------
+ALARM_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "共用區告警.jsonl")
+
+
+class Alarm:
+    """不走合併／冷卻：10 分鐘內刪掉 ≥ N 個檔（通知規則「大量刪檔」，預設 10），或敏感檔被刪／一次縮小一半以上。
+    feed() 回傳 [(負責人集合, 訊息)]。量測用：每次告警記一行到 logs\\共用區告警.jsonl。"""
+    WINDOW = 600
+
+    def __init__(self):
+        self.recent = []      # [(時間, rel)] 最近刪掉的
+        self.mass_until = 0   # 大量刪檔告警後，同一個窗口內不再重報
+
+    def feed(self, prev, snap, now=None):
+        now = now or time.time()
+        r = rules()
+        sens = lambda rel: skipped(rel, r["sensitive"])
+        gone = [k for k in prev if k not in snap and not skipped(k, r["skip"])
+                and not os.path.exists(os.path.join(SHARED, k))]   # 讀檔失敗被掃漏的不算刪
+        out = []
+        self.recent = [(t, k) for t, k in self.recent if now - t < self.WINDOW] + [(now, k) for k in gone]
+        if len(self.recent) >= r["mass_delete"] and now >= self.mass_until:
+            rels = [k for _, k in self.recent]
+            owners = {owner_of(os.path.join(SHARED, k)) for k in rels} - {""}
+            top = {}
+            for k in rels:
+                top[k.split("/")[0]] = top.get(k.split("/")[0], 0) + 1
+            where = "、".join(f"{k}（{n}）" for k, n in sorted(top.items(), key=lambda x: -x[1])[:4])
+            out.append((owners, "大量刪檔", rels, f"10 分鐘內共用區刪掉 {len(rels)} 個檔，主要在 {where}。"))
+            self.mass_until = now + self.WINDOW
+        hits = [(k, "被刪除") for k in gone if sens(k)]
+        for k, v in snap.items():
+            old = prev.get(k)
+            if old and len(old) > 2 and len(v) > 2 and old[2] >= 200 and v[2] < old[2] * 0.5 and sens(k):
+                hits.append((k, f"一次縮小 {old[2]}→{v[2]} 位元組"))
+        if hits:
+            owners = {owner_of(os.path.join(SHARED, k)) for k, _ in hits} - {""}
+            out.append((owners, "敏感檔", [k for k, _ in hits],
+                        "敏感檔異動：" + "；".join(f"{k} {why}" for k, why in hits[:6]) + (f"……共 {len(hits)} 個" if len(hits) > 6 else "") + "。"))
+        res = []
+        for owners, kind, rels, text in out:
+            try:
+                os.makedirs(os.path.dirname(ALARM_LOG), exist_ok=True)
+                with open(ALARM_LOG, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"時間": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)), "類": kind,
+                                        "檔數": len(rels), "路徑": rels[:20], "負責": sorted(owners)}, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+            others = sorted(owners - {"Claude"})
+            tag = " ".join(f"@{o}" for o in others) + (" " if others else "")
+            res.append((owners, f"🚨 {text}\n{tag}@Claude 請先停下相關工作、確認是不是故意的；不是就從 git 退回"
+                                f"（`git -C H:\\Agent共用 log --stat -3`）。這是立即告警，不等合併。"))
+        return res
 
 
 # ---------- 變動紀錄與查詢（使用者 11-19 09:06：群組只放簡介，查詢可以加條件，例如跟 DeepSeek 相關、時間範圍） ----------

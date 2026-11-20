@@ -987,6 +987,7 @@ class Hub:
         prev = sw.load_seen(seen_path)
         first = prev is None
         throttle = sw.Throttle()  # 通知規則見 H:\Agent共用\通知規則.txt
+        alarm = sw.Alarm()
         while True:
             try:
                 snap, added, changed = sw.scan(prev or {})
@@ -999,6 +1000,19 @@ class Hub:
                     if batch and self.shared_room():
                         sw.log_changes(*batch)                   # 11-19 09:06：每筆記下來，群組只放簡介，細節去「變動」頁查
                         self.shared_room().notice(sw.brief(*batch))
+                    try:   # 立即告警：大量刪檔／敏感檔被刪或砍半（Codex 11-20 07:43；流程優化員 A 塊）
+                        for owners, msg in alarm.feed(prev or {}, snap):
+                            room = self.shared_room()
+                            if room is None:
+                                break
+                            room.notice(msg)
+                            import window_agent as wa
+                            for o in owners & set(wa.HOMES):
+                                wa.nudge(o, room.id, custom="【共用區告警】" + msg.split("\n")[0][:150])
+                            room.stop_flag = False
+                            room.chain([room.claude] + ([room.codex] if any("Codex" in o for o in owners) else []))
+                    except Exception as e:
+                        log(f"共用區告警失敗：{type(e).__name__}: {e}")
                 sw.save_seen(seen_path, snap)
                 prev = snap
                 for path, sender, to, body, want_room in sw.read_inbox():
