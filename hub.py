@@ -318,7 +318,14 @@ class Room:
                 text = text[:m_note.start()].rstrip()
                 entry["text"] = text
             with self.hub.lock:
-                u = next((m for m in reversed(self.transcript) if m.get("who") == "使用者"), None)
+                ri = getattr(self, "reply_to", {}).pop(who, None)   # 這位這一輪開始時對應的使用者訊息編號
+                if ri is not None and ri < len(self.transcript) and self.transcript[ri].get("who") == "使用者":
+                    u = self.transcript[ri]
+                    entry["re"] = ri
+                else:
+                    u = next((m for m in reversed(self.transcript) if m.get("who") == "使用者"), None)
+                    if u is not None:
+                        entry["re"] = len(self.transcript) - 1 - next(i for i, m in enumerate(reversed(self.transcript)) if m is u)
                 if u is not None:
                     u.setdefault("notes", [])
                     u["notes"].append(f"{who} {entry['time'][-5:]}：" + (note or "已回"))
@@ -477,7 +484,7 @@ class Room:
             def _wait_then_side(a=a, before=before, u_idx=u_idx):
                 end = time.time() + 600
                 while time.time() < end and not self.stop_flag:
-                    said = {m.get("who") for m in self.transcript[u_idx + 1:]}
+                    said = {m.get("who") for m in self.transcript[u_idx + 1:] if m.get("re", u_idx) == u_idx}   # 只算回這一則的
                     if all(b.name in said for b in before) or not a.busy:
                         break
                     time.sleep(2)
@@ -500,6 +507,7 @@ class Room:
         side = (rt.ClaudeAgent if agent is self.claude else rt.CodexAgent)(agent.name)
         side.fork_from, side.write = agent.session, False
         agent.side = side
+        side_ri = max((i for i, m in enumerate(self.transcript) if m.get("who") == "使用者"), default=None)
         with self.hub.lock:
             snapshot = list(self.transcript)
         start = self.term_seen if terminal else agent.seen
@@ -518,6 +526,8 @@ class Room:
                     reply = side.run(head + body + f"\n\n現在輪到你（{agent.name}）發言。")
                     reply = (side.said[-1] if side.said else reply or "").strip()
                 if reply:
+                    self.reply_to = getattr(self, "reply_to", {})
+                    self.reply_to[agent.name] = side_ri   # 分身回的是它開工時最新那則使用者訊息
                     self.add(agent.name, reply, "回覆", kind="side")
                     log(f"[{self.name}] {agent.name} 分身先回答了新訊息")
                 else:
@@ -645,6 +655,9 @@ class Room:
         threading.Thread(target=self.typing, daemon=True).start()
         with self.hub.lock:
             snapshot = list(self.transcript)
+            # Codex 08:34／使用者 08:35：用原訊息編號對應——這一輪是在回哪一則使用者訊息
+            self.reply_to = getattr(self, "reply_to", {})
+            self.reply_to[agent.name] = max((i for i, m in enumerate(snapshot) if m.get("who") == "使用者"), default=None)
         reply = self.ask_terminal(agent, snapshot)
         if reply is not None:
             agent.started = None
