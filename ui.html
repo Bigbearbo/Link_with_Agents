@@ -180,10 +180,10 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 @media (max-width:1379px){#marks{display:none;left:12px;top:64px}#marks.open{display:block}}
 @media (min-width:1380px){#marksBtn{display:none}}
 .lcol{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none}
-.abbrBtn{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;font-size:10px;padding:1px 3px;cursor:pointer;opacity:.6}
+.abbrBtn{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;font-size:10px;padding:1px 3px;cursor:pointer;opacity:.6;max-width:42px;white-space:normal;overflow-wrap:anywhere}
 .msg:hover .abbrBtn,.abbrBtn.on{opacity:1}
 .abbrBox{margin-top:4px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px;font-size:13px}
-.abbrHd{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;flex-wrap:wrap}.abbrHd label{color:var(--muted);font-size:12px}
+.abbrHd{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;flex-wrap:wrap}.abbrClose{font-size:11px;padding:0 6px;cursor:pointer;margin-left:auto}.abbrHd label{color:var(--muted);font-size:12px}.abbrClose{font-size:11px;padding:0 6px;cursor:pointer}
 .abbrRow{margin:3px 0}.abbrRow.hid{opacity:.5}.abbrRow button{font-size:11px;padding:0 6px;margin-left:4px;cursor:pointer}
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
@@ -382,12 +382,26 @@ function render(m, idx){
   const src = m.src === "Telegram" ? " · 來自 Telegram" : m.src === "電腦" ? " · 電腦" : m.src === "備援" ? " · 備援 Claude（終端機不在）" : m.src === "App" ? " · 來自 Codex App" : m.src === "共用區" ? " · 從共用區 inbox" : "";
   const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
   const ab = abbrHits(m.text);   // 使用者 11-21 06:13：縮寫介紹（訊息框左邊，預設不展開）
-  el.innerHTML = `<div class="lcol"><div class="face ${w.face}">${w.ch}</div>${ab.length ? `<button class="abbrBtn" title="這則訊息裡的縮寫是什麼意思">縮寫</button>` : ""}</div><div class="body">
+  el.innerHTML = `<div class="lcol"><div class="face ${w.face}">${w.ch}</div>${ab.length ? `<button type="button" class="abbrBtn" aria-expanded="false" title="這則訊息裡的縮寫是什麼意思">縮寫介紹</button>` : ""}</div><div class="body">
     <div class="meta"><button class="bm${isMarked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
     <div class="bubble">${md(m.text)}</div><div class="abbrBox" hidden></div><div class="live"></div></div>`;
   el.querySelector(".bm").onclick = () => toggleMark(m, idx, el);
   const abb = el.querySelector(".abbrBtn");
-  if(abb) abb.onclick = () => { const box = el.querySelector(".abbrBox"); box.hidden = !box.hidden; abb.classList.toggle("on", !box.hidden); if(!box.hidden) renderAbbr(box, m.text); };
+  if(abb){
+    const box = el.querySelector(".abbrBox");
+    const setAbbrOpen = open => {
+      box.hidden = !open;
+      abb.classList.toggle("on", open);
+      abb.setAttribute("aria-expanded", String(open));
+      if(open) renderAbbr(box, m.text);
+    };
+    abb.onclick = () => setAbbrOpen(box.hidden);
+    box.addEventListener("click", e => {
+      if(!e.target.closest(".abbrClose")) return;
+      setAbbrOpen(false);
+      abb.focus();
+    });
+  }
   decorate(el.querySelector(".bubble"), m);
   return el;
 }
@@ -407,10 +421,11 @@ function abbrHits(text){
 function renderAbbr(box, text){
   const hits = abbrHits(text), hid = new Set(ABBR.hidden);
   const shown = hits.filter(t => abbrShowHidden || !hid.has(t));
-  box.innerHTML = `<div class="abbrHd"><b>縮寫介紹</b><label><input type="checkbox" class="abbrShow"${abbrShowHidden ? " checked" : ""}> 顯示已隱藏（${hits.filter(t => hid.has(t)).length}）</label></div>` +
+  box.innerHTML = `<div class="abbrHd"><b>縮寫介紹</b><button class="abbrClose" title="收起">▲ 收起</button><label><input type="checkbox" class="abbrShow"${abbrShowHidden ? " checked" : ""}> 顯示已隱藏（${hits.filter(t => hid.has(t)).length}）</label><button type="button" class="abbrClose">縮回</button></div>` +
     (shown.length ? shown.map(t => `<div class="abbrRow${hid.has(t) ? " hid" : ""}"><code>${esc(t)}</code> ${esc(ABBR.terms[t] || "")} <button data-t="${esc(t)}">${hid.has(t) ? "取消隱藏" : "隱藏"}</button></div>`).join("")
                   : `<div class="abbrRow">這則的縮寫都已隱藏。</div>`);
-  box.querySelector(".abbrShow").onchange = e => { abbrShowHidden = e.target.checked; renderAbbr(box, text); };
+  box.querySelector(".abbrClose").onclick = () => { box.hidden = true; const b = box.closest(".msg") && box.closest(".msg").querySelector(".abbrBtn"); if(b) b.classList.remove("on"); };
+  box.querySelector(".abbrShow").onchange =e => { abbrShowHidden = e.target.checked; renderAbbr(box, text); };
   box.querySelectorAll("button[data-t]").forEach(b => b.onclick = async () => {
     try{ ABBR = await api("/api/abbr", {op: hid.has(b.dataset.t) ? "unhide" : "hide", term: b.dataset.t}); }catch(e){ return; }
     renderAbbr(box, text);
