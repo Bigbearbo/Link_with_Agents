@@ -9,7 +9,7 @@ import sys
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-key = open(os.path.join(HERE, "secrets", "web-key.txt"), encoding="utf-8").read().strip()
+key = open(os.path.join(r"H:\金鑰", "web-key.txt"), encoding="utf-8").read().strip()
 
 
 def api(path, body=None):

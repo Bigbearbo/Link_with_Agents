@@ -10,7 +10,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOKEN_FILE = os.path.join(HERE, "secrets", "telegram-bot-token.dpapi")
+TOKEN_FILE = os.path.join(r"H:\金鑰", "telegram-bot-token.dpapi")
 MAGIC = b"RT-DPAPI1\x00"
 
 

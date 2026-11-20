@@ -16,7 +16,7 @@ if not msg and d.get("tool_name"):
 if who == "終端機 Claude" and d.get("notification_type") not in (None, "permission_prompt"):
     sys.exit(0)
 try:
-    key = open(os.path.join(HERE, "secrets", "web-key.txt"), encoding="utf-8").read().strip()
+    key = open(os.path.join(r"H:\金鑰", "web-key.txt"), encoding="utf-8").read().strip()
     body = json.dumps({"room": "main", "text": f"🔐 {who} 停在權限確認框，等你到那個視窗按：{msg[:200]}"}).encode()
     req = urllib.request.Request("http://127.0.0.1:8765/api/claude_says", data=body,
                                  headers={"Content-Type": "application/json; charset=utf-8", "X-Key": key})

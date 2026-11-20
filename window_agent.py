@@ -83,7 +83,7 @@ NUDGE_GAP = 120
 NUDGE_MAX = 3
 
 
-NOTIFY = {"輝達": r"H:\Claude用\三方討論\secrets\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
+NOTIFY = {"輝達": r"H:\金鑰\opencode-輝達.json"}  # 開輝達視窗.py 開窗時寫、關窗時刪
 
 
 NVIDIA_DAILY_BUDGET = 900   # 輝達每天呼叫次數預算＝跟 worker 同一個 900（OpenRouter 免費模型按次數限；使用者 11-19 06:50）

@@ -6,7 +6,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 2
-k = open(os.path.join(HERE, "secrets", "web-key.txt"), encoding="utf-8").read().strip()
+k = open(os.path.join(r"H:\金鑰", "web-key.txt"), encoding="utf-8").read().strip()
 
 
 def poll(room, since=0):

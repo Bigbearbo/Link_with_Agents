@@ -13,7 +13,7 @@ from host_paths import KEY_FILE  # noqa: E402
 
 TARGETS = {
     "1": ("輝達（免費，$0 鑰匙；Codex 的 worker 用）", str(KEY_FILE), 0),
-    "2": ("DeepSeek（付費鑰匙；ds.py 用）", r"H:\Claude用\三方討論\secrets\openrouter-deepseek.dpapi", None),
+    "2": ("DeepSeek（付費鑰匙；ds.py 用）", r"H:\金鑰\openrouter-deepseek.dpapi", None),
 }
 
 

@@ -19,7 +19,7 @@ CHECK = ("你是網頁測試員，看這張聊天程式的截圖（{name}，{siz
 
 
 def shoot(url, path, size):
-    k = open(os.path.join(HERE, "secrets", "web-key.txt"), encoding="utf-8").read().strip()
+    k = open(os.path.join(r"H:\金鑰", "web-key.txt"), encoding="utf-8").read().strip()
     sep = "&" if "?" in url else "?"
     full = f"http://127.0.0.1:8765{url}{sep}k={k}"
     subprocess.run([EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--window-size={size}",

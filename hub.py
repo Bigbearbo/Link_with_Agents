@@ -3,7 +3,7 @@
 - 每個 Telegram 群組是一個獨立「房間」：各自的討論紀錄、各自的 Claude / Codex 對話。
   房間之間訊息不互通，回覆只送回該房間綁定的群組。主人私訊 bot 歸到「主討論」房。
 - 網頁上方用分頁切換房間；網頁打的字只進目前選的房間，並轉貼到該房間的群組。
-- Telegram 只聽配對過的主人；網頁只綁 127.0.0.1，且需金鑰（secrets/web-key.txt）。
+- Telegram 只聽配對過的主人；網頁只綁 127.0.0.1，且需金鑰（H:/金鑰/web-key.txt）。
 - 寫檔權限是全域設定；Claude 在可寫模式下用 auto 權限，安全相關動作要主人在該房間同意。
 """
 import http.client
@@ -2437,10 +2437,10 @@ def grant_write(name, dirs, room="", by="使用者按以後都允許"):
 
 
 def agent_keys():
-    """各視窗 agent 的低權限金鑰：secrets/agent-key-<名字>.txt；同一份也放在該 agent 的家（例如 H:\Gemini用\.群組金鑰.txt）。"""
+    """各視窗 agent 的低權限金鑰：H:/金鑰/agent-key-<名字>.txt；同一份也放在該 agent 的家（例如 H:\Gemini用\.群組金鑰.txt）。"""
     out = {}
     for name, home in (("Gemini", r"H:\Gemini用"), ("輝達", r"H:\免費模型用")):
-        p = os.path.join(HERE, "secrets", f"agent-key-{name}.txt")
+        p = os.path.join(r"H:\金鑰", f"agent-key-{name}.txt")
         try:
             out[name] = open(p, encoding="utf-8").read().strip()
         except OSError:
@@ -2458,8 +2458,8 @@ def agent_keys():
 
 
 def web_key():
-    """網頁金鑰固定存在 secrets/web-key.txt，重啟後原本的分頁可以繼續用。"""
-    path = os.path.join(HERE, "secrets", "web-key.txt")
+    """網頁金鑰固定存在 H:/金鑰/web-key.txt，重啟後原本的分頁可以繼續用。"""
+    path = os.path.join(r"H:\金鑰", "web-key.txt")
     try:
         with open(path, encoding="utf-8") as f:
             k = f.read().strip()
