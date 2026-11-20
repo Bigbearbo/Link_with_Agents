@@ -20,10 +20,15 @@ LOOKBACK = 10      # 使用者 11-20 08:28：至少載入 10 則；目的除了�
 
 def lookback(transcript, seen, n=LOOKBACK):
     """新訊息不足 n 則時，補上前面已讀的幾則（截短），並提醒：前面使用者的話有沒有還沒回、答應了還沒做。"""
-    have = len(transcript) - seen
+    have = sum(1 for m in transcript[seen:] if m.get("who") != "系統")   # Codex 08:30：先排除系統通知再算，確保真的有 n 則對話
     if have >= n or seen <= 0:
         return ""
-    old = [m for m in transcript[max(0, seen - (n - have)):seen] if m.get("who") != "系統"]
+    old = []
+    for m in reversed(transcript[:seen]):
+        if m.get("who") != "系統":
+            old.insert(0, m)
+            if len(old) >= n - have:
+                break
     if not old:
         return ""
     lines = "\n".join(f"〔{m.get('who')}｜{m.get('time', '')}〕{(m.get('text') or '')[:200]}" for m in old)

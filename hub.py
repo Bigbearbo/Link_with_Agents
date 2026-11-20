@@ -490,7 +490,7 @@ class Room:
             snapshot = list(self.transcript)
         start = self.term_seen if terminal else agent.seen
         new = [m for m in snapshot[start:] if m["who"] != agent.name]
-        body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)
+        body = rt.lookback(snapshot, start) + "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new)   # Codex 08:30：分身也要回看
         head = ("（你是分身：主線的你還在處理先前的工作。下面的新訊息，能直接回答的就回答；"
                 "需要改檔、跑指令或要很久的，簡短說明「等手上的事做完再處理」，不要動手。"
                 "不用回應主線正在做的那件事。）\n\n")
