@@ -449,9 +449,27 @@ class Room:
         if "dot" in picked and len(picked) > 1:
             notify_dot(self.name, "使用者", time.strftime("%m-%d %H:%M"), text)  # 群聊名單有 Dot：留點名單
         seq = [a for p in picked for a in self.seq_for(p)] if len(picked) > 1 else self.seq_for(target)
-        for a in seq:
-            if a.busy and not self.start_side(a):
-                a.pending = True  # 分身也在忙：等手上的事做完再回
+        # 使用者 11-20 08:21「回復排序還沒修，似乎一起說」：忙碌那位的分身原本立刻開講，會搶在排它前面的人之前。
+        # 改成：分身等排在它前面、這輪會講的人都在使用者這句之後發過言（最多等 10 分鐘），才開講。
+        u_idx = len(self.transcript) - 1
+        for i, a in enumerate(seq):
+            if not a.busy:
+                continue
+            before = [b for b in seq[:i] if b is not a and not b.busy]
+            if not before:
+                if not self.start_side(a):
+                    a.pending = True  # 分身也在忙：等手上的事做完再回
+                continue
+            def _wait_then_side(a=a, before=before, u_idx=u_idx):
+                end = time.time() + 600
+                while time.time() < end and not self.stop_flag:
+                    said = {m.get("who") for m in self.transcript[u_idx + 1:]}
+                    if all(b.name in said for b in before) or not a.busy:
+                        break
+                    time.sleep(2)
+                if a.busy and not self.start_side(a):
+                    a.pending = True
+            threading.Thread(target=_wait_then_side, daemon=True).start()
         if gap > 2 * 3600 and seq:
             how = {"Gemini": "（住 agy 視窗，看到單才回）", "輝達": "（住 OpenCode 視窗，會被叫醒）"}
             self.notice("好一陣子沒講話了，提醒一下這次會回話的：" + " → ".join(a.name + how.get(a.name, "") for a in seq)
