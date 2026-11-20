@@ -244,6 +244,17 @@ class Room:
                     except Exception as e:
                         self.notice(f"小AI·{n} 叫不動：{type(e).__name__} {str(e)[:80]}")
             threading.Thread(target=_small, daemon=True).start()
+        if who == "使用者" and re.match(r"^\s*手搓\s*\d", text or ""):
+            # 使用者 11-20 08:15「期待手搓網路能做點小事」：行首「手搓 33*3」→ 手搓 v2 網路真的算一遍（手搓計算.py）
+            def _calc(t=text):
+                try:
+                    import importlib
+                    r = importlib.import_module("手搓計算").answer(t)
+                    if r:
+                        self.add("手搓網路", r, "回覆")
+                except Exception as e:
+                    self.notice(f"手搓網路算不動：{type(e).__name__} {str(e)[:80]}")
+            threading.Thread(target=_calc, daemon=True).start()
         if who not in ("系統",) and not who.startswith("小AI") and (text or "").lstrip().startswith("求救"):
             # 使用者 11-20 04:39：AI 卡住時的求救通道（規格 Codex 04:41），分流在 求救.py
             def _rescue(w=who, t=text):
