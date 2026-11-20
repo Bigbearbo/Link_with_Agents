@@ -441,6 +441,9 @@ function whenStr(t){
 }
 function renderMarks(){
   const box = $("#marksList");
+  // 使用者 11-21 03:30：書籤寫數量
+  const n = marks.length, h = $("#marks h3"); $("#marksBtn").textContent = "🔖 書籤" + (n ? ` (${n})` : "");
+  if(h && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.textContent = "🔖 書籤" + (n ? ` (${n}) ` : " ");
   if(!marks.length){ box.className = "none"; box.textContent = "還沒有書籤。滑到發言上，點名字前面的 🔖 加入。"; return; }
   box.className = ""; box.innerHTML = "";
   for(const b of marks.slice().reverse()){
