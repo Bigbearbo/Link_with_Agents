@@ -1338,6 +1338,16 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/errors":   # 使用者 11-21 01:48：報錯也弄個顯示，大家看得到就會認領分派
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                import importlib
+                body = importlib.import_module("異常偵測").page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/wiki":   # 使用者 11-20 19:37：知識庫像維基百科（讀 H:\Agent共用\知識庫，只讀）
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1411,6 +1421,22 @@ def make_handler(hub):
                     room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") else "both",
                                    members=[m for m in mem if isinstance(m, str)] if isinstance(mem, list) else None)
                 return self._json({"ok": True})
+            if p == "/api/errors":   # 報錯頁：回報／認領／已修（使用者 11-21 01:48）
+                import importlib
+                er = importlib.import_module("異常偵測")
+                op, who = data.get("op"), str(data.get("who") or "使用者")[:30]
+                if op == "report" and str(data.get("text") or "").strip():
+                    code = er.report(who, data["text"])
+                    try:
+                        hub.room("g1004308131170").notice(f"📝 新回報 [{code}]（{who}）：{str(data['text'])[:200]}——要認領請到網頁「報錯」頁按「我來」，或 python 異常偵測.py 認領 {code} <名字>")
+                    except Exception:
+                        pass
+                    return self._json({"ok": True, "code": code})
+                if op == "claim":
+                    return self._json({"ok": er.claim(str(data.get("code")), who)})
+                if op == "resolve":
+                    return self._json({"ok": er.resolve(str(data.get("code")), who, data.get("note") or "")})
+                return self._json({"ok": False})
             if p == "/api/more":
                 room.more(int(data.get("n") or 1))
                 return self._json({"ok": True})
