@@ -23,11 +23,45 @@ def _load():
 
 
 def parse(text):
-    m = re.match(r"^\s*手搓\s*(\d{1,3})\s*([*×xX/÷+＋\-−－])\s*(\d{1,3})\s*[=＝?？]?\s*$", text or "")
+    m = re.match(r"^\s*手搓\s*(\d{1,5})\s*([*×xX/÷+＋\-−－])\s*(\d{1,5})\s*[=＝?？]?\s*$", text or "")
     if not m:
         return None
     a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
     return a, next(k for k, v in OPS.items() if op in v), b
+
+
+_word = None
+
+
+def word_answer(a, op, b):
+    """詞級版（Fable 起頭、Claude 接手的 word_ctrl v3.1，538 單元）：數字寫成 6 位一段的黏數，網路自己解碼、算、寫回詞級答案。"""
+    global _word
+    lim = 4095 if op in ("ADD", "SUB") else 255
+    if a > lim or b > lim:
+        return f"🔧 {a}{SYM[op]}{b}：手搓網路的詞級版加減只到 0～4095、乘除只到 0～255（再大要等 v2 多詞規格接上）。"
+    if op == "SUB" and a < b:
+        return f"🔧 {a}−{b}：手搓網路目前只會不是負數的減法。"
+    if op == "DIV" and b == 0:
+        return "🔧 除以 0：手搓網路會拒答。"
+    import numpy as np
+    if _word is None:
+        sys.path.insert(0, r"H:\Agent共用\claude-接手Fable-20261117")
+        import word_ctrl as wc
+        _word = (wc, wc.build())
+    wc, net = _word
+    name = {"ADD": "加", "SUB": "減", "MUL": "乘", "DIV": "除"}[op]
+    board = np.zeros((1, wc.NIN), np.int64)
+    board[:, wc.c("OP", 0)], board[:, wc.c("OP", 1)] = wc.OPS[name]
+    board[:, wc.POS["WX"][0]:wc.POS["WY"][0] + 24] = wc.encode([a], [b], False)
+    out, steps, done = wc.mc.run(net, board, max_rounds=40)
+    got, why = wc.decode(out[0, wc.POS["OUT"][0]:wc.POS["OUT"][0] + 48])
+    if why or not got:
+        return f"🔧 手搓網路（詞級版）這題沒交出合法答案（{why or '拒答'}）"
+    gold = {"ADD": [a + b], "SUB": [a - b], "MUL": [a * b], "DIV": list(divmod(a, b))}[op]
+    shown = f"{got[0]} 餘 {got[1]}" if op == "DIV" else f"{got[0]}"
+    ok = "✅ 主機核對一致" if got == gold else f"❌ 主機核對不一致（應為 {gold}）"
+    return (f"🔧 手搓網路（詞級版，Fable 線）算的：{a} {SYM[op]} {b} = **{shown}**\n{ok}｜內部 {int(steps[0])} 步｜"
+            f"{len(net[1])} 個手填門檻單元，沒有訓練｜數字用 6 位一段的黏數詞（超過 v2 的 127，等多詞規格接上後會統一）")
 
 
 def answer(text):
@@ -35,6 +69,9 @@ def answer(text):
     if not q:
         return None
     a, op, b = q
+    big = a > 127 or b > 127 or (op == "ADD" and a + b > 127)
+    if big:   # 使用者 11-20 09:29「怎麼不接 fable 的繼續搓」：超過 v2 範圍就交給詞級版 word_ctrl（黏數，加減 0..4095、乘除 0..255）
+        return word_answer(a, op, b)
     if not (0 <= a <= 127 and 0 <= b <= 127):
         return "🔧 手搓網路目前只會 0～127 的加減乘除（v2 格式一個詞 7 位）。"
     if op == "DIV" and b == 0:
