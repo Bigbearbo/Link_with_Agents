@@ -1711,6 +1711,11 @@ def notify_dot(room, who, when, text):
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(f"房間：{room}\n誰點名：{who}\n時間：{when}\n---\n{(text or '')[:1500]}\n")
         os.replace(tmp, os.path.join(d, name))
+        # 11-21 02:55 DeepSeek 查到 13 張點名單兩天沒人動：Dot（App 裡的 GPT）只看得到雲端「我的雲端」→ 同一張也放雲端
+        cd = r"J:\我的雲端硬碟\給Dot\待處理"
+        if os.path.isdir(r"J:\我的雲端硬碟"):
+            os.makedirs(cd, exist_ok=True)
+            shutil.copyfile(os.path.join(d, name), os.path.join(cd, name))
     except OSError as e:
         log(f"給 Dot 的點名單寫入失敗：{e}")
 
