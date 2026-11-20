@@ -179,6 +179,12 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 #marksBtn{cursor:pointer}
 @media (max-width:1379px){#marks{display:none;left:12px;top:64px}#marks.open{display:block}}
 @media (min-width:1380px){#marksBtn{display:none}}
+.lcol{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none}
+.abbrBtn{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;font-size:10px;padding:1px 3px;cursor:pointer;opacity:.6}
+.msg:hover .abbrBtn,.abbrBtn.on{opacity:1}
+.abbrBox{margin-top:4px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px;font-size:13px}
+.abbrHd{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;flex-wrap:wrap}.abbrHd label{color:var(--muted);font-size:12px}
+.abbrRow{margin:3px 0}.abbrRow.hid{opacity:.5}.abbrRow button{font-size:11px;padding:0 6px;margin-left:4px;cursor:pointer}
 .bm{border:none;background:none;cursor:pointer;padding:0 4px 0 0;font-size:12px;opacity:.35;vertical-align:1px}
 .msg:hover .bm{opacity:.8}.bm.on{opacity:1}
 .oldctx{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -375,13 +381,42 @@ function render(m, idx){
   if(w.cls === "m-sys"){ el.innerHTML = `<div class="bubble">${esc(m.text)}</div>`; return el; }
   const src = m.src === "Telegram" ? " · 來自 Telegram" : m.src === "電腦" ? " · 電腦" : m.src === "備援" ? " · 備援 Claude（終端機不在）" : m.src === "App" ? " · 來自 Codex App" : m.src === "共用區" ? " · 從共用區 inbox" : "";
   const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
-  el.innerHTML = `<div class="face ${w.face}">${w.ch}</div><div class="body">
+  const ab = abbrHits(m.text);   // 使用者 11-21 06:13：縮寫介紹（訊息框左邊，預設不展開）
+  el.innerHTML = `<div class="lcol"><div class="face ${w.face}">${w.ch}</div>${ab.length ? `<button class="abbrBtn" title="這則訊息裡的縮寫是什麼意思">縮寫</button>` : ""}</div><div class="body">
     <div class="meta"><button class="bm${isMarked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
-    <div class="bubble">${md(m.text)}</div><div class="live"></div></div>`;
+    <div class="bubble">${md(m.text)}</div><div class="abbrBox" hidden></div><div class="live"></div></div>`;
   el.querySelector(".bm").onclick = () => toggleMark(m, idx, el);
+  const abb = el.querySelector(".abbrBtn");
+  if(abb) abb.onclick = () => { const box = el.querySelector(".abbrBox"); box.hidden = !box.hidden; abb.classList.toggle("on", !box.hidden); if(!box.hidden) renderAbbr(box, m.text); };
   decorate(el.querySelector(".bubble"), m);
   return el;
 }
+// ---------- 縮寫介紹（使用者 11-21 06:13）：表在 H:\Agent共用\縮寫表.json；隱藏清單存中樞 ----------
+let ABBR = {terms: {}, hidden: []}, abbrShowHidden = false, abbrRe = [];
+function abbrBuild(){
+  abbrRe = Object.keys(ABBR.terms).sort((a, b) => b.length - a.length).map(t => {
+    const e = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [t, /^[\x00-\x7f]+$/.test(t) ? new RegExp("(^|[^A-Za-z0-9_])" + e + "(?![A-Za-z0-9_])") : new RegExp(e)];
+  });
+}
+function abbrHits(text){
+  const s = text || "", out = [];
+  for(const [t, re] of abbrRe) if(re.test(s) && !out.some(o => o.includes(t))) out.push(t);   // SHA-256 命中就不再列 SHA
+  return out;
+}
+function renderAbbr(box, text){
+  const hits = abbrHits(text), hid = new Set(ABBR.hidden);
+  const shown = hits.filter(t => abbrShowHidden || !hid.has(t));
+  box.innerHTML = `<div class="abbrHd"><b>縮寫介紹</b><label><input type="checkbox" class="abbrShow"${abbrShowHidden ? " checked" : ""}> 顯示已隱藏（${hits.filter(t => hid.has(t)).length}）</label></div>` +
+    (shown.length ? shown.map(t => `<div class="abbrRow${hid.has(t) ? " hid" : ""}"><code>${esc(t)}</code> ${esc(ABBR.terms[t] || "")} <button data-t="${esc(t)}">${hid.has(t) ? "取消隱藏" : "隱藏"}</button></div>`).join("")
+                  : `<div class="abbrRow">這則的縮寫都已隱藏。</div>`);
+  box.querySelector(".abbrShow").onchange = e => { abbrShowHidden = e.target.checked; renderAbbr(box, text); };
+  box.querySelectorAll("button[data-t]").forEach(b => b.onclick = async () => {
+    try{ ABBR = await api("/api/abbr", {op: hid.has(b.dataset.t) ? "unhide" : "hide", term: b.dataset.t}); }catch(e){ return; }
+    renderAbbr(box, text);
+  });
+}
+async function loadAbbr(){ try{ ABBR = await api("/api/abbr"); abbrBuild(); }catch(e){} }
 // ---------- 使用者 22:23：連結旁加複製、電腦檔案路徑可點、AI 小標題＋收合成三行 ----------
 function titleOf(m){
   const first = ((m.text || "").split("\n").find(l => l.trim()) || "").trim();
@@ -579,6 +614,8 @@ $("#marksBtn").onclick = () => $("#marks").classList.toggle("open");
   $("#foldBtn").onclick = () => { const on = document.body.classList.toggle("fold");
     $("#foldBtn").textContent = on ? "↕ 展開" : "↕ 收合"; try{ localStorage.setItem("rt-fold", on ? "1" : "0"); }catch(e){} }; })();
 loadMarks();
+// 縮寫表載入後重畫一次訊息（才會出現「縮寫」按鈕）；之後每 10 分鐘更新表，新訊息就用新表
+loadAbbr().then(() => { total = 0; epoch = 0; list.innerHTML = ""; poll(); }); setInterval(loadAbbr, 600000);
 loadUsage(); setInterval(loadUsage, 60000);
 // 小 AI 點名鈕：收合式；按了把 @名字 放進輸入框、切到「只記下」（不叫醒主力 AI），等你送出才呼叫
 (() => {

@@ -1315,6 +1315,11 @@ def make_handler(hub):
                 i = int(q.get("idx", ["0"])[0])
                 lo = max(0, i - 6)
                 self._json({"start": lo, "idx": i, "messages": rm.transcript[lo:i + 7]})
+            elif u.path == "/api/abbr":   # 縮寫介紹（使用者 11-21 06:13）
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                import importlib
+                self._json(importlib.import_module("縮寫表").payload())
             elif u.path == "/api/bookmarks":   # 書籤（使用者 11-19 22:01）
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
@@ -1458,6 +1463,11 @@ def make_handler(hub):
                     return self._json({"ok": False, "error": "找不到：" + path})
                 subprocess.Popen(["explorer.exe", "/select," + path] if os.path.isfile(path) else ["explorer.exe", path])
                 return self._json({"ok": True})
+            if p == "/api/abbr":   # 縮寫隱藏／取消隱藏（使用者 11-21 06:13）
+                import importlib
+                ab = importlib.import_module("縮寫表")
+                ab.set_hidden(data.get("term", ""), data.get("op") == "hide")
+                return self._json(ab.payload())
             if p == "/api/bookmarks":   # {"add": {...}} 或 {"del": id}
                 with hub.lock:
                     bm = load_bookmarks()
