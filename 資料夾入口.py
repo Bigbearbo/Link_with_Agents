@@ -130,6 +130,11 @@ def ai_text():
 
 def write():
     open(AI_OUT, "w", encoding="utf-8", newline="\n").write(ai_text())
+    try:   # 使用者 11-21 07:27：資源資訊改成推播給 AI（借這個每 10 分鐘的掛點，不另改 hub.py）
+        import importlib
+        importlib.import_module("資源推播").tick()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
