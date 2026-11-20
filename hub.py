@@ -1978,12 +1978,15 @@ def tg_members(room, text):
     cfg = allcfg.get(room.id) or {"開": ["claude", "codex", "gemini"], "先回": "claude"}
     on, first = list(cfg.get("開", [])), cfg.get("先回", "claude")
     changed = False
-    pat = re.compile(r"\s*(開|關|先回)\s*[:：]?\s*((?:[A-Za-z]+|輝達)(?:[ \t,，、]+(?:[A-Za-z]+|輝達))*)\s*(?:[；;。\n]|$)")
+    # 使用者 11-20 16:08「開codex指令修一下」：「開 / codex」（斜線）和「開codex 正文」（名字後直接接正文、沒有；）以前都不認得
+    # → 只認已知名字、名字後面不能緊接英文字母，指令與名字之間可夾 : ／ /，名字後可接空白／標點再接正文。
+    nm_ = r"(?:claude|codex|gemini|nvidia|deepseek|dot|輝達)"
+    pat = re.compile(rf"\s*(開|關|先回)\s*[:：/／]?\s*({nm_}(?:[ \t,，、/／]+{nm_})*)(?![A-Za-z])\s*[；;。，,\n]?", re.I)
     while True:
         m = pat.match(text)
         if not m:
             break
-        who = [TG_NAMES[w.lower()] for w in re.findall(r"[A-Za-z]+|輝達", m.group(2)) if w.lower() in TG_NAMES]
+        who = [TG_NAMES[w.lower()] for w in re.findall(nm_, m.group(2), re.I) if w.lower() in TG_NAMES]
         if not who:
             break
         if m.group(1) == "開":
