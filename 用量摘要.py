@@ -123,8 +123,50 @@ def ai_text():
     return "\n".join(L) + "\n"
 
 
+HIST = r"H:\Agent共用\用量歷史.jsonl"   # 使用者 11-21 06:33：用量加時間快照（每小時一筆），之後可做圖表或看近期變化
+
+
+def snapshot(min_gap=3300):
+    """距上一筆超過 min_gap 秒才寫一筆：{時間, 列:[[誰,窗口,已用%,速度,狀態]...]}。中樞每 10 分鐘呼叫，實際約每小時一筆。"""
+    import os
+    try:
+        if os.path.exists(HIST) and time.time() - os.path.getmtime(HIST) < min_gap:
+            return False
+    except OSError:
+        pass
+    rec = {"時間": time.strftime("%Y-%m-%d %H:%M"),
+           "列": [[w, win, u, s, st] for w, win, u, s, st, _r, _upd in rows()]}
+    with open(HIST, "a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return True
+
+
+def recent(hours=6):
+    """最近幾筆快照 → {(誰,窗口): [已用%...]}，給 ai_text 畫「近期變化」。"""
+    try:
+        lines = open(HIST, encoding="utf-8").read().splitlines()[-hours:]
+    except OSError:
+        return {}, []
+    out, times = {}, []
+    for ln in lines:
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            continue
+        times.append(r["時間"][11:16])
+        for w, win, u, *_ in r["列"]:
+            out.setdefault((w, win), []).append(u)
+    return out, times
+
+
 def write():
-    open(OUT, "w", encoding="utf-8", newline="\n").write(ai_text())
+    snapshot()
+    t = ai_text()
+    h, times = recent()
+    if times:
+        t += f"\n## 近期變化（每小時快照，{times[0]}～{times[-1]}；完整紀錄 H:\\Agent共用\\用量歷史.jsonl）\n\n"
+        t += "\n".join(f"- {w} {win}：" + " → ".join("—" if v is None else str(v) for v in vs) for (w, win), vs in h.items()) + "\n"
+    open(OUT, "w", encoding="utf-8", newline="\n").write(t)
 
 
 if __name__ == "__main__":
