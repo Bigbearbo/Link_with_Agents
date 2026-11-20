@@ -685,12 +685,24 @@ async function poll(){
     const st = $("#st"); st.className = "pill warn"; st.lastChild.textContent = "中樞沒有回應（黑色視窗被關了嗎？）";
   }
 }
+let sending = false;
 async function send(){
-  const text = box.value.trim();
-  if(!text) return;
-  box.value = ""; grow();
-  await api("/api/send", {text, target, room, members: groupMembers()});
-  setTimeout(()=>main.scrollTop = main.scrollHeight, 300);
+  // Codex 11-20 08:36：原本先清空再送，送出時剛好重開就吃字 → 改成中樞確認收件後才清；失敗保留；等待中續打的字也保留
+  const raw = box.value, text = raw.trim();
+  if(!text || sending) return;
+  sending = true; box.style.opacity = ".6";
+  try{
+    await api("/api/send", {text, target, room, members: groupMembers()});
+    if(box.value === raw) box.value = "";
+    else if(box.value.startsWith(raw)) box.value = box.value.slice(raw.length).replace(/^\s+/, "");
+    grow();
+    setTimeout(()=>main.scrollTop = main.scrollHeight, 300);
+  }catch(e){
+    box.style.outline = "2px solid #d9483b"; setTimeout(() => box.style.outline = "", 4000);
+    box.title = "送出失敗（中樞可能正在重開），文字還在，等一下再按一次";
+  }finally{
+    sending = false; box.style.opacity = "";
+  }
 }
 function grow(){ box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, innerHeight*0.4) + "px"; }
 box.addEventListener("input", grow);
