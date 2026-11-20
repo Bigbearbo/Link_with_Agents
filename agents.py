@@ -31,9 +31,11 @@ def lookback(transcript, seen, n=LOOKBACK):
                 break
     if not old:
         return ""
-    lines = "\n".join(f"〔{m.get('who')}｜{m.get('time', '')}〕{(m.get('text') or '')[:200]}" for m in old)
+    lines = "\n".join(f"〔{m.get('who')}｜{m.get('time', '')}〕{(m.get('text') or '')[:200]}"
+                      + (("\n   ↳筆記：" + "；".join(m["notes"])) if m.get("notes") else "") for m in old)
     return ("【前文（已讀過，幫你回想；不用逐則回）】\n" + lines +
-            "\n【提醒】回最新那句之外，也看前文裡使用者的話：有沒有還沒回到、或有人答應了還沒做的？有就一句話交代進度或補上。\n\n【新訊息】\n")          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
+            "\n【提醒】回最新那句之外，也看前文裡使用者的話：有沒有還沒回到、或有人答應了還沒做的？「↳筆記」寫已做的就略過，待做的才交代進度或補上。"
+            "\n回覆最後可加一行「【筆記】已做：…／待做：…」（會貼在使用者那句旁、不顯示，之後回看讀得到）。\n\n【新訊息】\n")          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 try:  # 研究主題寫在本機的 local_topic.txt（不進 git），給各 AI 的提示用
     RESEARCH_TOPIC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_topic.txt"),

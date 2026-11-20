@@ -309,6 +309,20 @@ class Room:
                 log(f"放寬提案處理失敗：{e}")
         if kind:
             entry["kind"] = kind
+        # 使用者 11-20 08:32：回話之後在使用者那句旁留「筆記」，回看時讀含筆記的版本，已做的就能略過。
+        # AI 回覆最後一行寫「【筆記】已做：…／待做：…」→ 從顯示文字拿掉、貼到這輪使用者那句的 notes；沒寫也自動記「誰已回」。
+        if who not in ("使用者", "系統") and not who.startswith("小AI") and text:
+            m_note = re.search(r"\n?【筆記】(.+)\s*$", text)
+            note = m_note.group(1).strip()[:200] if m_note else ""
+            if m_note:
+                text = text[:m_note.start()].rstrip()
+                entry["text"] = text
+            with self.hub.lock:
+                u = next((m for m in reversed(self.transcript) if m.get("who") == "使用者"), None)
+                if u is not None:
+                    u.setdefault("notes", [])
+                    u["notes"].append(f"{who} {entry['time'][-5:]}：" + (note or "已回"))
+                    del u["notes"][:-6]
         with self.hub.lock:
             self.transcript.append(entry)
             idx = len(self.transcript) - 1
