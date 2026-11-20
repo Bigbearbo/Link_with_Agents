@@ -763,7 +763,8 @@ class Room:
         names = {"claude": self.claude, "codex": self.codex, "gemini": self.gemini, "nvidia": self.nvidia,
                  "輝達": self.nvidia, "deepseek": self.deepseek}
         called = []
-        for m in re.finditer(r"(?m)^\s*@(claude|codex|gemini|nvidia|輝達|deepseek)(?![A-Za-z])", said or "", re.I):
+        # 使用者 11-21：輝達寫「等 @Claude：核對…」放在句尾，不是行首，中樞沒叫醒 Claude → 也認「等／請 @名字」（明確在等對方的寫法）
+        for m in re.finditer(r"(?m)(?:^\s*|(?:等|請|麻煩)\s*)@(claude|codex|gemini|nvidia|輝達|deepseek)(?![A-Za-z])", said or "", re.I):
             a = names[m.group(1).lower()]
             if a is not agent and a not in called:
                 called.append(a)
