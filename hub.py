@@ -495,7 +495,7 @@ class Room:
             how = {"Gemini": "（住 agy 視窗，看到單才回）", "輝達": "（住 OpenCode 視窗，會被叫醒）"}
             self.notice("好一陣子沒講話了，提醒一下這次會回話的：" + " → ".join(a.name + how.get(a.name, "") for a in seq)
                         + "。要換人：開頭寫 @名字，或 Telegram 用「開／關／先回 名字」。")
-        self.chain([a for a in seq if not a.busy])
+        self.chain([a for a in seq if not a.busy], direct=(len(picked) <= 1 and target in names and target != "dot"))
 
     # ---------- 分身：主線在忙時，先回答新問題（只讀、不搶主線的對話） ----------
     def start_side(self, agent):
@@ -579,9 +579,20 @@ class Room:
                     pass
 
     # ---------- 回答：兩位各自獨立，不互相排隊 ----------
-    def chain(self, seq, front=False):
+    def chain(self, seq, front=False, direct=False):
         """依序請 seq 裡的 agent 發言。空著的馬上開始，前一位答完才換下一位；
         忙碌中的那位不擋後面的人：記一筆「待回應」，手上的事做完再回一輪，看到中間所有新訊息。"""
+        # 使用者 11-21 01:19／01:20：「只問 輝達」「只問 Claude」都排在正在跑的 Codex（190～385 秒）後面才輪到，
+        # 看起來像「只問壞掉」→ 使用者明確只問一位、那位又沒在忙：直接開工，不併進別人的隊伍。
+        if direct and len(seq) == 1:
+            agent = seq[0]
+            with self.hub.lock:
+                if agent.busy:
+                    agent.pending = True
+                    return
+                agent.busy = True
+            threading.Thread(target=self.agent_loop, args=(agent, None), daemon=True).start()
+            return
         # 使用者 11-20 06:17：「輪流說話有點亂，變成同步說話」——原因：Claude 回覆裡 @Codex 會另開一條接力，
         # 原本那條也照樣往下叫 Gemini／輝達 → 同時發言。改成排隊共用 self.queue，點名的人插到隊伍最前面、已經排著的不另開。
         with self.hub.lock:
