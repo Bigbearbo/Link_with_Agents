@@ -54,12 +54,25 @@ def rows():
     return out
 
 
+def _stale(upd, hours=2):
+    """資料時間超過 hours 小時沒更新 → 回「⏳ 資料過期」（使用者 11-21 01:41 後補：Codex 用量檔停在前一天）。"""
+    import datetime as _dt
+    s = str(upd or "")
+    for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+        try:
+            t = _dt.datetime.strptime(s[:n], fmt)
+            return (_dt.datetime.now() - t).total_seconds() > hours * 3600
+        except ValueError:
+            continue
+    return False
+
+
 def ai_text():
     L = [f"# 用量狀態（給 AI 讀；{time.strftime('%m-%d %H:%M')} 產生；網頁版＝用量儀表板；數值來源＝H:\\Agent共用\\*-用量.json）", "",
          "| 誰 | 窗口 | 已用% | 速度 | 狀態 | 重置 | 派工建議 | 資料時間 |", "|---|---|---|---|---|---|---|---|"]
     for who, win, used, speed, state, reset, upd in rows():
         L.append(f"| {who} | {win} | {'—' if used is None else used} | {'—' if speed is None else speed} | {state or '—'} | {reset or '—'} | "
-                 f"{_advice(used, speed, state)} | {upd or '—'} |")
+                 f"{'⏳ 資料過期，數字可能偏舊' if _stale(upd) else _advice(used, speed, state)} | {upd or '—'} |")
     g = _load("gemini")
     if g and g.get("判斷"):
         L += ["", f"- Gemini 補充：{g['判斷']}"]
