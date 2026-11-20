@@ -421,10 +421,10 @@ function abbrHits(text){
 function renderAbbr(box, text){
   const hits = abbrHits(text), hid = new Set(ABBR.hidden);
   const shown = hits.filter(t => abbrShowHidden || !hid.has(t));
-  box.innerHTML = `<div class="abbrHd"><b>縮寫介紹</b><button class="abbrClose" title="收起">▲ 收起</button><label><input type="checkbox" class="abbrShow"${abbrShowHidden ? " checked" : ""}> 顯示已隱藏（${hits.filter(t => hid.has(t)).length}）</label><button type="button" class="abbrClose">縮回</button></div>` +
-    (shown.length ? shown.map(t => `<div class="abbrRow${hid.has(t) ? " hid" : ""}"><code>${esc(t)}</code> ${esc(ABBR.terms[t] || "")} <button data-t="${esc(t)}">${hid.has(t) ? "取消隱藏" : "隱藏"}</button></div>`).join("")
+  box.innerHTML = `<div class="abbrHd"><b>縮寫介紹</b><label><input type="checkbox" class="abbrShow"${abbrShowHidden ? " checked" : ""}> 顯示已隱藏（${hits.filter(t => hid.has(t)).length}）</label><button type="button" class="abbrClose">縮回</button></div>` +
+    (shown.length ? shown.map(t => `<div class="abbrRow${hid.has(t) ? " hid" : ""}"><code>${esc(t)}</code> ${esc(ABBR.terms[t] || "")}${(ABBR.wiki || {})[t] ? ` <a href="#" class="abbrWiki" data-f="${esc(ABBR.wiki[t])}" data-q="${esc(t)}" title="打開知識庫的相關詞條">📖 知識庫</a>` : ""} <button data-t="${esc(t)}">${hid.has(t) ? "取消隱藏" : "隱藏"}</button></div>`).join("")
                   : `<div class="abbrRow">這則的縮寫都已隱藏。</div>`);
-  box.querySelector(".abbrClose").onclick = () => { box.hidden = true; const b = box.closest(".msg") && box.closest(".msg").querySelector(".abbrBtn"); if(b) b.classList.remove("on"); };
+  box.querySelectorAll(".abbrWiki").forEach(a => a.onclick = e => { e.preventDefault(); openWiki(a.dataset.f, a.dataset.q); });
   box.querySelector(".abbrShow").onchange =e => { abbrShowHidden = e.target.checked; renderAbbr(box, text); };
   box.querySelectorAll("button[data-t]").forEach(b => b.onclick = async () => {
     try{ ABBR = await api("/api/abbr", {op: hid.has(b.dataset.t) ? "unhide" : "hide", term: b.dataset.t}); }catch(e){ return; }
@@ -432,6 +432,12 @@ function renderAbbr(box, text){
   });
 }
 async function loadAbbr(){ try{ ABBR = await api("/api/abbr"); abbrBuild(); }catch(e){} }
+// 使用者 11-21 06:27：縮寫有知識庫詞條就附連結 → 在右側面板的知識庫打開那一頁（找不到單頁就用搜尋）
+function openWiki(f, q){
+  openSide("wiki", null, true);
+  const fr = document.querySelector('#sidePane iframe[data-p="wiki"]');
+  if(fr) fr.src = "/wiki?k=" + encodeURIComponent(KEY) + (f ? "&f=" + encodeURIComponent(f) : "&q=" + encodeURIComponent(q));
+}
 // ---------- 使用者 22:23：連結旁加複製、電腦檔案路徑可點、AI 小標題＋收合成三行 ----------
 function titleOf(m){
   const first = ((m.text || "").split("\n").find(l => l.trim()) || "").trim();
