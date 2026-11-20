@@ -79,6 +79,28 @@ def _notes():
             and not (v.get("到期") and v["到期"] < now)}
 
 
+def _age_hours(upd):
+    import datetime as _dt
+    s = str(upd or "")
+    for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+        try:
+            return (_dt.datetime.now() - _dt.datetime.strptime(s[:n], fmt)).total_seconds() / 3600
+        except ValueError:
+            continue
+    return None
+
+
+def _note_cell(n, upd):
+    """註記欄＝自動偵測（資料多久沒更新，使用者 11-21 01:45）＋人工註記。"""
+    parts = []
+    h = _age_hours(upd)
+    if h is not None and h > 2:
+        parts.append(f"⏳ 用量資料 {h:.0f} 小時沒更新（自動偵測）")
+    if n and n.get("註記"):
+        parts.append(n["註記"] + (f"（到 {n['到期']}）" if n.get("到期") else ""))
+    return "；".join(parts) or "—"
+
+
 def ai_text():
     L = [f"# 用量狀態（給 AI 讀；{time.strftime('%m-%d %H:%M')} 產生；網頁版＝用量儀表板；數值來源＝H:\\Agent共用\\*-用量.json）", "",
          "| 誰 | 窗口 | 已用% | 速度 | 狀態 | 重置 | 派工建議 | 註記 | 資料時間 |", "|---|---|---|---|---|---|---|---|---|"]
@@ -86,7 +108,7 @@ def ai_text():
     for who, win, used, speed, state, reset, upd in rows():
         L.append(f"| {who} | {win} | {'—' if used is None else used} | {'—' if speed is None else speed} | {state or '—'} | {reset or '—'} | "
                  f"{(nt.get(who) or {}).get('建議') or ('⏳ 資料過期，數字可能偏舊' if _stale(upd) else _advice(used, speed, state))} | "
-                 f"{((nt.get(who) or {}).get('註記') or '—') + ('（到 ' + nt[who]['到期'] + '）' if nt.get(who, {}).get('到期') else '')} | {upd or '—'} |")
+                 f"{_note_cell(nt.get(who), upd)} | {upd or '—'} |")
     g = _load("gemini")
     if g and g.get("判斷"):
         L += ["", f"- Gemini 補充：{g['判斷']}"]

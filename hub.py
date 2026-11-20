@@ -2750,6 +2750,15 @@ if __name__ == "__main__":
                             open(_m.AI_OUT, "w", encoding="utf-8", newline="\n").write(_m.ai_text())
                     except Exception as e:
                         log(f"給 AI 讀的摘要刷新失敗（{_mod}）：{type(e).__name__} {e}")
+                # 使用者 11-21 01:45：系統報錯處理流程 v1 → 機器偵測的異常（用量過期、呼叫失敗、權限卡住…）新出現／恢復才通知，貼互相討論群
+                try:
+                    import importlib
+                    _msg = importlib.import_module("異常偵測").check()
+                    _rm = hub.rooms.get("g1004308131170")
+                    if _msg and _rm:
+                        _rm.notice(_msg)
+                except Exception as e:
+                    log(f"異常偵測失敗：{type(e).__name__} {e}")
                 if now - last_commit > 3600:
                     git("add", "-A")
                     r = git("commit", "-q", "-m", "中樞每小時自動快照")
