@@ -1256,6 +1256,12 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/api/restart_at":   # 使用者 11-20 08:34：要關中樞前顯示倒數（restart_when_idle.ps1 寫 restart-countdown.txt）
+                try:
+                    at = int(open(os.path.join(HERE, "restart-countdown.txt"), encoding="ascii").read().strip())
+                except (OSError, ValueError):
+                    at = 0
+                self._json({"in": max(0, at - int(time.time())) if at else None})
             elif u.path == "/api/attention":   # 使用者 11-20 04:11：待討論、研究需要我批的也用「新」，以免忘了
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
