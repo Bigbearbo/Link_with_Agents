@@ -25,6 +25,7 @@ def _read(p, d):
 
 MEM_TIGHT, MEM_DANGER = 2.0, 1.0   # 使用者 11-21 07:31：「4gb 其實是平時狀態」→ 門檻下修（平時 3～4 GB 算正常）
 GPU_HOT = 80
+CPU_HOT = 90   # i7-12700 的 TjMax 是 100°C；90 以上提醒
 
 
 def level(r):
@@ -45,6 +46,22 @@ def health():
         if s:
             n, tmp, u = [x.strip() for x in s[0].split(",")]
             out["gpu"] = {"名稱": n, "溫度": int(tmp), "使用率": int(u)}
+    except Exception:
+        pass
+    try:   # 使用者 11-21 07:52 裝好 LibreHardwareMonitor（Remote Web Server 8085）：讀 CPU Package 溫度
+        import urllib.request
+        d = json.load(urllib.request.urlopen("http://localhost:8085/data.json", timeout=3))
+        found = {}
+
+        def walk(n, parent=""):
+            t = n.get("Text", "")
+            if t in ("CPU Package", "Core Max") and "°C" in str(n.get("Value", "")):
+                found[t] = float(str(n["Value"]).split()[0].replace(",", "."))
+            for c in n.get("Children", []):
+                walk(c, t)
+        walk(d)
+        if found:
+            out["cpu_temp"] = found.get("CPU Package") or found.get("Core Max")
     except Exception:
         pass
     try:
@@ -71,7 +88,8 @@ def write_md(r, mem, busy, gb, cpu, hl):
          f"- CPU：{'—' if cpu is None else f'{cpu:.0f}%'}" + ("（忙）" if busy else ""),
          f"- 顯示卡：" + (f"{g['名稱']} {g['溫度']}°C、使用率 {g['使用率']}%" + ("（⚠️ 過熱）" if g["溫度"] >= GPU_HOT else "") if g else "讀不到"),
          f"- 硬碟：" + ("、".join(f"{n} {h}" for n, h in disks) if disks else "讀不到"),
-         "- CPU／主機板溫度、SSD 磨損：要管理員權限才讀得到（使用者決定要不要裝工具）",
+         f"- CPU 溫度：" + (f"{hl['cpu_temp']:.0f}°C" + ("（⚠️ 過熱）" if hl["cpu_temp"] >= CPU_HOT else "") if hl.get("cpu_temp") is not None
+                         else "讀不到（LibreHardwareMonitor 沒開，或沒開 Remote Web Server）"),
          f"- 使用者電腦 {pc_line[2:]}",
          f"- 資料時間：{r.get('time', '—')}" + (f"（{age:.0f} 分鐘前）" if age is not None else ""),
          f"- **重實驗現在能開嗎：{'可以（仍要審查，走 重實驗.py）' if ok else '先不要'}**", "",
@@ -88,7 +106,7 @@ def check():
     hl = health()
     write_md(r, mem, busy, gb, cpu, hl)
     g = hl.get("gpu")
-    hot = bool(g and g["溫度"] >= GPU_HOT)
+    hot = bool(g and g["溫度"] >= GPU_HOT) or bool(hl.get("cpu_temp") is not None and hl["cpu_temp"] >= CPU_HOT)
     bad = sorted(n for n, h in (hl.get("disks") or []) if h != "Healthy")
     st = _read(STATE, {})
     now = {"mem": mem, "busy": busy, "hot": hot, "bad": bad}
@@ -101,8 +119,10 @@ def check():
     parts = [f"記憶體 {mem}（可用 {gb:.1f} GB）"]
     if busy:
         parts.append(f"CPU {cpu:.0f}%（忙）")
+    if hl.get("cpu_temp") is not None:
+        parts.append(f"CPU {hl['cpu_temp']:.0f}°C" + ("（過熱）" if hl["cpu_temp"] >= CPU_HOT else ""))
     if g:
-        parts.append(f"顯示卡 {g['溫度']}°C" + ("（過熱）" if hot else ""))
+        parts.append(f"顯示卡 {g['溫度']}°C" + ("（過熱）" if g["溫度"] >= GPU_HOT else ""))
     if bad:
         parts.append("⚠️ 硬碟異常：" + "、".join(bad))
     msg = f"{icon} 資源推播：" + "，".join(parts)
