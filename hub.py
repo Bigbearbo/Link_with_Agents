@@ -70,6 +70,7 @@ SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到
 SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 vs Gemini", "gemini"),
               ("solo-dot", "我 vs Dot", "dot"), ("solo-deepseek", "我 vs DeepSeek", "deepseek")]
 WORK_ROOMS = [("small-pool", "小模型工作群", "deepseek", "nvidia")]   # (id, 名字, 主持, 候補)；Codex 22:40 接入單 small-pool-room-20261119-2234
+HANDOFF_SEC = 60  # 使用者 11-21 01:23：一棒超過 60 秒沒講完，下一棒先開始
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "DeepSeek": "🐋", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
@@ -616,6 +617,19 @@ class Room:
                 self.queue_cur = agent
             threading.Thread(target=self.agent_loop, args=(agent, lambda: self.chain(self.queue)),
                              daemon=True).start()
+
+            # 使用者 11-21 01:23：「一個 AI 等 1 分鐘都沒完成，下一棒可以開始；兩個都卡住再下一棒」
+            # → 這一棒講超過 HANDOFF_SEC 還沒完，就先叫隊伍裡的下一位（下一位自己也有同樣的計時，所以兩個都卡住才再往下）。
+            def _handoff(agent=agent, q=q):
+                end = time.time() + HANDOFF_SEC
+                while time.time() < end:
+                    if not agent.busy or self.stop_flag:
+                        return
+                    time.sleep(2)
+                if agent.busy and not self.stop_flag and q and q is self.queue:
+                    log(f"[{self.name}] {agent.name} 超過 {HANDOFF_SEC} 秒還沒講完，下一棒先開始")
+                    self.chain(q)
+            threading.Thread(target=_handoff, daemon=True).start()
             return
         if self.stop_flag:
             q.clear()
