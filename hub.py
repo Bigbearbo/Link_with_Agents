@@ -2914,6 +2914,10 @@ if __name__ == "__main__":
                 importlib.import_module("等待追蹤").remind(hub)
             except Exception as e:
                 log(f"等待追蹤失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-20 08:36：聊天程式可以隨時／定期推 GitHub → 每 6 小時，有新提交且推前掃描 0 命中才推
+                importlib.import_module("推送GitHub").periodic(hub)
+            except Exception as e:
+                log(f"GitHub 推送失敗：{type(e).__name__} {e}")
             try:   # 使用者 11-20 07:05：流程優化 → 每天 07 點後一次流程體檢，程式數、小 AI 挑最多 3 件
                 importlib.import_module("流程體檢").daily(hub)
             except Exception as e:
