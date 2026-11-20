@@ -9,6 +9,7 @@ import time
 
 SRC = r"H:\Agent共用\{}-用量.json"
 OUT = r"H:\Agent共用\用量狀態.md"
+NOTE = r"H:\Agent共用\用量註記.json"   # 使用者 11-21 01:44：註記欄處理例外（例：Codex 打算把額度用完）
 
 
 def _load(name):
@@ -67,12 +68,25 @@ def _stale(upd, hours=2):
     return False
 
 
+def _notes():
+    """讀例外註記；過了「到期」的不顯示。"""
+    try:
+        d = json.load(open(NOTE, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    now = time.strftime("%m-%d %H:%M")
+    return {k: v for k, v in d.items() if isinstance(v, dict) and (v.get("註記") or v.get("建議"))
+            and not (v.get("到期") and v["到期"] < now)}
+
+
 def ai_text():
     L = [f"# 用量狀態（給 AI 讀；{time.strftime('%m-%d %H:%M')} 產生；網頁版＝用量儀表板；數值來源＝H:\\Agent共用\\*-用量.json）", "",
-         "| 誰 | 窗口 | 已用% | 速度 | 狀態 | 重置 | 派工建議 | 資料時間 |", "|---|---|---|---|---|---|---|---|"]
+         "| 誰 | 窗口 | 已用% | 速度 | 狀態 | 重置 | 派工建議 | 註記 | 資料時間 |", "|---|---|---|---|---|---|---|---|---|"]
+    nt = _notes()
     for who, win, used, speed, state, reset, upd in rows():
         L.append(f"| {who} | {win} | {'—' if used is None else used} | {'—' if speed is None else speed} | {state or '—'} | {reset or '—'} | "
-                 f"{'⏳ 資料過期，數字可能偏舊' if _stale(upd) else _advice(used, speed, state)} | {upd or '—'} |")
+                 f"{(nt.get(who) or {}).get('建議') or ('⏳ 資料過期，數字可能偏舊' if _stale(upd) else _advice(used, speed, state))} | "
+                 f"{((nt.get(who) or {}).get('註記') or '—') + ('（到 ' + nt[who]['到期'] + '）' if nt.get(who, {}).get('到期') else '')} | {upd or '—'} |")
     g = _load("gemini")
     if g and g.get("判斷"):
         L += ["", f"- Gemini 補充：{g['判斷']}"]
@@ -83,7 +97,7 @@ def ai_text():
     if f:
         sv = f.get("服務", {})
         L.append("- 免費池今天：" + "、".join(f"{k} {v.get('今天次數', 0)}" + (f"/{v['上限']}" if v.get("上限") else "") for k, v in sv.items()))
-    L += ["", "速度＝已用% ÷ 時間已過%；>1 表示照這速度會在重置前用完。派工建議只是參考，使用者點名優先。"]
+    L += ["", "速度＝已用% ÷ 時間已過%；>1 表示照這速度會在重置前用完。派工建議只是參考，使用者點名優先。", "例外（例：打算把週額度用完、要保留額度）寫在 H:\Agent共用\用量註記.json 自己那列：註記／建議（會覆寫派工建議）／到期。"]
     return "\n".join(L) + "\n"
 
 
