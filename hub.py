@@ -1311,6 +1311,17 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/wiki":   # 使用者 11-20 19:37：知識庫像維基百科（讀 H:\Agent共用\知識庫，只讀）
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                import importlib
+                body = importlib.import_module("知識庫頁").page(q.get("k", [""])[0], q.get("f", [""])[0],
+                                                              q.get("q", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/board":   # 使用者 11-20 04:31／04:33：每位 AI 的訊息版（等我處理／我追蹤的／全部動態）
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
