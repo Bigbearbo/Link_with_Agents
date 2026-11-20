@@ -33,9 +33,13 @@ def scan(base="origin/main"):
     bad_paths = [f for f in files if re.match(r"(secrets/|logs/|tg_state|state.*\.json|.*\.dpapi$|terminal/)", f)]
     for f in bad_paths:
         hits.append((f, 0, "不該進公開倉庫的路徑"))
-    diff = git("diff", "-U0", f"{base}..HEAD")
+    # Codex 08:40：只比最新差異會漏掉「中間提交加進去、後來又刪掉」的內容（推送時舊提交照樣上傳）→ 逐筆提交掃
+    diff = git("log", "-p", "-U0", "--reverse", "--format=commit %h", f"{base}..HEAD")
     cur, ln = None, 0
     for line in diff.splitlines():
+        if line.startswith("commit "):
+            cur = None
+            continue
         if line.startswith("+++ "):
             cur = line[6:] if line.startswith("+++ b/") else None
         elif line.startswith("@@"):
