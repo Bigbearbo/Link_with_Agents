@@ -70,7 +70,7 @@ SHARED_ROOM_NAME = "機器人互相討論群"  # 共用區通知與 inbox 貼到
 SOLO_ROOMS = [("solo-nvidia", "我 vs 輝達", "nvidia"), ("solo-gemini", "我 vs Gemini", "gemini"),
               ("solo-dot", "我 vs Dot", "dot"), ("solo-deepseek", "我 vs DeepSeek", "deepseek")]
 WORK_ROOMS = [("small-pool", "小模型工作群", "deepseek", "nvidia")]   # (id, 名字, 主持, 候補)；Codex 22:40 接入單 small-pool-room-20261119-2234
-HANDOFF_SEC = 60  # 使用者 11-21 01:23：一棒超過 60 秒沒講完，下一棒先開始
+import 中樞參數 as 參數  # 使用者 11-21 01:35：可調參數集中在 中樞參數.json（設定頁顯示、AI 讀 H:\Agent共用\中樞參數.md）
 MAX_HOPS = 4  # 每則使用者訊息後，AI 之間用 @名字 互相點名最多接力幾次
 ICON = {"使用者": "🧑", "Claude": "🟠", "Codex": "🟢", "Gemini": "🔵", "輝達": "🟩", "DeepSeek": "🐋", "系統": "⚙️"}
 TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑毛病（每個群組是獨立的討論房）\n"
@@ -373,7 +373,7 @@ class Room:
         if host:   # 工作群：只叫主持（DeepSeek）；今天花費到上限就換候補（輝達）；其他人要點名才叫
             h, b = host
             return [getattr(self, b if (usage_pressure(h) or 0) >= 1 else h)]
-        nearly_out = (usage_pressure("codex") or 0) >= 0.95   # 使用者 11:51：快陣亡別叫（重開補答也算）
+        nearly_out = (usage_pressure("codex") or 0) >= 參數.get("Codex額度保護")   # 使用者 11:51：快陣亡別叫（重開補答也算）
         seq = [a for a in self.order_both() if not (a is self.codex and (codex_hot() or nearly_out))]
         return seq + [self.gemini]
 
@@ -437,7 +437,7 @@ class Room:
                 if any(rid == self.id for rid, *_ in WORK_ROOMS) and not nm:   # 工作群沒點名：只叫主持（不喚醒全員）
                     picked = [{"DeepSeek": "deepseek", "輝達": "nvidia"}.get(a.name, a.name.lower()) for a in self.order_all()]
                 # 使用者自己勾的名單照勾的叫（11-18 bug：勾了 Codex 卻被默默拿掉，只剩 Gemini 說話）；額度吃緊只提醒
-                if "codex" in picked and (usage_pressure("codex") or 0) >= 0.95 and len(picked) > 1:
+                if "codex" in picked and (usage_pressure("codex") or 0) >= 參數.get("Codex額度保護") and len(picked) > 1:
                     # 使用者 11:51：「codex 快陣亡了每次出來說話都嚇我一下」→ 週額度 ≥95% 時，群聊名單先不叫它（@Codex 照叫）
                     picked = [p for p in picked if p != "codex"]
                     if time.time() - getattr(self, "_codex_skip_note", 0) > 3600:
@@ -621,13 +621,14 @@ class Room:
             # 使用者 11-21 01:23：「一個 AI 等 1 分鐘都沒完成，下一棒可以開始；兩個都卡住再下一棒」
             # → 這一棒講超過 HANDOFF_SEC 還沒完，就先叫隊伍裡的下一位（下一位自己也有同樣的計時，所以兩個都卡住才再往下）。
             def _handoff(agent=agent, q=q):
-                end = time.time() + HANDOFF_SEC
+                hs = 參數.get("接力換棒秒數")
+                end = time.time() + hs
                 while time.time() < end:
                     if not agent.busy or self.stop_flag:
                         return
                     time.sleep(2)
                 if agent.busy and not self.stop_flag and q and q is self.queue:
-                    log(f"[{self.name}] {agent.name} 超過 {HANDOFF_SEC} 秒還沒講完，下一棒先開始")
+                    log(f"[{self.name}] {agent.name} 超過 {hs} 秒還沒講完，下一棒先開始")
                     self.chain(q)
             threading.Thread(target=_handoff, daemon=True).start()
             return
@@ -797,8 +798,8 @@ class Room:
             called.remove(self.claude)
             self.notice("Claude 的 5 小時額度吃緊，AI 之間點名 @Claude 先不叫醒（使用者直接問照常）；請把需求寫清楚，額度恢復後處理。")
         if called and not self.stop_flag:
-            if self.hops >= MAX_HOPS:
-                self.notice(f"AI 之間的接力已達上限（{MAX_HOPS} 次），等使用者下一則訊息再繼續。")
+            if self.hops >= 參數.get("AI點名接力上限"):
+                self.notice(f"AI 之間的接力已達上限（{參數.get('AI點名接力上限')} 次），等使用者下一則訊息再繼續。")
             else:
                 self.hops += 1
                 log(f"[{self.name}] {poster or agent.name} 點名：{'、'.join(a.name for a in called)}")
@@ -2369,6 +2370,7 @@ h3{{margin:2px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} 
 select,input{{font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}} input{{width:100%;box-sizing:border-box}}
 button{{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:4px 12px;cursor:pointer;font:inherit}} li{{margin:4px 0;font-size:14px}}
 </style></head><body><h2>設定</h2>
+<section><h3>中樞參數（可調）</h3><p class="meta">值存在 中樞參數.json，改檔就生效；給 AI 讀的版本＝H:\Agent共用\中樞參數.md。想改哪個，在討論房說，使用者拍板後由 Claude 改。</p><table><tr><td class="meta">參數</td><td class="meta">值</td><td class="meta">意思</td><td class="meta">誰定的</td></tr>{參數.html_rows(_h.escape)}</table></section>
 <section><h3>團隊職責：誰平常負責什麼</h3>
 <p class="meta">常態分工（{_h.escape(str(duty.get("updated_at", ""))[:16].replace("T", " "))} 更新，維護：{_h.escape(str(duty.get("maintained_by", "")))}）；右欄是這個人手上還沒完成的待辦，臨時派工以待辦為準。要改分工跟 Claude 說，或直接改 `H:\Agent共用\團隊職責.json`。</p>
 <table><tr><td class="meta">誰</td><td class="meta">負責</td><td class="meta">手上的待辦</td></tr>{duty_rows}</table></section>
