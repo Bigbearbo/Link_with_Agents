@@ -13,6 +13,13 @@ function Test-Busy {
     }
     return $false
 }
+# 使用者 11-20 08:34：重開常把正在打的字吃掉 → ①同一時間只留一個等待者（原本連改幾次就排好幾個，重開好幾輪）
+# ②真的要重開前，先寫倒數檔 60 秒，網頁讀到就顯示倒數；輸入框草稿網頁會自己存
+$waitFlag = Join-Path $PSScriptRoot "restart-waiting.flag"
+if ((Test-Path $waitFlag) -and ((Get-Date) - (Get-Item $waitFlag).LastWriteTime).TotalMinutes -lt 30) {
+    Write-Output "已經有一個在等重開，這次併進去 $(Get-Date -Format HH:mm:ss)"; exit 0
+}
+Set-Content -Path $waitFlag -Value (Get-Date -Format s) -Encoding utf8
 while ($true) {
     if (-not (Test-Busy)) {
         Start-Sleep 5
@@ -20,6 +27,10 @@ while ($true) {
     }
     Start-Sleep 5
 }
+$cd = Join-Path $PSScriptRoot "restart-countdown.txt"
+Set-Content -Path $cd -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 60) -Encoding ascii
+Start-Sleep 60
+Remove-Item $cd, $waitFlag -Force -ErrorAction SilentlyContinue
 Set-Content -Path (Join-Path $PSScriptRoot "planned-restart.flag") -Value (Get-Date -Format s) -Encoding utf8  # 看門狗看到就不當陣亡通報
 foreach ($h in @(Get-HubPy)) {
     $parent = $h.ParentProcessId

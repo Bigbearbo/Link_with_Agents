@@ -596,6 +596,27 @@ loadUsage(); setInterval(loadUsage, 60000);
 attn = {decide: 0, research: 0};
 async function loadAttn(){ try{ const a = await api("/api/attention"); const ch = a.decide !== attn.decide || a.research !== attn.research; attn = a; if(ch && lastRooms) renderRooms(lastRooms); }catch(e){} }
 loadAttn(); setInterval(loadAttn, 60000);
+// 使用者 11-20 08:34：重開中樞常把正在打的字吃掉 → ①輸入框草稿存在這台瀏覽器，重整後自動放回 ②重開前 60 秒顯示倒數
+(() => {
+  const box = document.getElementById("box");
+  if(box){
+    try{ const d = localStorage.getItem("rt-draft"); if(d && !box.value) box.value = d; }catch(e){}
+    // 每秒同步一次：有字就存、送出後框被清空就刪（Enter 送出不會觸發 input 事件，所以用輪詢）
+    setInterval(() => { try{ box.value ? localStorage.setItem("rt-draft", box.value) : localStorage.removeItem("rt-draft"); }catch(e){} }, 1000);
+  }
+  const bar = document.createElement("div");
+  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:999;padding:6px 12px;text-align:center;font-weight:600;background:#d99a1e;color:#1d1b18;display:none";
+  document.body.appendChild(bar);
+  let left = null;
+  const poll = () => fetch("/api/restart_at" + (typeof KEY !== "undefined" ? "?k=" + encodeURIComponent(KEY) : "")).then(r => r.json()).then(j => { left = j.in; }).catch(() => { left = left; });
+  setInterval(poll, 5000); poll();
+  setInterval(() => {
+    if(left === null || left === undefined){ bar.style.display = "none"; return; }
+    bar.style.display = "block";
+    bar.textContent = left > 0 ? `⏳ 中樞 ${left} 秒後重開（套用新版）——現在打的字會自動保存，重開後還在；送出請等重開完` : "⏳ 中樞重開中…稍候自動恢復，草稿已保存";
+    if(left > 0) left--;
+  }, 1000);
+})();
 let uiVer = 0;  // 第一次載入時的網頁版本
 $("#updBtn").onclick = () => location.reload();
 let pollSeq = 0;
