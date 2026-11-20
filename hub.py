@@ -612,6 +612,7 @@ class Room:
             skipped, new = len(new) - rt.PROMPT_LIMIT, new[-rt.PROMPT_LIMIT:]
             new.insert(0, {"who": "系統", "time": "", "text": f"（較早的 {skipped} 則省略；需要的話用 H:\\Claude用\\三方討論\\search.py 搜尋）"})
         body = "\n\n".join(f"【{m['who']}｜{m.get('time', '')}】{m['text']}" for m in new) or "（沒有新發言，請針對目前討論補充或回應。）"
+        body = rt.lookback(snapshot, self.term_seen) + body   # 使用者 11-20 08:28：至少 10 則、也看前面的話
         perm = "可寫" if self.hub.state.get("write_mode") else "唯讀"
         where = "與 Telegram 群組" if self.targets() else "（這房間沒有連 Telegram）"
         body = (f"（房間「{self.name}」｜現在 {time.strftime('%m-%d %H:%M')}｜目前權限：{perm}｜回覆會以 Claude 身分貼到此房間的網頁{where}）\n\n"

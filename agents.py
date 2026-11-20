@@ -14,7 +14,21 @@ import threading
 import time
 
 WORKDIR = os.path.abspath(os.environ.get("LINK_WITH_WORKDIR", r"H:\Codex用"))  # 共用工作區；別台電腦用環境變數指定
-PROMPT_LIMIT = 60  # 一次最多帶給 agent 的新訊息數          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
+PROMPT_LIMIT = 60  # 一次最多帶給 agent 的新訊息數
+LOOKBACK = 10      # 使用者 11-20 08:28：至少載入 10 則；目的除了回最新一句，也看前面的話有沒有漏接
+
+
+def lookback(transcript, seen, n=LOOKBACK):
+    """新訊息不足 n 則時，補上前面已讀的幾則（截短），並提醒：前面使用者的話有沒有還沒回、答應了還沒做。"""
+    have = len(transcript) - seen
+    if have >= n or seen <= 0:
+        return ""
+    old = [m for m in transcript[max(0, seen - (n - have)):seen] if m.get("who") != "系統"]
+    if not old:
+        return ""
+    lines = "\n".join(f"〔{m.get('who')}｜{m.get('time', '')}〕{(m.get('text') or '')[:200]}" for m in old)
+    return ("【前文（已讀過，幫你回想；不用逐則回）】\n" + lines +
+            "\n【提醒】回最新那句之外，也看前文裡使用者的話：有沒有還沒回到、或有人答應了還沒做的？有就一句話交代進度或補上。\n\n【新訊息】\n")          # 實驗目前的主工作區（D:\Codex用 為唯讀備份）
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 try:  # 研究主題寫在本機的 local_topic.txt（不進 git），給各 AI 的提示用
     RESEARCH_TOPIC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_topic.txt"),
@@ -156,7 +170,7 @@ class Agent:
         new = transcript[self.seen:]
         skipped = max(0, len(new) - PROMPT_LIMIT)  # 新對話或太久沒輪到：只帶最近 PROMPT_LIMIT 則
         new = new[skipped:]
-        body = ("" if not skipped else f"（較早的 {skipped} 則省略；需要的話用 H:\\Claude用\\三方討論\\search.py 搜尋）\n\n") + "\n\n".join(
+        body = lookback(transcript, self.seen) + ("" if not skipped else f"（較早的 {skipped} 則省略；需要的話用 H:\\Claude用\\三方討論\\search.py 搜尋）\n\n") + "\n\n".join(
             f"【{m['who']}（分身已先回答）｜{m.get('time', '')}】{m['text']}" if m["who"] == self.name else f"【{m['who']}｜{m.get('time', '')}】{m['text']}"
             for m in new if m["who"] != self.name or m.get("kind") == "side")
         if not body:
