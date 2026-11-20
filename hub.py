@@ -455,7 +455,7 @@ class Room:
         for i, a in enumerate(seq):
             if not a.busy:
                 continue
-            before = [b for b in seq[:i] if b is not a and not b.busy]
+            before = [b for b in seq[:i] if b is not a]   # Codex 08:22：前一位正忙也要等（它的分身或主線之後會回這一則）
             if not before:
                 if not self.start_side(a):
                     a.pending = True  # 分身也在忙：等手上的事做完再回
