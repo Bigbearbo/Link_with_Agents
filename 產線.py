@@ -63,10 +63,77 @@ h3{{margin:4px 0 8px;font-size:16px}} .meta{{color:var(--mute);font-size:12px}}
 table{{width:100%;border-collapse:collapse;font-size:14px}} td,th{{border-top:1px solid var(--line);padding:5px 4px;text-align:left;vertical-align:top}}
 td.c,th.c{{text-align:center}} td.note{{color:var(--mute);font-size:12px;overflow-wrap:anywhere}} .ok{{color:var(--ok)}} .go{{color:var(--go)}} .no{{color:var(--bad)}} .mt{{color:var(--mute)}}
 </style></head><body>
-<section><h3>🏭 手搓產線　整體 {overall}%</h3><p class="meta">備料＝課程／題目格式定好；生產＝手搓匠做出零件、自己窮舉全對；檢驗＝另一位獨立驗收；入庫＝課程表標完成、能拿來用。
+<section><h3>🏭 手搓產線（前進線）　整體 {overall}%</h3><p class="meta">備料＝課程／題目格式定好；生產＝手搓匠做出零件、自己窮舉全對；檢驗＝另一位獨立驗收；入庫＝課程表標完成、能拿來用。
 綠＝完成、橘＝進行中。「門口排隊」＝前一站做完、在這站等的件數，最多的那站標⚠️瓶頸。</p><div class="line">{bars}</div></section>
 <section><h3>工單</h3><table><tr><th>#</th><th>項目</th>{"".join(f'<th class=c>{x}</th>' for x in STAGES)}<th>備註</th></tr>{table}</table>
-<p class="meta">資料來源：{esc(QUEUE)}（手搓匠和 Claude 更新）</p></section></body></html>"""
+<p class="meta">資料來源：{esc(QUEUE)}（手搓匠和 Claude 更新）</p></section>{extra_sections()}</body></html>"""
+
+
+TEACH = r"H:\Agent共用\專案\手搓算術\教學線\教學佇列.md"
+COURSE = r"H:\Agent共用\課程\課程表.json"
+
+
+def teach_rows():
+    """教學線佇列（# 項目 狀態 記錄點 單元 驗收）。"""
+    out = []
+    try:
+        text = open(TEACH, encoding="utf-8").read()
+    except OSError:
+        return out
+    for line in text.splitlines():
+        c = [x.strip() for x in line.strip().strip("|").split("|")]
+        if len(c) >= 6 and re.match(r"^T\d+[a-z]?$", c[0]):
+            out.append({"no": c[0], "item": c[1], "st": c[2], "note": c[5] or c[3]})
+    return out
+
+
+def course_stats():
+    """課程表：每個分支（網路自控、codex正式…）在各段做完幾題。"""
+    import json
+    try:
+        d = json.load(open(COURSE, encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], {}
+    segs = sorted({t.get("段", 0) for t in d.get("題型", [])})
+    total = {s: sum(1 for t in d["題型"] if t.get("段", 0) == s) for s in segs}
+    st = {}
+    for t in d["題型"]:
+        for br, v in (t.get("進度") or {}).items():
+            s = str(v.get("狀態", "") if isinstance(v, dict) else v)
+            k = "done" if "做完" in s else "part" if s else ""
+            if k:
+                st.setdefault(br, {}).setdefault(t.get("段", 0), {"done": 0, "part": 0})[k] += 1
+    return segs, {"total": total, **st}
+
+
+def extra_sections():
+    """使用者 11-20 18:37：「產線顯示那可以把不同網路的進度放上去」→ 教學線、課程表各分支。"""
+    esc = _h.escape
+    tr = teach_rows()
+    done = sum(1 for r in tr if "完成" in r["st"])
+    tbl = "".join(f'<tr><td>{esc(r["no"])}</td><td>{esc(r["item"])}</td><td class=c>'
+                  + ('<span class="ok">✅</span>' if "完成" in r["st"] else '<span class="no">⏸</span>' if "擱置" in r["st"] else '<span class="mt">·</span>')
+                  + f'</td><td class="note">{esc(r["st"])}｜{esc(r["note"])}</td></tr>' for r in tr)
+    teach = (f'<section><h3>🎓 教學線（會教人的網路）　{done}/{len(tr)} 完成</h3>'
+             f'<table><tr><th>#</th><th>項目</th><th class=c>狀態</th><th>備註</th></tr>{tbl}</table>'
+             f'<p class="meta">資料來源：{esc(TEACH)}</p></section>') if tr else ""
+    segs, cs = course_stats()
+    total = cs.get("total", {})
+    names = {"網路自控": "手搓網路（左腦）", "codex正式": "學生正式訓練（右腦）", "fable原型": "Fable 原型", "DeepSeek構造": "DeepSeek 構造"}
+    rows_ = ""
+    for br in [b for b in cs if b != "total"]:
+        cells = ""
+        for s in segs:
+            v = cs[br].get(s, {"done": 0, "part": 0})
+            n = total.get(s, 0) or 1
+            cells += (f'<td><div class="bar"><div class="done" style="width:{round(100 * v["done"] / n)}%"></div>'
+                      f'<div class="wip" style="width:{round(100 * v["part"] / n)}%"></div></div>'
+                      f'<div class="num">{v["done"]}/{total.get(s, 0)}' + (f'＋部分 {v["part"]}' if v["part"] else "") + '</div></td>')
+        rows_ += f'<tr><td>{esc(names.get(br, br))}</td>{cells}</tr>'
+    course = (f'<section><h3>📚 各網路的課程進度（課程表）</h3><table><tr><th>分支</th>'
+              + "".join(f"<th>第 {s} 段</th>" for s in segs) + f'</tr>{rows_}</table>'
+              f'<p class="meta">綠＝做完、橘＝部分。資料來源：{esc(COURSE)}（各分支自己標）</p></section>') if rows_ else ""
+    return course + teach
 
 
 if __name__ == "__main__":
