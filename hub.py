@@ -2737,6 +2737,19 @@ if __name__ == "__main__":
                                     log(f"技能入口副本已由來源覆蓋：{dst}")
                             except OSError:
                                 pass
+                # 使用者 11-21 01:35／01:41：一個來源兩種輸出 → 每 10 分鐘把給 AI 讀的版本刷新（用量、產線、中樞參數）
+                for _mod, _fn in (("用量摘要", "write"), ("產線", None), ("中樞參數", None)):
+                    try:
+                        import importlib
+                        _m = importlib.import_module(_mod)
+                        if _fn:
+                            getattr(_m, _fn)()
+                        elif _mod == "產線":
+                            open(_m.AI_OUT, "w", encoding="utf-8", newline="\n").write(_m.ai_text())
+                        else:
+                            open(_m.AI_OUT, "w", encoding="utf-8", newline="\n").write(_m.ai_text())
+                    except Exception as e:
+                        log(f"給 AI 讀的摘要刷新失敗（{_mod}）：{type(e).__name__} {e}")
                 if now - last_commit > 3600:
                     git("add", "-A")
                     r = git("commit", "-q", "-m", "中樞每小時自動快照")
