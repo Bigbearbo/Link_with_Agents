@@ -529,6 +529,9 @@ class Room:
                 if reply:
                     self.reply_to = getattr(self, "reply_to", {})
                     self.reply_to[agent.name] = side_ri   # 分身回的是它開工時最新那則使用者訊息
+                    if terminal:   # 流程優化員 11-21：終端機分身回過的訊息，主線下一輪不要再當「新訊息」重送（01:49 那則被送 4 次）
+                        with self.hub.lock:
+                            self.term_seen = max(self.term_seen, len(snapshot))
                     self.add(agent.name, reply, "回覆", kind="side")
                     log(f"[{self.name}] {agent.name} 分身先回答了新訊息")
                 else:
@@ -564,6 +567,7 @@ class Room:
             self.nvidia = make_nvidia(self)
             self.deepseek = DeepSeekAgent("DeepSeek")
             self.transcript, self.approval, self.log_name = [], None, None
+            self.term_seen = 0   # 新討論從頭算（term_seen 現在只增不減，不歸零會漏看新訊息）
             self.epoch += 1
             self.hub.save()
         threading.Thread(target=self.tg_broadcast, args=("⚙️ 這個房間已開新討論。",), daemon=True).start()
@@ -674,7 +678,8 @@ class Room:
             agent.steps[-1:] = [f"等終端機的 Claude 回覆（{sec // 60}:{sec % 60:02d}）"]
         reply = tb.ask_terminal(self.name, body, lambda: self.stop_flag, waiting)
         if reply is not None:
-            self.term_seen = len(snapshot)
+            with self.hub.lock:   # 取大的：主線做很久時，分身可能已經回到更後面（不要倒退）
+                self.term_seen = max(self.term_seen, len(snapshot))
         return reply
 
     def run_turn(self, agent):
