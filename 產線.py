@@ -136,5 +136,40 @@ def extra_sections():
     return course + teach
 
 
+AI_OUT = r"H:\Agent共用\產線狀態.md"
+
+
+def ai_text():
+    """給 AI 看的版本（使用者 11-20 18:37「顯示給我看的你們也弄一個給你們看的版本」）：
+    純文字、短、只列「還沒完成的」和數字，方便讀進上下文；完成的只算數量。"""
+    import time
+    rs = rows()
+    s, qa, neck = summary(rs)
+    L = [f"# 產線狀態（給 AI 讀；{time.strftime('%m-%d %H:%M')} 產生；網頁版＝產線頁）", "",
+         "## 手搓前進線（手搓佇列.md）",
+         "｜".join(f"{k} {v['done']}/{len(rs)}" + (f"（進行中 {v['wip']}）" if v["wip"] else "") for k, v in s.items())
+         + (f"｜瓶頸：{neck}（門口 {qa.get(neck, 0)} 件）" if neck else "")]
+    for r in rs:
+        miss = [STAGES[i] for i in range(4) if "✅" not in r["st"][i]]
+        if miss:
+            L.append(f"- #{r['no']} {r['item'][:60]}｜缺：{'、'.join(miss)}")
+    tr = teach_rows()
+    L += ["", f"## 教學線（教學線\\教學佇列.md）完成 {sum(1 for r in tr if '完成' in r['st'])}/{len(tr)}"]
+    L += [f"- {r['no']} {r['item'][:60]}｜{r['st']}" for r in tr if "完成" not in r["st"] or "待" in r["st"]]
+    segs, cs = course_stats()
+    total = cs.get("total", {})
+    L += ["", "## 課程表各分支（做完/總題數，按段）"]
+    for br in [b for b in cs if b != "total"]:
+        L.append(f"- {br}：" + "　".join(f"段{x} {cs[br].get(x, {}).get('done', 0)}/{total.get(x, 0)}" for x in segs))
+    return "\n".join(L) + "\n"
+
+
 if __name__ == "__main__":
-    print(summary(rows()))
+    import sys
+    if "--ai" in sys.argv:          # python 產線.py --ai → 印出並寫 H:\Agent共用\產線狀態.md
+        t = ai_text()
+        open(AI_OUT, "w", encoding="utf-8", newline="\n").write(t)
+        sys.stdout.reconfigure(encoding="utf-8")
+        print(t)
+    else:
+        print(summary(rows()))
