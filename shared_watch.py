@@ -49,7 +49,7 @@ def scan(prev):
     """回傳 (新的快照, 新增清單, 修改清單)。prev 是 {相對路徑: [mtime, sha]}。"""
     now, added, changed = {}, [], []
     for root, dirs, files in os.walk(SHARED):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not (root == SHARED and d == "inbox")]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.endswith(".git") and not (root == SHARED and d == "inbox")]  # 11-21 02:48 誤報：GPT報告\_repo.git 內部檔
         for name in files:
             if name.endswith(SKIP_EXT) or name in SKIP_NAMES:
                 continue
