@@ -135,6 +135,11 @@ def write():
         importlib.import_module("資源推播").tick()
     except Exception:
         pass
+    try:   # 使用者 11-21 08:06：派工建議（第 2、3 站）跟著每 10 分鐘刷新
+        import runpy
+        runpy.run_path(r"H:\Agent共用\待辦\派工建議.py", run_name="__main__")
+    except BaseException:
+        pass
 
 
 if __name__ == "__main__":
