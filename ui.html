@@ -166,9 +166,11 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 #marks{position:fixed;left:16px;top:118px;width:230px;max-height:calc(100vh - 140px);overflow-y:auto;
   background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:12.5px;z-index:5;
   box-shadow:0 2px 10px rgba(0,0,0,.05)}
-#marks h3{margin:0 0 8px;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center}
-#marksMin{border:none;background:none;cursor:pointer;font-size:14px;padding:0 4px;color:var(--muted)}
-#marks.mini{width:auto;padding:6px 10px}#marks.mini #marksList{display:none}#marks.mini h3{margin:0}
+#marksTools{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#marksTools button{font:inherit;font-weight:650;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px;cursor:pointer}
+#marksTools button[aria-expanded="true"]{background:var(--sys-bg);border-color:var(--muted)}
+#marksList:not([hidden]){margin-top:8px}
+#marks [hidden]{display:none}
 #marks .mk{display:flex;gap:6px;align-items:flex-start;padding:6px 4px;border-radius:8px;cursor:pointer}
 #marks .mk:hover{background:var(--sys-bg)}
 #marks .mk .t{flex:1;min-width:0}
@@ -177,6 +179,19 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 #marks .mk .x:hover{color:var(--claude)}
 #marks .none{color:var(--muted)}
 #marksBtn{cursor:pointer}
+#pcPresence{border-top:1px solid var(--line);margin-top:8px;padding-top:6px;font-size:12px;line-height:1.5}
+#pcPresence label{cursor:pointer;font-weight:650}#pcMode{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:2px 7px}#pcMode legend{padding:0;font-weight:650}#pcMode label{white-space:nowrap}#pcSchedule{margin-top:3px}
+#pcPresenceStatus{color:var(--muted);overflow-wrap:anywhere;margin-top:2px}
+#resourcePanel{border-top:1px solid var(--line);margin-top:8px;padding-top:6px}
+#resourceBody{font-size:12px;line-height:1.65;min-width:min(184px,70vw);padding-top:5px}
+#resourceBody .res-time{color:var(--muted);font-size:11px}
+#resourceFields{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 8px}
+#resourceFields legend{padding:0;margin-bottom:3px;color:var(--muted)}
+#resourceFields label,.resourceMode{white-space:nowrap}
+#resourcePanel :is(button,select){font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px}
+#resourceMeter{display:block;width:100%;height:8px;margin-top:6px;accent-color:var(--me)}
+#resourceMeter[hidden]{display:none}
+#resourcePreview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow-y:auto;margin:6px 0}
 @media (max-width:1379px){#marks{display:none;left:12px;top:64px}#marks.open{display:block}}
 @media (min-width:1380px){#marksBtn{display:none}}
 .lcol{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none}
@@ -256,7 +271,31 @@ body.fold .m-sys .bubble::after{display:none}
 <aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button><button data-p="board">訊息版</button>
 <span class="spacer"></span><button id="sideMax" title="放大成整頁／還原（左邊聊天縮掉）">⤢</button><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
 </aside>
-<aside id="marks"><h3>🔖 書籤 <button id="marksMin" title="縮小／展開">－</button></h3><div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div></aside>
+<aside id="marks" aria-label="書籤列">
+  <div id="marksTools">
+    <button type="button" id="marksMin" aria-controls="marksList" aria-expanded="true">🔖 書籤</button>
+    <button type="button" id="pcPresenceBtn" aria-controls="pcPresence" aria-expanded="false">電腦模式</button>
+    <button type="button" id="resourcesBtn" aria-controls="resourcePanel" aria-expanded="false">系統資源</button>
+  </div>
+  <div id="marksList" class="none">還沒有書籤。滑到發言上，點名字前面的 🔖 加入。</div>
+  <div id="pcPresence" hidden>
+  <fieldset id="pcMode" disabled><legend>電腦使用方式</legend><label><input type="radio" name="pcMode" value="auto"> 自動</label><label><input type="radio" name="pcMode" value="game"> 打遊戲</label><label><input type="radio" name="pcMode" value="daily"> 日常</label><label><input type="radio" name="pcMode" value="web"> 只用網頁</label><label><input type="radio" name="pcMode" value="away"> 不用電腦</label></fieldset>
+  <div id="pcPresenceStatus" role="status">讀取狀態中。</div><div id="pcSchedule"></div>
+</div><section id="resourcePanel" aria-labelledby="resourcesBtn" hidden>
+  <div id="resourceBody">
+    <fieldset id="resourceFields"><legend>系統資源</legend>
+      <label><input type="checkbox" value="cpu" checked> CPU</label>
+      <label><input type="checkbox" value="ram" checked> 實體 RAM</label>
+      <label><input type="checkbox" value="commit"> 已認可記憶體</label>
+    </fieldset>
+    <label class="resourceMode">顯示
+      <select id="resourceMode"><option value="latest">最新摘要</option><option value="history">近期快照</option></select>
+    </label>
+    <progress id="resourceMeter" aria-label="最近取樣的 CPU 使用率" max="100" hidden></progress>
+    <div id="resourcePreview" aria-live="polite">等候取樣。</div>
+    <div class="res-time">每約 10 分鐘取樣，每約 1 小時留一筆。</div>
+  </div>
+</section></aside>
 <footer><div class="composer">
   <div id="approval" class="approval" hidden>
     <div class="ap-title">🔐 <b id="apWho"></b> 想做一件跟安全有關的事，需要你同意：</div>
@@ -511,8 +550,8 @@ function whenStr(t){
 function renderMarks(){
   const box = $("#marksList");
   // 使用者 11-21 03:30：書籤寫數量
-  const n = marks.length, h = $("#marks h3"); $("#marksBtn").textContent = "🔖 書籤" + (n ? ` (${n})` : "");
-  if(h && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.textContent = "🔖 書籤" + (n ? ` (${n}) ` : " ");
+  const n = marks.length, label = "🔖 書籤" + (n ? ` (${n})` : "");
+  $("#marksBtn").textContent = label; $("#marksMin").textContent = label;
   if(!marks.length){ box.className = "none"; box.textContent = "還沒有書籤。滑到發言上，點名字前面的 🔖 加入。"; return; }
   box.className = ""; box.innerHTML = "";
   for(const b of marks.slice().reverse()){
@@ -637,17 +676,142 @@ async function loadUsage(){
 }
 $("#usageBtn").onclick = () => $("#usage").classList.toggle("open");
 $("#marksBtn").onclick = () => $("#marks").classList.toggle("open");
-(() => {   // 使用者 11-20 01:11：書籤列可縮小，擋到也不影響；記住狀態
-  const m = $("#marks"), b = $("#marksMin");
-  const set = on => { m.classList.toggle("mini", on); b.textContent = on ? "＋" : "－"; try{ localStorage.setItem("rt-marks-mini", on ? "1" : "0"); }catch(e){} };
-  let on = false; try{ on = localStorage.getItem("rt-marks-mini") === "1"; }catch(e){}
-  set(on); b.onclick = () => set(!m.classList.contains("mini"));
+function bindMarksPanel(button, panel, onChange = () => {}){
+  const show = open => {
+    panel.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    onChange(open);
+  };
+  button.addEventListener("click", () => show(panel.hidden));
+  return show;
+}
+(() => {
+  const show = bindMarksPanel($("#marksMin"), $("#marksList"), open => {
+    try{ localStorage.setItem("rt-marks-mini", open ? "0" : "1"); }catch(e){}
+  });
+  let open = true;
+  try{ open = localStorage.getItem("rt-marks-mini") !== "1"; }catch(e){}
+  show(open);
 })();
+function bindStoredMarksPanel(button, panel, key, onChange = () => {}){
+  let open = false;
+  try{ open = localStorage.getItem(key) === "1"; }catch(e){}
+  panel.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if(open) onChange(true);
+  bindMarksPanel(button, panel, expanded => {
+    try{ localStorage.setItem(key, expanded ? "1" : "0"); }catch(e){}
+    onChange(expanded);
+  });
+}
+bindStoredMarksPanel($("#pcPresenceBtn"), $("#pcPresence"), "rt-pc-open");
 (() => { let f = false; try{ f = localStorage.getItem("rt-fold") === "1"; }catch(e){}
   document.body.classList.toggle("fold", f); $("#foldBtn").textContent = f ? "↕ 展開" : "↕ 收合";
   $("#foldBtn").onclick = () => { const on = document.body.classList.toggle("fold");
     $("#foldBtn").textContent = on ? "↕ 展開" : "↕ 收合"; try{ localStorage.setItem("rt-fold", on ? "1" : "0"); }catch(e){} }; })();
 loadMarks();
+const pcMode = $("#pcMode"), pcPresenceStatus = $("#pcPresenceStatus");
+const pcOptions = [...pcMode.querySelectorAll("input")];
+let pcPresenceBusy = false, pcPresenceRevision = 0, lastPcMode = "auto";
+function showPcPresence(data){
+  lastPcMode = data.mode;
+  pcOptions.forEach(input => { input.checked = input.value === lastPcMode; });
+  pcMode.disabled = false;
+  const idle = data.idle_minutes == null ? "" : " · 閒置約 " + data.idle_minutes + " 分";
+  pcPresenceStatus.textContent = data.label + idle;
+  $("#pcSchedule").textContent = data.schedule.label;
+}
+async function refreshPcPresence(){
+  if(pcPresenceBusy) return;
+  const revision = ++pcPresenceRevision;
+  try{
+    const data = await api("/api/pc-presence");
+    if(revision === pcPresenceRevision) showPcPresence(data);
+  }catch(e){
+    if(revision === pcPresenceRevision){ pcMode.disabled = true; pcPresenceStatus.textContent = "暫時讀不到狀態。"; $("#pcSchedule").textContent = ""; }
+  }
+}
+pcMode.addEventListener("change", async () => {
+  pcPresenceBusy = true;
+  pcPresenceRevision++;
+  pcMode.disabled = true;
+  const mode = pcOptions.find(input => input.checked)?.value;
+  try{ showPcPresence(await api("/api/pc-presence", {mode})); }
+  catch(e){ pcOptions.forEach(input => { input.checked = input.value === lastPcMode; }); pcMode.disabled = false; pcPresenceStatus.textContent = "模式更新失敗，請稍後再試。"; }
+  finally{ pcPresenceBusy = false; }
+});
+refreshPcPresence();
+setInterval(refreshPcPresence, 60000);
+const resourcePanel = $("#resourcePanel");
+const resourceFields = [...resourcePanel.querySelectorAll('input[type="checkbox"]')];
+const resourceMode = $("#resourceMode");
+const resourcePreview = $("#resourcePreview");
+let resourceData = null;
+try{
+  const saved = JSON.parse(localStorage.getItem("rt-resource-subscription") || "null");
+  if(Array.isArray(saved?.selected)){
+    resourceFields.forEach(field => { field.checked = saved.selected.includes(field.value); });
+    if(saved.mode === "history") resourceMode.value = "history";
+  }
+}catch(e){}
+
+function resourceContext(data, selected, mode){
+  if(!data?.latest?.time || !selected.length) return "";
+  const gib = val => Number.isFinite(val) ? (val / 1073741824).toFixed(1) : "—";
+  const pct = val => Number.isFinite(val) ? val.toFixed(1) + "%" : "—";
+  const duration = val => !Number.isFinite(val) ? "" : val < 60 ? "近 " + val.toFixed(2) + " 秒" : "近 " + (val / 60).toFixed(1) + " 分鐘";
+  const stamp = row => row.time.replace("T", " ").slice(0, 19);
+  function reading(row){
+    const lines = [];
+    if(selected.includes("cpu")) lines.push("CPU " + pct(row.cpu) + (duration(row.cpu_interval_s) ? "（" + duration(row.cpu_interval_s) + "平均）" : ""));
+    if(selected.includes("ram")){
+      const used = Number.isFinite(row.physical_total) && Number.isFinite(row.physical_available) ? row.physical_total - row.physical_available : null;
+      lines.push("實體 RAM " + gib(used) + "／" + gib(row.physical_total) + " GiB，可用 " + gib(row.physical_available) + " GiB");
+    }
+    if(selected.includes("commit")) lines.push("已認可記憶體 " + gib(row.commit_used) + "／" + gib(row.commit_limit) + " GiB");
+    return lines.join("；");
+  }
+  const recent = mode === "history";
+  const latest = data.latest;
+  const history = (data.history || []).filter(row => row.time && row.time !== latest.time).slice(-5);
+  const title = "【系統資源｜" + (recent ? "近期快照" : "最新摘要") + (data.stale ? "，資料過期" : "") + "】";
+  const rows = recent ? history.concat(latest).map(row => stamp(row) + "　" + reading(row)) : [stamp(latest), reading(latest)];
+  return [title, ...rows].join("\n");
+}
+
+function renderResources(){
+  const selected = resourceFields.filter(field => field.checked).map(field => field.value);
+  const hasData = !!resourceData?.latest?.time;
+  const text = resourceContext(resourceData, selected, resourceMode.value);
+  resourcePreview.textContent = text || (hasData ? "請勾選要看的資訊。" : "等候第一次取樣。");
+  const meter = $("#resourceMeter");
+  const cpu = resourceData?.latest?.cpu;
+  meter.hidden = !selected.includes("cpu") || !Number.isFinite(cpu);
+  if(!meter.hidden) meter.value = cpu;
+}
+
+async function loadResources(){
+  try{
+    resourceData = await api("/api/resources");
+    renderResources();
+  }catch(e){
+    resourceData = null;
+    renderResources();
+    resourcePreview.textContent = "暫時讀不到資源紀錄。";
+  }
+}
+function saveResourcePreferences(){
+  try{
+    localStorage.setItem("rt-resource-subscription", JSON.stringify({
+      selected: resourceFields.filter(field => field.checked).map(field => field.value), mode: resourceMode.value
+    }));
+  }catch(e){}
+  renderResources();
+}
+resourceFields.forEach(field => field.addEventListener("change", saveResourcePreferences));
+resourceMode.addEventListener("change", saveResourcePreferences);
+bindStoredMarksPanel($("#resourcesBtn"), resourcePanel, "rt-resources-open", open => { if(open) loadResources(); });
+setInterval(() => { if(!resourcePanel.hidden) loadResources(); }, 600000);
 // 縮寫表載入後重畫一次訊息（才會出現「縮寫」按鈕）；之後每 10 分鐘更新表，新訊息就用新表
 loadAbbr().then(() => { total = 0; epoch = 0; list.innerHTML = ""; poll(); }); setInterval(loadAbbr, 600000);
 loadUsage(); setInterval(loadUsage, 60000);
