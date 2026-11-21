@@ -147,6 +147,11 @@ def write():
         m.tick(importlib.import_module("權限逾時").user_away())
     except Exception:
         pass
+    try:   # 使用者 11-21 21:46：成員能力表／派工記帳／承諾掃描（#63），排在派工建議前面讓它讀得到能力表
+        import runpy
+        runpy.run_path(r"H:\Agent共用\專案\團隊系統\每10分.py", run_name="__main__")
+    except BaseException:
+        pass
     try:   # 使用者 11-21 08:06：派工建議（第 2、3 站）跟著每 10 分鐘刷新
         import runpy
         runpy.run_path(r"H:\Agent共用\待辦\派工建議.py", run_name="__main__")
