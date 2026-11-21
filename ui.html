@@ -1106,7 +1106,7 @@ loop(); box.focus();
         body: JSON.stringify({text: txt + `（回覆 ${who}：「${snip}…」）`, target: quiet ? "note" : T, room: (typeof room !== "undefined" ? room : "main"), members: (typeof groupMembers === "function" ? groupMembers() : undefined)})});
         const j = await r.json(); btn.textContent = j.error ? "送出失敗" : (quiet ? "✓ 已記下" : "✓ 已送"); }catch(err){ btn.textContent = "送出失敗"; } };
     const ok = document.createElement("button"); ok.className = "ok"; ok.textContent = "好"; ok.title = "回覆「好」給 " + (who || "大家") + "（只記下，不叫醒；下次被叫時會看到）";
-    ok.onclick = e => { e.stopPropagation(); reply(ok, "好", true); };
+    ok.onclick = e => { e.stopPropagation(); reply(ok, "好", true); /* 使用者 11-22 04:45：「好」用訂閱推送：原訊息＋好 放進該 AI 的派報下一期 */ fetch("/api/board_user", {method:"POST", headers:{"X-Key":K2, "Content-Type":"application/json"}, body: JSON.stringify({op:"ok_push", room: (typeof room !== "undefined" ? room : "main"), idx: +el.dataset.idx, who})}).catch(()=>{}); };
     const go = document.createElement("button"); go.className = "okgo"; go.textContent = "好＋馬上做"; go.title = "回覆「好，開單做」：開工單並馬上動手";
     go.onclick = e => { e.stopPropagation(); reply(go, "好，開單做（馬上做）"); };
     bar.appendChild(ok); bar.appendChild(go); bar.appendChild(b);

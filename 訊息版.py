@@ -155,6 +155,8 @@ def api(data, hub=None):
         return user_mark(data["key"], bool(data.get("read", True)))
     if op == "follow":
         return follow(hub, str(data.get("room") or ""), data.get("idx"))
+    if op == "ok_push":   # 使用者 11-22 04:45：「好」用訂閱推送——原訊息＋使用者的「好」放進該 AI 的派報「下一期」，不叫醒
+        return ok_push(hub, str(data.get("room") or ""), data.get("idx"), str(data.get("who") or ""))
     if op == "follow_set" and data.get("key"):
         return follow_set(str(data["key"]), data.get("state"), data.get("seen"))
     return {"ok": False, "error": "不認得的 op"}
@@ -392,3 +394,28 @@ def follow_new_count(hub):
             pr = progress(hub, f)
             n += int(any(not (p["same"] and p["i"] <= f.get("看過到", f["idx"])) and (p["same"] or p["時間"] > f.get("看過時間", f.get("時間", ""))) for p in pr))
     return n
+
+
+_PUSH_NAMES = {"Claude", "Codex", "Gemini", "輝達", "DeepSeek"}
+
+
+def ok_push(hub, room, idx, who):
+    """把『原訊息＋使用者按的好』寫進 logs/派報/<誰>-下一期.md（派報生的不急摘要；那位 AI 下次被叫醒時一起看到）。"""
+    if who not in _PUSH_NAMES:
+        return {"ok": False, "error": f"不推送給 {who}"}
+    r = hub.rooms.get(room) if hub else None
+    try:
+        m = r.transcript[int(idx)] if r else None
+    except (ValueError, IndexError):
+        m = None
+    if not m:
+        return {"ok": False, "error": "找不到原訊息"}
+    d = os.path.join(HERE, "logs", "派報")
+    os.makedirs(d, exist_ok=True)
+    body = (m.get("text") or "").strip()
+    if len(body) > 800:
+        body = body[:800] + "\n…（原文較長，見 " + r.name + " " + str(m.get("time", "")) + "）"
+    with open(os.path.join(d, f"{who}-下一期.md"), "a", encoding="utf-8") as f:
+        f.write(f"\n## {time.strftime('%m-%d %H:%M')}（使用者按「好」，{r.name}）\n"
+                f"**你的原訊息**（{m.get('time', '')}）：\n{body}\n\n**使用者**：好（同意，照這個做；不急，不用現在回）\n")
+    return {"ok": True}
