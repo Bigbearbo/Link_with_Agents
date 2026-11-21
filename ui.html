@@ -221,8 +221,10 @@ body.fold .m-sys .bubble{max-height:none}
 body.fold .m-sys .bubble::after{display:none}
 </style>
 <style id="u64">/* 使用者 11-22 01:49 網頁工單 #64：群聊開關加寬＋高對比、上排右邊「頁面」鈕展開第二排彩色按鈕 */
-.seg button.skip{padding:0 12px;min-width:34px;font-size:12px;background:#1f7a52 !important;color:#fff !important;font-weight:700;border-left:1px solid #fff}
-.seg button.skip.off{background:#7a1f2b !important;color:#fff !important;text-decoration:none;font-weight:600}
+/* 網頁工單 #67（11-22 02:38）：群再寬 20%、亮綠／亮紅；問大家那排回到一行 */
+.seg button.skip{padding:0 14px;min-width:41px;font-size:12px;background:#00c853 !important;color:#06290f !important;font-weight:800;border-left:1px solid #fff}
+.seg button.skip.off{background:#ff1744 !important;color:#fff !important;text-decoration:none;font-weight:700}
+#target{flex-wrap:nowrap;white-space:nowrap} #target button{white-space:nowrap}
 #pagesBtn{cursor:pointer;background:#2b4a8b;color:#fff;font-weight:700}
 #pagebar{display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
 #pagebar[hidden]{display:none}
@@ -905,6 +907,20 @@ loop(); box.focus();
   let open = false; try{ open = localStorage.getItem("rt-pagebar") === "1"; }catch(e){}
   const show = o => { bar.hidden = !o; btn.textContent = o ? "☰ 頁面 ▴" : "☰ 頁面"; try{ localStorage.setItem("rt-pagebar", o ? "1" : "0"); }catch(e){} };
   show(open); btn.onclick = () => show(bar.hidden);
+})();
+/* 網頁工單 #67：①「只問 X」只留 AI 名 ②「Claude／Codex 先講」鈕修好：以前「問大家」送出的名單永遠 Claude 在前，按鈕切了也沒用 */
+(() => {
+  document.querySelectorAll('#target button[data-t]').forEach(b => { const t = b.firstChild;
+    if(t && t.nodeType === 3 && t.textContent.startsWith("只問 ")) t.textContent = t.textContent.slice(3); });
+  try{
+    const orig = groupMembers;
+    groupMembers = function(){ const m = orig(); const ob = document.getElementById("order");
+      if(ob && ob.textContent.startsWith("Codex")){ const i = m.indexOf("claude"), j = m.indexOf("codex");
+        if(i >= 0 && j >= 0 && i < j){ m[i] = "codex"; m[j] = "claude"; } }
+      return m; };
+    const ob = document.getElementById("order");
+    if(ob) ob.addEventListener("click", () => { ob.textContent = ob.textContent.startsWith("Claude") ? "Codex 先講" : "Claude 先講"; });
+  }catch(e){}
 })();
 </script>
 </body>
