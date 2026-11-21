@@ -64,10 +64,32 @@ def word_answer(a, op, b):
             f"{len(net[1])} 個手填門檻單元，沒有訓練｜數字用 6 位一段的黏數詞（超過 v2 的 127，等多詞規格接上後會統一）")
 
 
+_play = None
+
+
+def uni_answer(text):
+    """使用者 11-21 09:02「給我一些他會的大學題型，我玩玩看」：行首「手搓 模 17 5」→ 總入口\玩.py（分派網路＋零件網路，答案從作答欄讀）。
+    「手搓 說明」→ 玩法列表。"""
+    global _play
+    rest = re.sub(r"^\s*手搓\s*", "", text or "").strip()
+    if _play is None:
+        s = importlib.util.spec_from_file_location("玩", r"H:\Agent共用\專案\手搓算術\總入口\玩.py")
+        _play = importlib.util.module_from_spec(s)
+        sys.path.insert(0, r"H:\Agent共用\專案\手搓算術\總入口")
+        s.loader.exec_module(_play)
+    if rest in ("說明", "幫助", "help", "?", "？", "玩法"):
+        return "🔧 手搓網路會的題型（整行複製，前面加「手搓 」）：\n" + _play.HELP + "\n\n四則：手搓 33*3、手搓 127÷5、手搓 45+67、手搓 90-7"
+    r = _play.solve(rest)
+    return ("🔧 " + r) if r else None
+
+
 def answer(text):
     q = parse(text)
     if not q:
-        return None
+        try:
+            return uni_answer(text)
+        except Exception as e:
+            return f"🔧 手搓網路大學題入口出錯：{type(e).__name__} {str(e)[:120]}"
     a, op, b = q
     big = a > 127 or b > 127 or (op == "ADD" and a + b > 127)
     if big:   # 使用者 11-20 09:29「怎麼不接 fable 的繼續搓」：超過 v2 範圍就交給詞級版 word_ctrl（黏數，加減 0..4095、乘除 0..255）
