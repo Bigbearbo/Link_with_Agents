@@ -80,7 +80,55 @@ def uni_answer(text):
     if rest in ("說明", "幫助", "help", "?", "？", "玩法"):
         return "🔧 手搓網路會的題型（整行複製，前面加「手搓 」）：\n" + _play.HELP + "\n\n四則：手搓 33*3、手搓 127÷5、手搓 45+67、手搓 90-7"
     r = _play.solve(rest)
-    return ("🔧 " + r) if r else None
+    if not r:
+        return None
+    std = standard(rest)
+    return "🔧 " + (f"標準寫法：{std}（主機用範本翻的，還不是網路）\n" if std else "") + r
+
+
+def standard(rest):
+    """使用者 11-21 09:13「把螺旋詞式翻譯成標準題目模式」：題頭＋數字 → 一般數學寫法。目前是主機範本（040 反方向之後搓成網路）。"""
+    w = rest.split()
+    if not w:
+        return None
+    h, a = w[0], w[1:]
+    try:
+        n = [int(x) for x in a]
+    except ValueError:
+        return None
+    try:
+        if h == "模" and len(n) == 2:
+            return f"求 {n[0]} mod {n[1]}（{n[0]} 除以 {n[1]} 的餘數）"
+        if h == "模反" and len(n) == 2:
+            return f"求 x，使 {n[0]}x ≡ 1 (mod {n[1]})，0 < x < {n[1]}"
+        if h == "轉進位" and len(n) == 2:
+            return f"把 {n[0]} 寫成 {n[1]} 進位"
+        if h == "轉十進位" and len(n) >= 3:
+            return f"把 {n[0]} 進位數 ({''.join('0123456789ABCDEF'[d] if 0 <= d < 16 else '?' for d in n[2:])})_{n[0]} 轉成十進位"
+        if h == "遞迴" and len(n) == 5:
+            return f"a₀={n[0]}，a₁={n[1]}，aₙ = {n[2]}·aₙ₋₁ + {n[3]}·aₙ₋₂，求 a_{n[4]}"
+        if h == "行列式" and n and n[0] == 2 and len(n) == 5:
+            return f"求 det[[{n[1]}, {n[2]}], [{n[3]}, {n[4]}]]"
+        if h == "行列式" and n and n[0] == 3 and len(n) == 10:
+            m = n[1:]
+            return f"求 det[[{m[0]}, {m[1]}, {m[2]}], [{m[3]}, {m[4]}, {m[5]}], [{m[6]}, {m[7]}, {m[8]}]]"
+        if h in ("矩陣乘", "矩陣加") and len(n) == 8:
+            op = "×" if h == "矩陣乘" else "+"
+            return f"[[{n[0]}, {n[1]}], [{n[2]}, {n[3]}]] {op} [[{n[4]}, {n[5]}], [{n[6]}, {n[7]}]]"
+        if h == "歐拉" and len(n) == 1:
+            return f"求 φ({n[0]})（1～{n[0]} 中與 {n[0]} 互質的個數）"
+        if h == "中國剩餘" and len(n) == 4:
+            return f"求最小非負整數 x，使 x ≡ {n[0]} (mod {n[1]}) 且 x ≡ {n[2]} (mod {n[3]})"
+        if h in ("最短", "連通") and n:
+            k = n[0]
+            if len(n) == 1 + k * k + 2:
+                edges = [f"{i}→{j}:{n[1 + i * k + j]}" for i in range(k) for j in range(k) if i != j and n[1 + i * k + j]]
+                s, t = n[-2], n[-1]
+                q = f"從 {s} 到 {t} 的最短距離" if h == "最短" else f"{s} 能不能走到 {t}"
+                return f"有向圖 {k} 個點，邊（起→終:權重）{'、'.join(edges) or '無'}；求{q}"
+    except (IndexError, ValueError):
+        return None
+    return None
 
 
 def answer(text):
