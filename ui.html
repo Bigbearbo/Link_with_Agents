@@ -838,7 +838,7 @@ document.querySelectorAll("#target button[data-t]:not(.skip)").forEach(b => b.on
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["工單＋報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
+const SIDE_PAGES = {rules: ["規則", "/rules"], decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["工單＋報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name, hash, keep){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(hash){   // 定位到某一列（本房設定）
@@ -890,14 +890,18 @@ loop(); box.focus();
 (() => {
   const PAGES = [["decide","待討論","🗳️","#8e44ad"],["research","研究","🔬","#2980b9"],["changes","變動","🕘","#16a085"],
     ["settings","設定・本房","⚙️","#7f8c8d"],["board","訊息版","📰","#d35400"],["pipeline","產線","🏭","#27ae60"],
-    ["wiki","知識庫","📖","#2c3e50"],["errors","工單＋報錯","📝","#c0392b"]];
+    ["wiki","知識庫","📖","#2c3e50"],["errors","工單＋報錯","📝","#c0392b"],["rules","規則","📜","#6d4c41"]];
   const bar = document.getElementById("pagebar"), btn = document.getElementById("pagesBtn");
   if(!bar || !btn) return;
   for(const [p, label, ic, color] of PAGES){
     const b = document.createElement("button"); b.style.background = color; b.textContent = ic + " " + label; b.title = label + "（右側面板）";
     b.onclick = () => { try{ if(p === "settings" && typeof room !== "undefined") openSide("settings", "row_" + room); else openSide(p); }catch(e){} };
-    bar.appendChild(b);
+    b.dataset.p = p; bar.appendChild(b);
   }
+  const badge = () => { try{ for(const b of bar.querySelectorAll("button")){ const p = b.dataset.p;
+      const n = typeof attn === "undefined" ? 0 : (p === "decide" ? attn.decide : p === "research" ? attn.research : 0);
+      let s = b.querySelector(".new"); if(n > 0){ if(!s){ s = document.createElement("span"); s.className = "new"; b.appendChild(s); } s.textContent = n; } else if(s) s.remove(); } }catch(e){} };
+  badge(); setInterval(badge, 5000);
   let open = false; try{ open = localStorage.getItem("rt-pagebar") === "1"; }catch(e){}
   const show = o => { bar.hidden = !o; btn.textContent = o ? "☰ 頁面 ▴" : "☰ 頁面"; try{ localStorage.setItem("rt-pagebar", o ? "1" : "0"); }catch(e){} };
   show(open); btn.onclick = () => show(bar.hidden);

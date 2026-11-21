@@ -1420,6 +1420,16 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/rules":   # 使用者 11-22 01:38 網頁工單 #62：規則＋團隊目標條列，新增／提意見都開工單
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                import importlib
+                body = importlib.import_module("規則頁").page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/ping":
                 self._json({"app": "roundtable-hub"})
             else:
