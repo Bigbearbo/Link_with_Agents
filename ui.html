@@ -1112,8 +1112,14 @@ loop(); box.focus();
     bar.appendChild(ok); bar.appendChild(go); bar.appendChild(b);
     bub.appendChild(bar); };
   const list = document.getElementById("list"); if(!list) return;
-  list.querySelectorAll(".msg").forEach(add);
-  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if(n.nodeType === 1){ if(n.classList.contains("msg")) add(n); else n.querySelectorAll && n.querySelectorAll(".msg").forEach(add); } }))).observe(list, {childList:true, subtree:true});
+  /* 子代理顯示所屬 AI（使用者 11-22 05:12）：手搓匠、流程優化員是 Claude 的子代理 → 名字顯示「Claude・手搓匠」 */
+  const SUBP = {"手搓匠":"Claude", "流程優化員":"Claude"};
+  const tagSub = el => { const nb = el.querySelector && el.querySelector(".meta b"); if(!nb || nb.dataset.sub) return;
+    const nm = nb.textContent.trim(); const base = Object.keys(SUBP).find(k => nm === k || nm.startsWith(k));
+    if(base && !nm.includes("・")){ nb.textContent = SUBP[base] + "・" + nm; nb.dataset.sub = "1"; nb.title = SUBP[base] + " 的子代理"; } };
+  const add0 = add; const addAll = el => { tagSub(el); add0(el); };
+  list.querySelectorAll(".msg").forEach(addAll);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if(n.nodeType === 1){ if(n.classList.contains("msg")) addAll(n); else n.querySelectorAll && n.querySelectorAll(".msg").forEach(addAll); } }))).observe(list, {childList:true, subtree:true});
 })();
 </script>
 </body>
