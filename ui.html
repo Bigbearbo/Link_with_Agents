@@ -244,7 +244,7 @@ body.fold .m-sys .bubble::after{display:none}
 #pagebar{display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
 #pagebar[hidden]{display:none}
 #pagebar button{border:0;border-radius:14px;padding:5px 12px;font-size:14px;font-weight:700;color:#fff;cursor:pointer}
-.bubble .fol{float:right;margin:4px -4px -2px 8px;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;opacity:.55}.bubble .fol:hover{opacity:1}
+/* 工單 #195：關注鈕加大、左邊「好」「好＋馬上做」 */.bubble .qbar{float:right;display:flex;gap:6px;margin:6px -4px -2px 10px}.bubble .qbar button{font-size:13px;padding:3px 12px;border-radius:999px;border:1px solid var(--line);cursor:pointer;font-weight:700}.bubble .qbar .fol{background:#2b4a8b;color:#fff;border-color:#2b4a8b}.bubble .qbar .ok{background:#00c853;color:#06290f;border-color:#00c853}.bubble .qbar .okgo{background:#ff6d00;color:#fff;border-color:#ff6d00}
 #pagebar button .new{margin-left:4px;background:#fff;color:#c0392b;border-radius:8px;padding:0 5px;font-size:11px}
 </style>
 </head>
@@ -1096,7 +1096,20 @@ loop(); box.focus();
     b.onclick = async e => { e.stopPropagation(); try{ const r = await fetch("/api/board_user", {method:"POST", headers:{"X-Key":K2, "Content-Type":"application/json"},
         body: JSON.stringify({op:"follow", room: (typeof room !== "undefined" ? room : "main"), idx: +el.dataset.idx})}); const j = await r.json();
         b.textContent = j.ok ? "📌 已關注" : "關注失敗"; }catch(err){ b.textContent = "關注失敗"; } };
-    bub.appendChild(b); };
+    /* 工單 #195（使用者 11-22 03:44）：關注左邊「好」「好＋馬上做」，回給這則的發言者 */
+    const bar = document.createElement("span"); bar.className = "qbar";
+    const nameEl = el.querySelector(".meta b"); const who = nameEl ? nameEl.textContent.trim() : "";
+    const T = {"Claude":"claude","Codex":"codex","Gemini":"gemini","輝達":"nvidia","DeepSeek":"deepseek"}[who] || "both";
+    const snip = ((bub.innerText || "").replace(/\s+/g, " ").trim()).slice(0, 30);
+    const reply = async (btn, txt) => { try{ const r = await fetch("/api/send", {method:"POST", headers:{"X-Key":K2, "Content-Type":"application/json"},
+        body: JSON.stringify({text: txt + `（回覆 ${who}：「${snip}…」）`, target: T, room: (typeof room !== "undefined" ? room : "main"), members: (typeof groupMembers === "function" ? groupMembers() : undefined)})});
+        const j = await r.json(); btn.textContent = j.error ? "送出失敗" : "✓ 已送"; }catch(err){ btn.textContent = "送出失敗"; } };
+    const ok = document.createElement("button"); ok.className = "ok"; ok.textContent = "好"; ok.title = "回覆「好」給 " + (who || "大家");
+    ok.onclick = e => { e.stopPropagation(); reply(ok, "好"); };
+    const go = document.createElement("button"); go.className = "okgo"; go.textContent = "好＋馬上做"; go.title = "回覆「好，開單做」：開工單並馬上動手";
+    go.onclick = e => { e.stopPropagation(); reply(go, "好，開單做（馬上做）"); };
+    bar.appendChild(ok); bar.appendChild(go); bar.appendChild(b);
+    bub.appendChild(bar); };
   const list = document.getElementById("list"); if(!list) return;
   list.querySelectorAll(".msg").forEach(add);
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if(n.nodeType === 1){ if(n.classList.contains("msg")) add(n); else n.querySelectorAll && n.querySelectorAll(".msg").forEach(add); } }))).observe(list, {childList:true, subtree:true});
