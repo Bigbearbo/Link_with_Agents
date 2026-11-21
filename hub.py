@@ -1448,6 +1448,8 @@ def make_handler(hub):
             if p == "/api/open":   # 設定頁「📂 資料夾入口」：在檔案總管開啟（只開 資料夾入口.ENTRIES 裡的路徑；使用者 11-21 02:35）
                 import importlib
                 return self._json({"ok": importlib.import_module("資料夾入口").open_dir(data.get("path"))})
+            if p == "/api/params":   # 設定頁中樞參數拉條「儲存設定」（使用者 11-22 00:37）；驗範圍與寫檔在 中樞參數.set_values
+                return self._json(參數.set_values(data.get("values"), "使用者（網頁）"))
             if p == "/api/errors":   # 報錯頁：回報／認領／已修（使用者 11-21 01:48）
                 import importlib
                 er = importlib.import_module("異常偵測")
@@ -2442,14 +2444,14 @@ h3{{margin:2px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:13px}} 
 select,input{{font:inherit;padding:3px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:100%}} input{{width:100%;box-sizing:border-box}}
 button{{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:4px 12px;cursor:pointer;font:inherit}} li{{margin:4px 0;font-size:14px}}
 </style></head><body><h2>設定</h2>
+<section><h3>本房間設定：每個房間的 Codex 用什麼模型</h3>
+<p class="meta">按「⚙️ 設定・本房」會標出目前這個房間那一列。影響：那個房間裡 Codex 回話的速度、品質、額度消耗。生效：<b>下一次 Codex 回話</b>，不用重開。檔案 `codex-房間設定.json`。</p>
+<table><tr><td class="meta">房間</td><td class="meta">模型</td><td class="meta">推理深度</td><td></td></tr>{"".join(rows)}</table></section>
+<section><h3>中樞參數（可調）</h3><p class="meta">拉條選好按「儲存設定」，寫進 中樞參數.json，中樞下次用到就生效（不用重開）；同時更新給 AI 讀的 H:\Agent共用\中樞參數.md。</p>{參數.html_form(_h.escape)}</section>
 {__import__("資料夾入口").section_html(_h.escape)}
-<section><h3>中樞參數（可調）</h3><p class="meta">值存在 中樞參數.json，改檔就生效；給 AI 讀的版本＝H:\Agent共用\中樞參數.md。想改哪個，在討論房說，使用者拍板後由 Claude 改。</p><table><tr><td class="meta">參數</td><td class="meta">值</td><td class="meta">意思</td><td class="meta">誰定的</td></tr>{參數.html_rows(_h.escape)}</table></section>
 <section><h3>團隊職責：誰平常負責什麼</h3>
 <p class="meta">常態分工（{_h.escape(str(duty.get("updated_at", ""))[:16].replace("T", " "))} 更新，維護：{_h.escape(str(duty.get("maintained_by", "")))}）；右欄是這個人手上還沒完成的待辦，臨時派工以待辦為準。要改分工跟 Claude 說，或直接改 `H:\Agent共用\團隊職責.json`。</p>
 <table><tr><td class="meta">誰</td><td class="meta">負責</td><td class="meta">手上的待辦</td></tr>{duty_rows}</table></section>
-<section><h3>每個房間的 Codex 用什麼模型</h3>
-<p class="meta">影響：那個房間裡 Codex 回話的速度、品質、額度消耗。生效：<b>下一次 Codex 回話</b>，不用重開。檔案 `codex-房間設定.json`。</p>
-<table><tr><td class="meta">房間</td><td class="meta">模型</td><td class="meta">推理深度</td><td></td></tr>{"".join(rows)}</table></section>
 <section><h3>派報生：什麼消息一來就提前叫醒誰</h3>
 <p class="meta">關鍵字用「、」分隔；符合共用區變動或機器人群發言就叫醒那位，冷卻時間內只叫一次。生效：<b>2 分鐘內</b>。各自的檔在家裡的 `訂閱.json`。</p>
 <table><tr><td class="meta">誰</td><td class="meta">喚醒關鍵字</td><td class="meta">冷卻（分）</td><td></td></tr>{"".join(wakes)}</table></section>

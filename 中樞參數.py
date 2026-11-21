@@ -56,8 +56,110 @@ def ai_text():
     L = [f"# 中樞參數（給 AI 讀；{time.strftime('%m-%d %H:%M')} 產生；網頁版＝設定頁；值存在 H:\\Claude用\\三方討論\\中樞參數.json，改檔即生效）", ""]
     for k, v in load().items():
         L.append(f"- **{k}** ＝ {v['值']} {v.get('單位', '')}：{v.get('說明', '')}（{v.get('來源', '')}；更新 {v.get('更新', '—')}）")
-    L += ["", "有意見：在討論房提，寫明想改哪個、改成多少、理由；使用者拍板後由 Claude 改。"]
+    L += ["", "使用者可在網頁「⚙️ 設定・本房」用拉條直接改（來源會記「使用者（網頁）」）。AI 有意見：在討論房提，寫明想改哪個、改成多少、理由。"]
     return "\n".join(L) + "\n"
+
+
+# 網頁拉條可改的範圍（使用者 11-22 00:37：「這個參數給我可以直接改，用拉條，選完按設定儲存，範圍0~240」）
+# 名稱: (最小, 最大, 步進, 整數?)
+RANGES = {
+    "接力換棒秒數": (0, 240, 5, True),
+    "AI點名接力上限": (0, 10, 1, True),
+    "Codex額度保護": (0.50, 1.00, 0.01, False),
+}
+
+
+def set_values(values, who="使用者（網頁）", path=None, ai_out=None):
+    """驗範圍後寫 中樞參數.json，並重寫給 AI 讀的 .md。回 {"ok": True, "changed": {...}} 或 {"ok": False, "error": ...}；有錯就整批不寫。"""
+    path = path or PATH
+    ai_out = AI_OUT if ai_out is None else ai_out
+    if not isinstance(values, dict) or not values:
+        return {"ok": False, "error": "沒有要改的參數"}
+    clean = {}
+    for k, raw in values.items():
+        if k not in RANGES:
+            return {"ok": False, "error": f"不能從網頁改：{k}"}
+        lo, hi, step, is_int = RANGES[k]
+        if isinstance(raw, bool):
+            return {"ok": False, "error": f"{k} 要是數字"}
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"{k} 要是數字：{raw!r}"}
+        if v != v or not (lo <= v <= hi):
+            return {"ok": False, "error": f"{k} 超出範圍 {lo}～{hi}：{raw}"}
+        if is_int:
+            if v != int(v):
+                return {"ok": False, "error": f"{k} 要是整數：{raw}"}
+            v = int(v)
+        else:
+            v = round(v, 2)
+        clean[k] = v
+    try:
+        data = json.load(open(path, encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    now = time.strftime("%m-%d %H:%M")
+    changed = {}
+    for k, v in clean.items():
+        ent = dict(DEFAULTS[k], **(data.get(k) if isinstance(data.get(k), dict) else {}))
+        if ent.get("值") == v:
+            continue
+        changed[k] = {"舊": ent.get("值"), "新": v}
+        ent.update({"值": v, "來源": f"{who} {now}", "更新": now})
+        data[k] = ent
+    if changed:
+        tmp = path + ".tmp"
+        json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+        if path == PATH:
+            _cache["mtime"] = None
+        if ai_out:
+            try:
+                txt = ai_text() if path == PATH else ai_text_from(path)
+                open(ai_out, "w", encoding="utf-8", newline="\n").write(txt)
+            except OSError:
+                pass
+    return {"ok": True, "changed": changed}
+
+
+def ai_text_from(path):
+    """測試用：用指定的 json 檔產生 ai_text（不動快取）。"""
+    global PATH
+    old, oc = PATH, dict(_cache)
+    try:
+        PATH = path
+        _cache["mtime"] = None
+        return ai_text()
+    finally:
+        PATH = old
+        _cache.update(oc)
+        _cache["mtime"] = None
+
+
+def html_form(esc):
+    """設定頁的參數表：可改的每列一條拉條＋目前值，底部「儲存設定」→ POST /api/params。頁面要先定義 const K（網頁鑰匙）。"""
+    rows = []
+    for k, v in load().items():
+        if k in RANGES:
+            lo, hi, step, _ = RANGES[k]
+            ctl = (f'<input type="range" class="prm" data-name="{esc(k)}" min="{lo}" max="{hi}" step="{step}" value="{esc(str(v["值"]))}" '
+                   f'oninput="this.nextElementSibling.textContent=this.value" style="width:60%;vertical-align:middle">'
+                   f' <b>{esc(str(v["值"]))}</b> {esc(v.get("單位", ""))}<br><span class="meta">範圍 {lo}～{hi}</span>')
+        else:
+            ctl = f'{esc(str(v["值"]))} {esc(v.get("單位", ""))}'
+        rows.append(f"<tr><td><b>{esc(k)}</b></td><td style='min-width:220px'>{ctl}</td>"
+                    f"<td>{esc(v.get('說明', ''))}</td><td class='meta'>{esc(v.get('來源', ''))}<br>更新 {esc(v.get('更新', '—'))}</td></tr>")
+    return ("<table><tr><td class='meta'>參數</td><td class='meta'>值</td><td class='meta'>意思</td><td class='meta'>誰定的</td></tr>"
+            + "".join(rows) + "</table>"
+            '<p><button onclick="saveParams()">儲存設定</button> <span id="prmStatus" class="meta"></span></p>'
+            "<script>async function saveParams(){const s=document.getElementById('prmStatus'),v={};"
+            "document.querySelectorAll('input.prm').forEach(x=>v[x.dataset.name]=Number(x.value));s.textContent='存檔中…';"
+            "try{const r=await fetch('/api/params',{method:'POST',headers:{'X-Key':K,'Content-Type':'application/json'},body:JSON.stringify({values:v})});"
+            "const j=await r.json();if(j.ok){const n=Object.keys(j.changed||{}).length;s.textContent=n?'✓ 已存（改了 '+n+' 項，下次用到就生效）':'沒有變動';}"
+            "else s.textContent='失敗：'+(j.error||'');}catch(e){s.textContent='失敗';}}</script>")
 
 
 def html_rows(esc):

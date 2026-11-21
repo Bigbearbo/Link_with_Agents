@@ -305,19 +305,18 @@ function renderRooms(rooms){ lastRooms = rooms;
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
   // Codex 01:37 補漏：四頁各自的圖示；另加「本房設定」直接定位到這個房間那一列
-  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"], ["board", "訊息版", "📰"], ["pipeline", "產線", "🏭"], ["wiki", "知識庫", "📖"], ["errors", "工單＋報錯", "📝"]]){
+  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定・本房", "⚙️"], ["board", "訊息版", "📰"], ["pipeline", "產線", "🏭"], ["wiki", "知識庫", "📖"], ["errors", "工單＋報錯", "📝"]]){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
     b.textContent = ic + " " + label; b.title = label + "（右側面板）";
     // 使用者 11-20 04:11：待討論、研究需要我批的也用「新」
     const need = p === "decide" ? attn.decide : p === "research" ? attn.research : 0;
     if(need > 0){ const s = document.createElement("span"); s.className = "new"; s.textContent = "新 " + need; b.appendChild(s); b.title += "：有 " + need + " 項等你看"; }
-    b.onclick = () => { openSide(p); renderRooms(rooms); };
+    // 使用者 11-22 00:37：設定與本房合併成一頁 → 一顆「⚙️ 設定・本房」，打開時定位到目前這個房間那一列
+    if(p === "settings") b.title = "設定（含本房間設定，會標出目前這個房間）（右側面板）";
+    b.onclick = () => { if(p === "settings") openSide("settings", "row_" + room); else openSide(p); renderRooms(rooms); };
     nav.appendChild(b);
   }
-  const rs = document.createElement("button"); rs.className = "pagebtn"; rs.textContent = "⚙️ 本房"; rs.title = "打開設定，定位到目前這個房間";
-  rs.onclick = () => { openSide("settings", "row_" + room, true); renderRooms(rooms); };
-  nav.appendChild(rs);
 }
 const WHO = {
   "使用者": {cls:"m-me", face:"f-me", ch:"你", name:"你"},
