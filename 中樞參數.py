@@ -62,8 +62,8 @@ def ai_text():
 
 # 網頁拉條可改的範圍（使用者 11-22 00:37：「這個參數給我可以直接改，用拉條，選完按設定儲存，範圍0~240」）
 # 名稱: (最小, 最大, 步進, 整數?)
-RANGES = {
-    "接力換棒秒數": (0, 240, 5, True),
+RANGES = {   # 使用者 11-22 01:35 網頁工單 #61：改下拉選單，接力換棒 0～240 間隔 20
+    "接力換棒秒數": (0, 240, 20, True),
     "AI點名接力上限": (0, 10, 1, True),
     "Codex額度保護": (0.50, 1.00, 0.01, False),
 }
@@ -145,9 +145,15 @@ def html_form(esc):
     for k, v in load().items():
         if k in RANGES:
             lo, hi, step, _ = RANGES[k]
-            ctl = (f'<input type="range" class="prm" data-name="{esc(k)}" min="{lo}" max="{hi}" step="{step}" value="{esc(str(v["值"]))}" '
-                   f'oninput="this.nextElementSibling.textContent=this.value" style="width:60%;vertical-align:middle">'
-                   f' <b>{esc(str(v["值"]))}</b> {esc(v.get("單位", ""))}<br><span class="meta">範圍 {lo}～{hi}</span>')
+            n = int(round((hi - lo) / step))
+            opts = [round(lo + i * step, 2) for i in range(n + 1)]
+            cur = v["值"]
+            if cur not in opts:   # 目前值不在格點上（例 90）也要選得到，不然一存就被改掉
+                opts = sorted(opts + [cur])
+            fmt = (lambda x: str(int(x))) if RANGES[k][3] else (lambda x: f"{x:.2f}")
+            ctl = (f'<select class="prm" data-name="{esc(k)}" style="font-size:15px;padding:3px 6px">'
+                   + "".join(f'<option value="{fmt(o)}"{" selected" if o == cur else ""}>{fmt(o)}</option>' for o in opts)
+                   + f'</select> {esc(v.get("單位", ""))}<br><span class="meta">範圍 {lo}～{hi}，間隔 {step}</span>')
         else:
             ctl = f'{esc(str(v["值"]))} {esc(v.get("單位", ""))}'
         rows.append(f"<tr><td><b>{esc(k)}</b></td><td style='min-width:220px'>{ctl}</td>"
@@ -156,7 +162,7 @@ def html_form(esc):
             + "".join(rows) + "</table>"
             '<p><button onclick="saveParams()">儲存設定</button> <span id="prmStatus" class="meta"></span></p>'
             "<script>async function saveParams(){const s=document.getElementById('prmStatus'),v={};"
-            "document.querySelectorAll('input.prm').forEach(x=>v[x.dataset.name]=Number(x.value));s.textContent='存檔中…';"
+            "document.querySelectorAll('.prm').forEach(x=>v[x.dataset.name]=Number(x.value));s.textContent='存檔中…';"
             "try{const r=await fetch('/api/params',{method:'POST',headers:{'X-Key':K,'Content-Type':'application/json'},body:JSON.stringify({values:v})});"
             "const j=await r.json();if(j.ok){const n=Object.keys(j.changed||{}).length;s.textContent=n?'✓ 已存（改了 '+n+' 項，下次用到就生效）':'沒有變動';}"
             "else s.textContent='失敗：'+(j.error||'');}catch(e){s.textContent='失敗';}}</script>")
