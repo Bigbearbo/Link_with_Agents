@@ -32,6 +32,8 @@ RULES = {
         "set PYTHONIOENCODING=utf-8*": "allow",
         "ls *": "allow",                        # 03:18 ls 待回 被問；只是列目錄
         "cmd /c \"set PYTHONIOENCODING=utf-8 && python *": "allow",
+        "mv \"H:\\免費模型用\\群組\\*": "allow",          # 11-21 08:20：在自己家 群組\ 搬待回單到 已處理\ 被問
+        "move \"H:\\免費模型用\\群組\\*": "allow",
     },
 }
 
