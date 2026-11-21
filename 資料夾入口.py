@@ -135,6 +135,11 @@ def write():
         importlib.import_module("資源推播").tick()
     except Exception:
         pass
+    try:   # 使用者 11-21 08:57：不在電腦前時，輝達權限等 30 分鐘就自動拒絕並請它改找隊友（只拒絕、不代按允許）
+        import importlib
+        importlib.import_module("權限逾時").tick()
+    except Exception:
+        pass
     try:   # 使用者 11-21 08:06：派工建議（第 2、3 站）跟著每 10 分鐘刷新
         import runpy
         runpy.run_path(r"H:\Agent共用\待辦\派工建議.py", run_name="__main__")
