@@ -229,7 +229,9 @@ def ticket_new(who, title, desc="", pri="中", to="自動派", level=""):
         t = {"id": max([x["id"] for x in d], default=0) + 1,
              "標題": f"{title}（來源：網頁 {td.now()} {who}）",
              "負責": "未定" if to == "自動派" else to, "優先": pri, "專案": "", "狀態": "待做",
-             "建立": td.now(), "紀錄": []}
+             "建立": td.now(), "紀錄": [],
+             "開單人": "使用者（網頁）" if who == "使用者" else who,
+             "討論概要": f"使用者在網頁開單：{(str(desc).strip() or title)[:60]}" if who == "使用者" else f"{who} 在網頁開單：{(str(desc).strip() or title)[:60]}"}
         if str(desc).strip():
             t["說明"] = str(desc).strip()[:2000]
             t["紀錄"].append(f"{td.now()} 說明（{who}）：{t['說明'][:300]}")
@@ -300,12 +302,12 @@ def _ticket_section(esc):
         last = esc(t["紀錄"][-1]) if t.get("紀錄") else ""
         rows += (f"<tr><td>#{t['id']}</td><td>{esc(t.get('標題', ''))}"
                  + (f"<br><span class=m>└ {last}</span>" if last else "")
-                 + f"</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
+                 + f"</td><td>{esc(t.get('開單人') or '未記')}</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
                  f"<td>{esc(td.level_text(t)) if td else ''}</td>"
                  f"<td><button onclick=\"tog('tc{t['id']}')\">留言</button></td></tr>"
-                 f"<tr id=tc{t['id']} style=display:none><td></td><td colspan=5><input id=tci{t['id']} placeholder=\"留言給 #{t['id']}\"> "
+                 f"<tr id=tc{t['id']} style=display:none><td></td><td colspan=6><input id=tci{t['id']} placeholder=\"留言給 #{t['id']}\"> "
                  f"<button onclick=\"tcom({t['id']})\">送出</button></td></tr>")
-    rows = rows or "<tr><td colspan=6>沒有未完成工單</td></tr>"
+    rows = rows or "<tr><td colspan=7>沒有未完成工單</td></tr>"
     opt = lambda xs, sel: "".join(f"<option{' selected' if x == sel else ''}>{x}</option>" for x in xs)
     return f"""<section><h3>📝 開工單</h3>
 <input id=tt placeholder="標題（必填）"><br><br><textarea id=td rows=3 placeholder="說明（要做什麼、要交什麼、相關路徑）"></textarea><br><br>
@@ -315,7 +317,7 @@ def _ticket_section(esc):
 <button onclick="tnew()">建立工單</button> <span id=tst class=m></span>
 <p class=m>「自動派」＝負責人寫「未定」，派工建議下一輪會排。工單存在 H:\\Agent共用\\待辦\\待辦.json。</p></section>
 <section><h3>📋 最近未完成工單（{len(open_)}）{err}</h3>
-<table><tr><th>#</th><th>標題</th><th>負責</th><th>狀態</th><th>難度</th><th></th></tr>{rows}</table></section>"""
+<table><tr><th>#</th><th>標題</th><th>開單人</th><th>負責</th><th>狀態</th><th>難度</th><th></th></tr>{rows}</table></section>"""
 
 
 def page(key=""):
