@@ -305,7 +305,7 @@ function renderRooms(rooms){ lastRooms = rooms;
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);
   // Codex 01:37 補漏：四頁各自的圖示；另加「本房設定」直接定位到這個房間那一列
-  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"], ["board", "訊息版", "📰"], ["pipeline", "產線", "🏭"], ["wiki", "知識庫", "📖"], ["errors", "報錯", "🩺"]]){
+  for(const [p, label, ic] of [["decide", "待討論", "🗳️"], ["research", "研究", "🔬"], ["changes", "變動", "🕘"], ["settings", "設定", "⚙️"], ["board", "訊息版", "📰"], ["pipeline", "產線", "🏭"], ["wiki", "知識庫", "📖"], ["errors", "工單＋報錯", "📝"]]){
     const b = document.createElement("button");
     b.className = "pagebtn" + ($("#sidePane") && !$("#sidePane").hidden && $("#sidePane").dataset.cur === p ? " sel" : "");
     b.textContent = ic + " " + label; b.title = label + "（右側面板）";
@@ -828,7 +828,7 @@ document.querySelectorAll("#target button[data-t]:not(.skip)").forEach(b => b.on
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
+const SIDE_PAGES = {decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["工單＋報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name, hash, keep){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(hash){   // 定位到某一列（本房設定）

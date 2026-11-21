@@ -186,33 +186,174 @@ def resolve(code, who, note=""):
     return True
 
 
+# ---- 工單（使用者 11-21 22:37：「報錯那個按鈕幫我變成工單+報錯，工單放前面，給我輸入的介面，還有留言選項」）----
+TODO_PY = r"H:\Agent共用\待辦\待辦.py"   # 測試時把 _td().DB / _td().LOCK 換成複本
+ASSIGNEES = ["自動派", "Claude", "Codex", "Gemini", "輝達", "DeepSeek"]
+_TD = None
+
+
+def _td():
+    """載入共用待辦模組（只載一次）；用它的 load／save（save 已有 PermissionError 重試）與檔案鎖。"""
+    global _TD
+    if _TD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("待辦_共用", TODO_PY)
+        _TD = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_TD)
+    return _TD
+
+
+def _todo_edit(fn):
+    """在待辦檔案鎖內 讀→改→存；fn(d) 回傳結果。"""
+    td = _td()
+    td.lock()
+    try:
+        d = td.load()
+        out = fn(d)
+        td.save(d)
+        return out
+    finally:
+        if os.path.exists(td.LOCK):
+            os.remove(td.LOCK)
+
+
+def ticket_new(who, title, desc="", pri="中", to="自動派", level=""):
+    title = str(title).strip()[:200]
+    if not title:
+        return {"ok": False, "error": "標題必填"}
+    pri = pri if pri in ("高", "中", "低") else "中"
+    to = to if to in ASSIGNEES else "自動派"
+    td = _td()
+
+    def fn(d):
+        t = {"id": max([x["id"] for x in d], default=0) + 1,
+             "標題": f"{title}（來源：網頁 {td.now()} {who}）",
+             "負責": "未定" if to == "自動派" else to, "優先": pri, "專案": "", "狀態": "待做",
+             "建立": td.now(), "紀錄": []}
+        if str(desc).strip():
+            t["說明"] = str(desc).strip()[:2000]
+            t["紀錄"].append(f"{td.now()} 說明（{who}）：{t['說明'][:300]}")
+        if level in td.LEVELS:
+            t["難度"], t["難度來源"] = level, f"{who} 定"
+        d.append(t)
+        return t
+    t = _todo_edit(fn)
+    return {"ok": True, "id": t["id"],
+            "notice": f"📝 新工單 #{t['id']}（{who}）：{title[:150]}——派工建議下一輪會排"}
+
+
+def ticket_comment(who, tid, text):
+    text = str(text).strip()[:1000]
+    if not text:
+        return {"ok": False, "error": "留言是空的"}
+    td = _td()
+
+    def fn(d):
+        for t in d:
+            if t["id"] == int(str(tid).lstrip("#")):
+                # 只記一筆紀錄，不像「做」那樣把狀態改成進行中（還沒人領的單不該被留言弄成進行中）
+                t.setdefault("紀錄", []).append(f"{td.now()} 留言（{who}）：{text}")
+                return t
+        return None
+    try:
+        t = _todo_edit(fn)
+    except ValueError:
+        return {"ok": False, "error": "編號不對"}
+    if not t:
+        return {"ok": False, "error": f"沒有 #{tid}"}
+    return {"ok": True, "id": t["id"], "notice": f"💬 工單 #{t['id']} 新留言（{who}）：{text[:150]}"}
+
+
+def report_comment(who, code, text):
+    text = str(text).strip()[:1000]
+    st = _load()
+    if not text or code not in st:
+        return {"ok": False, "error": "留言是空的或異常碼不存在"}
+    st[code].setdefault("留言", []).append({"時間": time.time(), "誰": who, "內容": text})
+    _save(st)
+    return {"ok": True, "code": code, "notice": f"💬 [{code}] 新留言（{who}）：{text[:150]}"}
+
+
+def api(op, who, data):
+    """中樞 /api/errors 的新 op 轉到這裡；回傳 dict（有 notice 的由中樞貼到互相討論群）。"""
+    who = str(who or "使用者")[:30]
+    if op == "ticket":
+        return ticket_new(who, data.get("title") or "", data.get("desc") or "", data.get("pri") or "中",
+                          data.get("to") or "自動派", data.get("level") or "")
+    if op == "ticket_comment":
+        return ticket_comment(who, data.get("id"), data.get("text") or "")
+    if op == "report_comment":
+        return report_comment(who, str(data.get("code")), data.get("text") or "")
+    return {"ok": False, "error": "不認得的 op"}
+
+
+def _ticket_section(esc):
+    try:
+        td = _td()
+        d = td.load()
+        err = ""
+    except Exception as e:   # 待辦讀不到也別讓整頁掛掉
+        td, d, err = None, [], f"（讀不到待辦：{esc(str(e))}）"
+    open_ = sorted([t for t in d if t.get("狀態") != "完成"], key=lambda t: -t["id"])[:30]
+    rows = ""
+    for t in open_:
+        last = esc(t["紀錄"][-1]) if t.get("紀錄") else ""
+        rows += (f"<tr><td>#{t['id']}</td><td>{esc(t.get('標題', ''))}"
+                 + (f"<br><span class=m>└ {last}</span>" if last else "")
+                 + f"</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
+                 f"<td>{esc(td.level_text(t)) if td else ''}</td>"
+                 f"<td><button onclick=\"tog('tc{t['id']}')\">留言</button></td></tr>"
+                 f"<tr id=tc{t['id']} style=display:none><td></td><td colspan=5><input id=tci{t['id']} placeholder=\"留言給 #{t['id']}\"> "
+                 f"<button onclick=\"tcom({t['id']})\">送出</button></td></tr>")
+    rows = rows or "<tr><td colspan=6>沒有未完成工單</td></tr>"
+    opt = lambda xs, sel: "".join(f"<option{' selected' if x == sel else ''}>{x}</option>" for x in xs)
+    return f"""<section><h3>📝 開工單</h3>
+<input id=tt placeholder="標題（必填）"><br><br><textarea id=td rows=3 placeholder="說明（要做什麼、要交什麼、相關路徑）"></textarea><br><br>
+優先 <select id=tp>{opt(['高', '中', '低'], '中')}</select>
+指定給 <select id=tto>{opt(ASSIGNEES, '自動派')}</select>
+難度 <select id=tl><option value="">讓 Claude 定</option>{opt(['小', '中', '大'], '')}</select>
+<button onclick="tnew()">建立工單</button> <span id=tst class=m></span>
+<p class=m>「自動派」＝負責人寫「未定」，派工建議下一輪會排。工單存在 H:\\Agent共用\\待辦\\待辦.json。</p></section>
+<section><h3>📋 最近未完成工單（{len(open_)}）{err}</h3>
+<table><tr><th>#</th><th>標題</th><th>負責</th><th>狀態</th><th>難度</th><th></th></tr>{rows}</table></section>"""
+
+
 def page(key=""):
-    """網頁「報錯」頁（使用者 11-21 01:48：「報錯也弄個顯示，大家看得到就會認領分派了」）。"""
+    """網頁「工單＋報錯」頁（使用者 11-21 01:48：「報錯也弄個顯示，大家看得到就會認領分派了」；11-21 22:37 加工單＋留言）。"""
     import html as _h
     esc = _h.escape
     st = _load()
     fmt = lambda t: time.strftime("%m-%d %H:%M", time.localtime(t)) if t else "—"
     act = sorted([(c, s) for c, s in st.items() if s.get("狀態") == "異常中"], key=lambda x: x[1].get("出現", 0))
     done = sorted([(c, s) for c, s in st.items() if s.get("狀態") == "已恢復"], key=lambda x: -x[1].get("恢復", 0))[:15]
+    cid = lambda c: "rc" + re.sub(r"\W", "_", c)
+    coms = lambda s: "".join(f"<br><span class=m>💬 {fmt(m.get('時間'))} {esc(str(m.get('誰', '')))}：{esc(str(m.get('內容', '')))}</span>"
+                             for m in s.get("留言", []))
     rows = "".join(
-        f"<tr><td><code>{esc(c)}</code></td><td>{esc(s.get('說明', ''))}</td><td>{esc(s.get('負責', ''))}</td>"
+        f"<tr><td><code>{esc(c)}</code></td><td>{esc(s.get('說明', ''))}{coms(s)}</td><td>{esc(s.get('負責', ''))}</td>"
         f"<td>{esc(s.get('認領') or '')}</td><td>{fmt(s.get('出現'))}<br><span class=m>{s.get('次數', 1)} 次</span></td>"
-        f"<td><button onclick=\"act('claim','{esc(c)}')\">我來</button> <button onclick=\"act('resolve','{esc(c)}')\">已修</button></td></tr>"
+        f"<td><button onclick=\"act('claim','{esc(c)}')\">我來</button> <button onclick=\"act('resolve','{esc(c)}')\">已修</button> "
+        f"<button onclick=\"tog('{cid(c)}')\">留言</button></td></tr>"
+        f"<tr id={cid(c)} style=display:none><td></td><td colspan=5><input id={cid(c)}i placeholder=\"留言給 {esc(c)}\"> "
+        f"<button onclick=\"rcom('{esc(c)}','{cid(c)}i')\">送出</button></td></tr>"
         for c, s in act) or "<tr><td colspan=6>目前沒有異常 🎉</td></tr>"
-    drows = "".join(f"<tr><td><code>{esc(c)}</code></td><td>{esc(s.get('說明', '')[:120])}</td><td>{fmt(s.get('出現'))} → {fmt(s.get('恢復'))}</td>"
+    drows = "".join(f"<tr><td><code>{esc(c)}</code></td><td>{esc(s.get('說明', '')[:120])}{coms(s)}</td><td>{fmt(s.get('出現'))} → {fmt(s.get('恢復'))}</td>"
                     f"<td>{esc(s.get('修好者') or '自動')}</td><td>{esc(s.get('修法') or '')}</td></tr>" for c, s in done) or "<tr><td colspan=5>—</td></tr>"
-    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>報錯</title><style>
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>工單＋報錯</title><style>
 :root{{--bg:#f4f2ee;--card:#fff;--ink:#1d1b18;--mute:#7a756d;--line:#e4e0d8;--acc:#2e6fd9}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#17171a;--card:#202024;--ink:#ecebe8;--mute:#9a968f;--line:#2f2f35;--acc:#7fa8f0}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:960px;margin:0 auto;padding:12px 16px;overflow-x:hidden}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0;overflow-x:auto}}
 table{{width:100%;border-collapse:collapse;font-size:14px}} td,th{{border-top:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}}
 .m{{color:var(--mute);font-size:12px}} textarea,input{{width:100%;box-sizing:border-box;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}}
+td input{{width:calc(100% - 70px)}} select{{padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);margin-right:8px}}
 button{{padding:4px 10px}}
 </style></head><body>
+<p class=m>你的名字（工單、留言、報錯共用）：<input id=who value="使用者" style="width:160px"></p>
+{_ticket_section(esc)}
 <section><h3>🩺 異常中（{len(act)}）</h3><p class=m>自動偵測的修好後會自動消失；人工回報的要按「已修」。按「我來」＝認領。</p>
 <table><tr><th>異常碼</th><th>說明</th><th>負責</th><th>認領</th><th>出現</th><th></th></tr>{rows}</table></section>
-<section><h3>📝 發現哪裡怪？</h3><input id=who placeholder="你是誰（例：使用者、Codex）" value="使用者"><br><br>
+<section><h3>🐞 發現哪裡怪？（報錯）</h3>
 <textarea id=txt rows=3 placeholder="哪裡怪、怎麼重現（越具體越好）"></textarea><br><button onclick="rep()">提交到報錯系統</button> <span id=st class=m></span></section>
 <section><h3>✅ 最近恢復</h3><table><tr><th>異常碼</th><th>說明</th><th>時間</th><th>誰修的</th><th>怎麼修</th></tr>{drows}</table></section>
 <p class=m>給 AI 讀的版本：H:\\Agent共用\\系統異常.md（中樞每 10 分鐘更新）</p>
@@ -222,6 +363,13 @@ async function rep(){{const t=document.getElementById('txt').value.trim();if(!t)
 const j=await post({{op:'report',who:document.getElementById('who').value||'使用者',text:t}});document.getElementById('st').textContent=j.ok?('已建立 '+j.code):'失敗';setTimeout(()=>location.reload(),800);}}
 async function act(op,code){{const who=document.getElementById('who').value||'使用者';let note='';if(op==='resolve'){{note=prompt('怎麼修的？（可留空）')||'';}}
 const j=await post({{op,code,who,note}});if(j.ok)location.reload();else alert('失敗');}}
+const W=()=>document.getElementById('who').value||'使用者', V=id=>document.getElementById(id).value;
+function tog(id){{const e=document.getElementById(id);e.style.display=e.style.display==='none'?'':'none';}}
+async function tnew(){{const t=V('tt').trim(),s=document.getElementById('tst');if(!t){{s.textContent='標題必填';return;}}s.textContent='建立中…';
+const j=await post({{op:'ticket',who:W(),title:t,desc:V('td'),pri:V('tp'),to:V('tto'),level:V('tl')}});
+s.textContent=j.ok?('已建立 #'+j.id):('失敗：'+(j.error||''));if(j.ok)setTimeout(()=>location.reload(),1200);}}
+async function tcom(id){{const t=V('tci'+id).trim();if(!t)return;const j=await post({{op:'ticket_comment',who:W(),id,text:t}});if(j.ok)location.reload();else alert('失敗：'+(j.error||''));}}
+async function rcom(code,inp){{const t=V(inp).trim();if(!t)return;const j=await post({{op:'report_comment',who:W(),code,text:t}});if(j.ok)location.reload();else alert('失敗：'+(j.error||''));}}
 </script></body></html>"""
 
 

@@ -1463,6 +1463,15 @@ def make_handler(hub):
                     return self._json({"ok": er.claim(str(data.get("code")), who)})
                 if op == "resolve":
                     return self._json({"ok": er.resolve(str(data.get("code")), who, data.get("note") or "")})
+                if op in ("ticket", "ticket_comment", "report_comment"):   # 工單＋留言（使用者 11-21 22:37），邏輯在 異常偵測.api
+                    res = er.api(op, who, data)
+                    note = res.pop("notice", "")
+                    if note:
+                        try:
+                            hub.room("g1004308131170").notice(note)
+                        except Exception:
+                            pass
+                    return self._json(res)
                 return self._json({"ok": False})
             if p == "/api/more":
                 room.more(int(data.get("n") or 1))
