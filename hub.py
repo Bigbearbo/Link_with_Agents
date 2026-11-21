@@ -3068,6 +3068,13 @@ if __name__ == "__main__":
                         room = hub.rooms.get(MAIN)
                         if room:
                             room.notice(f"🔐 {name} 的視窗在等你按權限：{what} {pat}".strip()[:300] + "\n（到它的 OpenCode 視窗按允許／拒絕；這則只是通知）")
+                        # 使用者 11-21 07:59：「這種權限問題可以讓他先問你們看怎麼解決，需要再找我要權限」→ 同時丟到互相討論群，
+                        # 依路徑點名維護者（Codex用→Codex，其他→Claude）；派報生依「權限」關鍵字叫醒，先試副本／代跑，不行才請使用者按
+                        bot = hub.rooms.get("g1004308131170")
+                        if bot:
+                            owner = "Codex" if "Codex用" in str(pat) else "Claude"
+                            bot.notice(f"🔐 權限卡住：{name} 要 {what} {pat}".strip()[:300] +
+                                       f"\n請 {owner} 先看能不能用共用區副本、補檔或代跑解決（輝達規則：先問隊友）；確定沒替代方案，再請使用者到它的視窗按一次。")
                         log(f"權限請求：{name} {what} {pat}")
             except Exception as e:
                 log(f"權限監看失敗：{type(e).__name__} {e}")
