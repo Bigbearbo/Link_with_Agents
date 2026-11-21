@@ -1112,6 +1112,19 @@ loop(); box.focus();
     bar.appendChild(ok); bar.appendChild(go); bar.appendChild(b);
     bub.appendChild(bar); };
   const list = document.getElementById("list"); if(!list) return;
+  /* 工單 #222（使用者 11-22 05:21）：①右側欄頁面字體跟訊息框內文一樣大（15px）②關注有新進展時「訊息版」按鈕抹藍 */
+  const fitFont = fr => { try{ const d = fr.contentDocument; if(!d || d.getElementById("u222")) return;
+      const st = d.createElement("style"); st.id = "u222";
+      st.textContent = "body{font-size:15px !important;line-height:1.6} li,td,th,p,summary,.pre,section{font-size:15px} .meta,.m{font-size:13px !important} h3{font-size:17px}";
+      (d.head || d.documentElement).appendChild(st); }catch(e){} };
+  const watchFrames = () => document.querySelectorAll("iframe.sideFrame").forEach(fr => { if(!fr.dataset.u222){ fr.dataset.u222 = "1"; fr.addEventListener("load", () => fitFont(fr)); } fitFont(fr); });
+  setInterval(watchFrames, 1500);
+  const boardBlue = async () => { try{ const r = await fetch("/api/board_user", {method:"POST", headers:{"X-Key":K2, "Content-Type":"application/json"}, body: JSON.stringify({op:"count"})});
+      const j = await r.json(); const n = j.follow_new || 0;
+      document.querySelectorAll("#rooms .pagebtn, #pagebar button").forEach(b => { if(b.textContent.includes("訊息版")){
+        b.style.background = n ? "#1e88e5" : (b.closest("#pagebar") ? "#d35400" : ""); b.style.color = n ? "#fff" : "";
+        b.title = n ? `訊息版：你關注的有 ${n} 則新進展` : "訊息版（右側面板）"; } }); }catch(e){} };
+  boardBlue(); setInterval(boardBlue, 30000);
   /* 子代理顯示所屬 AI（使用者 11-22 05:12）：手搓匠、流程優化員是 Claude 的子代理 → 名字顯示「Claude・手搓匠」 */
   const SUBP = {"手搓匠":"Claude", "流程優化員":"Claude"};
   const tagSub = el => { const nb = el.querySelector && el.querySelector(".meta b"); if(!nb || nb.dataset.sub) return;

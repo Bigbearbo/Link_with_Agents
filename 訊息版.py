@@ -157,6 +157,8 @@ def api(data, hub=None):
         return follow(hub, str(data.get("room") or ""), data.get("idx"))
     if op == "ok_push":   # 使用者 11-22 04:45：「好」用訂閱推送——原訊息＋使用者的「好」放進該 AI 的派報「下一期」，不叫醒
         return ok_push(hub, str(data.get("room") or ""), data.get("idx"), str(data.get("who") or ""))
+    if op == "count":   # 工單 #222：網頁「訊息版」按鈕有新進展時變藍
+        return {"ok": True, "follow_new": follow_new_count(hub) if hub else 0}
     if op == "follow_set" and data.get("key"):
         return follow_set(str(data["key"]), data.get("state"), data.get("seen"))
     return {"ok": False, "error": "不認得的 op"}
