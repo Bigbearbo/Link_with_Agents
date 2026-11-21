@@ -125,6 +125,72 @@ def ai_text():
     return "\n".join(L) + "\n"
 
 
+CREDIT = r"H:\Agent共用\贈點.json"   # 使用者 11-21 22:02：有期限的贈點也弄個進度條以免忘了
+
+
+def credit_rows(today=None):
+    """贈點列 → [{名稱, 已用, 總額, 百分比, 剩天, 預估到期前用掉, 起算註, 來源註, 判斷}]。
+    速度＝已用÷已過天數（從「開始」起算；沒填就從「更新時間」起算並標註）。手動數字與免費池本機估算取較高者。"""
+    import datetime as _dt
+    try:
+        d = json.load(open(CREDIT, encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    pool = ((_load("免費池") or {}).get("服務") or {})
+    now = today or _dt.datetime.now()
+    out = []
+    for r in d.get("列") or []:
+        try:
+            total, used = float(r["總額"]), float(r.get("已用美元") or 0)
+            end = _dt.datetime.strptime(r["到期"], "%Y-%m-%d") + _dt.timedelta(days=1)   # 到期日當天還能用
+        except (KeyError, ValueError, TypeError):
+            continue
+        src = "手動"
+        auto = (pool.get(r.get("名稱")) or {}).get("已用美元")
+        if isinstance(auto, (int, float)) and auto > used:
+            used, src = float(auto), "本機估算（比手動高）"
+        start_s, start_note = r.get("開始"), ""
+        if not start_s:
+            start_s, start_note = str(r.get("更新時間") or "")[:10], "（開始日不明，從更新時間起算）"
+        try:
+            start = _dt.datetime.strptime(start_s, "%Y-%m-%d")
+        except ValueError:
+            start = None
+        left = max(0.0, (end - now).total_seconds() / 86400)
+        proj = None
+        if start is not None:
+            past = (now - start).total_seconds() / 86400
+            if past >= 0.5:
+                proj = used + used / past * left
+        if left <= 0:
+            verdict = "⌛ 已到期"
+        elif proj is None:
+            verdict = "— 起算不到半天，速度待算"
+        elif proj < total:
+            verdict = f"⚠️ 到期前用不完（照速度剩約 ${total - proj:.2f} 會浪費）"
+        else:
+            verdict = "🟢 正常（照速度到期前會用完）"
+        out.append({"名稱": r.get("名稱", "?"), "已用": used, "總額": total, "百分比": round(100 * used / total, 1) if total else None,
+                    "剩天": left, "預估": proj, "起算註": start_note, "來源註": src, "到期": r["到期"],
+                    "更新": r.get("更新時間") or "—", "判斷": verdict})
+    return out
+
+
+def credit_text():
+    cs = credit_rows()
+    if not cs:
+        return ""
+    L = ["", "## 贈點（有期限）", "", "| 名稱 | 已用/總額 | 進度 | 到期（剩幾天） | 照速度到期前會用掉 | 判斷 | 資料 |", "|---|---|---|---|---|---|---|"]
+    for c in cs:
+        pct = c["百分比"] or 0
+        bar = "█" * int(round(pct / 10)) + "░" * (10 - int(round(pct / 10)))
+        proj = "—" if c["預估"] is None else f"約 ${c['預估']:.2f}{c['起算註']}"
+        L.append(f"| {c['名稱']} | ${c['已用']:.2f}/${c['總額']:.0f} | {bar} {pct}% | {c['到期']}（剩 {c['剩天']:.0f} 天） | {proj} | {c['判斷']} | {c['來源註']}；手動更新 {c['更新']} |")
+    L.append("")
+    L.append("來源＝H:\\Agent共用\\贈點.json（使用者或 AI 看帳單頁手動更新），免費池本機估算較高時取高者。")
+    return "\n".join(L) + "\n"
+
+
 HIST = r"H:\Agent共用\用量歷史.jsonl"   # 使用者 11-21 06:33：用量加時間快照（每小時一筆），之後可做圖表或看近期變化
 
 
@@ -192,7 +258,7 @@ def recent(hours=6):
 
 def write():
     snapshot()
-    t = ai_text()
+    t = ai_text() + credit_text()
     h, times = recent()
     if times:
         t += f"\n## 近期變化（每小時快照，{times[0]}～{times[-1]}；完整紀錄 H:\\Agent共用\\用量歷史.jsonl）\n\n"
@@ -204,4 +270,4 @@ if __name__ == "__main__":
     import sys
     write()
     sys.stdout.reconfigure(encoding="utf-8")
-    print(ai_text())
+    print(ai_text() + credit_text())
