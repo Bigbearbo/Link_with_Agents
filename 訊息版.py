@@ -8,7 +8,7 @@ board(hub, who) → dict；page(hub, who, key) → HTML（右側面板用）。
 import html as _h, json, os, re, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAMES = ["Claude", "Codex", "Gemini", "輝達", "DeepSeek", "有下文"]
+NAMES = ["給你", "Claude", "Codex", "Gemini", "輝達", "DeepSeek", "有下文"]   # 「給你」＝網頁工單 #66
 
 
 def waiting(hub, who, hours=24):
@@ -84,7 +84,9 @@ def feed(hub, n=30):
 
 
 def page(hub, who, key):
-    who = who if who in NAMES else "Claude"
+    who = who if who in NAMES else "給你"
+    if who == "給你":
+        return _user_page(hub, key)
     w, todos, sos = waiting(hub, who), my_todos(who), rescues(who)
     try:   # 使用者 11-20 06:28：同步點（別人目標檔裡寫「請／等 你」）也算「等你處理」，不受 24 小時限制
         import importlib
@@ -116,3 +118,143 @@ h3{{margin:4px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:12px}} 
 <div class="pre">{esc(news) or "（下一期還沒有新聞）"}</div><ul>{wk}</ul></section>
 <section><h3>③ 全部動態（機器人群，新的在上，同一人連續的收在一起）</h3>{fd or "<p class=meta>沒有</p>"}</section>
 </body></html>"""
+
+
+# ---------- 「給你」分頁（使用者 11-22 02:18 網頁工單 #66：訊息版多一個留給我的，已讀按鈕，留存之後不再版顯示，
+# 回覆按鈕，按了再展開輸入。條件篩選按鈕，訊息也標重要性） ----------
+USER_STATE = os.path.join(HERE, "logs", "訊息版_給你.json")   # {"已讀": {key: "時間"}}
+_HIGH = ("權限", "允許", "花錢", "付費", "安裝", "金鑰", "對外", "發布", "公開", "刪除", "刪掉")
+_MID = ("要你決定", "你決定", "等你", "你同意", "要不要", "你點頭", "請你", "需要你", "@使用者", "你可以在")
+
+
+def _ustate():
+    try:
+        d = json.load(open(USER_STATE, encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def user_mark(key, read=True):
+    d = _ustate()
+    r = d.setdefault("已讀", {})
+    if read:
+        r[str(key)] = time.strftime("%m-%d %H:%M")
+    else:
+        r.pop(str(key), None)
+    tmp = USER_STATE + ".tmp"
+    json.dump(d, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    os.replace(tmp, USER_STATE)
+    return {"ok": True}
+
+
+def api(data):
+    """中樞 /api/board_user 轉到這裡。"""
+    if data.get("op") == "mark" and data.get("key"):
+        return user_mark(data["key"], bool(data.get("read", True)))
+    return {"ok": False, "error": "不認得的 op"}
+
+
+def _importance(text):
+    t = text or ""
+    if any(k in t for k in _HIGH):
+        return "高"
+    if any(k in t for k in _MID):
+        return "中"
+    return "低"
+
+
+def for_user(hub, hours=48):
+    """留給使用者的：①AI 發言裡點名要你決定／同意／按權限的段落 ②負責人是使用者或在等使用者的待辦。每則有固定 key。"""
+    out = []
+    cut = time.strftime("%m-%d %H:%M", time.localtime(time.time() - hours * 3600))
+    for rid, room in hub.rooms.items():
+        for i, m in enumerate(room.transcript):
+            who, txt = m.get("who"), m.get("text") or ""
+            if who in ("使用者", "系統", None) or m.get("time", "") < cut:
+                continue
+            lines = [ln for ln in txt.splitlines() if any(k in ln for k in _HIGH + _MID)]
+            if not lines:
+                continue
+            body = "\n".join(lines)[:400]
+            out.append({"key": f"{rid}:{i}", "類": "發言", "房間": room.name, "room": rid, "時間": m.get("time", ""),
+                        "誰": who, "內容": body, "重要": _importance(body)})
+    try:
+        todos = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        todos = []
+    for t in todos:
+        if t.get("狀態") == "完成":
+            continue
+        if "使用者" in str(t.get("負責", "")) or "使用者" in str(t.get("等", "")):
+            title = str(t.get("標題", ""))
+            imp = _importance(title)
+            out.append({"key": f"todo:{t['id']}", "類": "待辦", "房間": "待辦", "room": "", "時間": str(t.get("建立", "")),
+                        "誰": str(t.get("開單人", "") or "—"), "內容": f"#{t['id']} {title[:200]}", "重要": imp if imp != "低" else "中"})
+    return sorted(out, key=lambda x: x["時間"], reverse=True)
+
+
+_USER_JS = """<script>
+const UK=__KEY__;
+async function U(b){const r=await fetch('/api/board_user',{method:'POST',headers:{'X-Key':UK,'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
+let F='all';
+function apply(){const sr=document.getElementById('showRead').checked;document.querySelectorAll('li.u').forEach(li=>{
+ const imp=li.dataset.imp,kind=li.dataset.kind,rd=li.dataset.read==='1';
+ let ok=F==='all'||(F==='高'&&imp==='高')||(F==='中'&&imp!=='低')||F===kind; if(rd&&!sr) ok=false; li.hidden=!ok;});
+ const n=[...document.querySelectorAll('li.u')].filter(l=>l.dataset.read!=='1').length; const c=document.getElementById('ucount'); if(c) c.textContent=n;}
+document.querySelectorAll('.flt button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.flt button').forEach(x=>x.classList.remove('on'));b.classList.add('on');F=b.dataset.f;apply();});
+document.getElementById('showRead').onchange=apply;
+document.querySelectorAll('li.u').forEach(li=>{
+ li.querySelector('.rd').onclick=async e=>{const rd=li.dataset.read!=='1';const j=await U({op:'mark',key:li.dataset.key,read:rd});
+   if(j.ok){li.dataset.read=rd?'1':'0';e.target.textContent=rd?'↩ 取消已讀':'✓ 已讀';apply();}};
+ const rp=li.querySelector('.rp'); if(rp) rp.onclick=()=>{const bx=li.querySelector('.rbox');bx.hidden=!bx.hidden;};
+ const rs=li.querySelector('.rs'); if(rs) rs.onclick=async()=>{const t=li.querySelector('textarea').value.trim();if(!t)return;
+   const s=li.querySelector('.rst');s.textContent='送出中…';
+   try{const r=await fetch('/api/send',{method:'POST',headers:{'X-Key':UK,'Content-Type':'application/json'},body:JSON.stringify({text:t,target:'both',room:li.dataset.room})});
+   const j=await r.json();s.textContent=j.error?('失敗：'+j.error):'✓ 已送出';if(!j.error){li.querySelector('textarea').value='';}}catch(e){s.textContent='失敗';}};
+});
+apply();
+</script>"""
+
+
+def user_section(hub, key, esc):
+    st = _ustate().get("已讀", {})
+    rows = []
+    for x in for_user(hub):
+        read = x["key"] in st
+        color = {"高": "#ff1744", "中": "#ff9100", "低": "#9e9e9e"}[x["重要"]]
+        reply = (f'<button class="rp">💬 回覆</button><div class="rbox" hidden><textarea rows="2" style="width:100%"></textarea><br>'
+                 f'<button class="rs">送出到 {esc(x["房間"])}</button> <span class="rst meta"></span></div>') if x["room"] else ""
+        rows.append(f'<li class="u" data-imp="{x["重要"]}" data-kind="{esc(x["類"])}" data-read="{1 if read else 0}" '
+                    f'data-key="{esc(x["key"])}" data-room="{esc(x["room"])}">'
+                    f'<span class="imp" style="background:{color}">{x["重要"]}</span> '
+                    f'<span class="meta">{esc(x["類"])}｜{esc(x["房間"])}｜{esc(x["時間"])}｜{esc(x["誰"])}'
+                    f'{"｜已讀 " + esc(st[x["key"]]) if read else ""}</span><div class="pre">{esc(x["內容"])}</div>'
+                    f'<button class="rd">{"↩ 取消已讀" if read else "✓ 已讀"}</button> {reply}</li>')
+    flt = ('<div class="flt">篩選：<button data-f="all" class="on">全部</button><button data-f="高">只看高</button>'
+           '<button data-f="中">高＋中</button><button data-f="發言">只看發言</button><button data-f="待辦">只看待辦</button>'
+           '<label><input type="checkbox" id="showRead"> 顯示已讀（留存）</label></div>')
+    css = ("<style>.imp{color:#fff;font-weight:800;border-radius:6px;padding:0 6px;font-size:12px}"
+           ".flt{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 8px}"
+           ".flt button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:2px 10px;cursor:pointer}"
+           ".flt button.on{background:var(--ink);color:var(--card)}"
+           "li.u button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:1px 8px;cursor:pointer;font-size:12px}</style>")
+    return (css + '<section><h3>📬 留給你的（未讀 <span id="ucount"></span>）</h3>'
+            '<p class="meta">AI 發言裡要你決定、同意、按權限的段落（48 小時內），以及等你的待辦。按「已讀」就收起來（留存，勾「顯示已讀」查得到）；'
+            '回覆會送進那個房間。重要性：高＝權限／花錢／安裝／對外／刪除，中＝要你決定。</p>'
+            + flt + "<ul>" + ("".join(rows) or "<li class=meta>目前沒有留給你的 🎉</li>") + "</ul></section>"
+            + _USER_JS.replace("__KEY__", json.dumps(key)))
+
+
+def _user_page(hub, key):
+    esc = _h.escape
+    tabs = "".join(f'<a class="{"sel" if n == "給你" else ""}" href="/board?ai={esc(n)}&k={esc(key)}">{esc(n)}</a>' for n in NAMES)
+    return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>訊息版</title><style>
+:root{{--bg:#f4f2ee;--card:#fff;--ink:#1d1b18;--mute:#7a756d;--line:#e4e0d8;--acc:#c96442}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#17171a;--card:#202024;--ink:#ecebe8;--mute:#9a968f;--line:#2f2f35}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:12px;overflow-x:hidden}}
+section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:10px 0}}
+h3{{margin:4px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:12px}} li{{margin:8px 0;font-size:14px;overflow-wrap:anywhere}} ul{{padding-left:18px}}
+.tabs{{display:flex;gap:6px;flex-wrap:wrap}} .tabs a{{padding:3px 12px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--ink)}} .tabs a.sel{{background:var(--ink);color:var(--card)}}
+.pre{{white-space:pre-wrap;font-size:13px;padding:4px 0 6px}}
+</style></head><body><div class="tabs">{tabs}</div>{user_section(hub, key, esc)}</body></html>"""

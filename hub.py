@@ -1387,7 +1387,7 @@ def make_handler(hub):
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
                 import importlib
-                body = importlib.import_module("訊息版").page(hub, q.get("ai", ["Claude"])[0], q.get("k", [""])[0]).encode("utf-8")
+                body = importlib.import_module("訊息版").page(hub, q.get("ai", ["給你"])[0], q.get("k", [""])[0]).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
@@ -1458,6 +1458,9 @@ def make_handler(hub):
             if p == "/api/open":   # 設定頁「📂 資料夾入口」：在檔案總管開啟（只開 資料夾入口.ENTRIES 裡的路徑；使用者 11-21 02:35）
                 import importlib
                 return self._json({"ok": importlib.import_module("資料夾入口").open_dir(data.get("path"))})
+            if p == "/api/board_user":   # 網頁工單 #66：訊息版「給你」已讀／取消已讀（邏輯在 訊息版.api）
+                import importlib
+                return self._json(importlib.import_module("訊息版").api(data))
             if p == "/api/params":   # 設定頁中樞參數拉條「儲存設定」（使用者 11-22 00:37）；驗範圍與寫檔在 中樞參數.set_values
                 return self._json(參數.set_values(data.get("values"), "使用者（網頁）"))
             if p == "/api/errors":   # 報錯頁：回報／認領／已修（使用者 11-21 01:48）
