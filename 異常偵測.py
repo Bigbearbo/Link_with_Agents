@@ -296,9 +296,15 @@ def _ticket_section(esc):
         err = ""
     except Exception as e:   # 待辦讀不到也別讓整頁掛掉
         td, d, err = None, [], f"（讀不到待辦：{esc(str(e))}）"
-    open_ = sorted([t for t in d if t.get("狀態") != "完成"], key=lambda t: -t["id"])[:30]
+    open_ = sorted([t for t in d if t.get("狀態") != "完成"], key=lambda t: -t["id"])   # 工單 #144：全部給前端篩，顯示筆數用下拉
+    PRI_N = {"高": 0, "中": 1, "低": 2}
+    openers = sorted({str(t.get("開單人") or "未記") for t in open_})
+    states = sorted({str(t.get("狀態") or "") for t in open_})
     rows = ""
     for t in open_:
+        pri = str(t.get("優先") or "")
+        rows += (f"<tbody class=tk data-id={t['id']} data-op=\"{esc(str(t.get('開單人') or '未記'))}\" data-st=\"{esc(str(t.get('狀態') or ''))}\" "
+                 f"data-pri=\"{esc(pri)}\" data-pn={PRI_N.get(pri, 3)}>")
         last = esc(t["紀錄"][-1]) if t.get("紀錄") else ""
         hist = t.get("歷史") or []   # 網頁工單 #65：舊版留著，只顯示最新；點「舊版」才展開
         hist_html = ("<details><summary class=m>舊版 " + str(len(hist)) + " 筆</summary>"
@@ -306,12 +312,28 @@ def _ticket_section(esc):
                      + "</details>") if hist else ""
         rows += (f"<tr><td>#{t['id']}</td><td>{esc(t.get('標題', ''))}"
                  + (f"<br><span class=m>└ {last}</span>" if last else "") + hist_html
-                 + f"</td><td>{esc(t.get('開單人') or '未記')}</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
+                 + f"</td><td><b class=pri{PRI_N.get(pri, 3)}>{esc(pri or '—')}</b></td>"
+                 f"<td>{esc(t.get('開單人') or '未記')}</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
                  f"<td>{esc(td.level_text(t)) if td else ''}</td>"
                  f"<td><button onclick=\"tog('tc{t['id']}')\">留言</button></td></tr>"
-                 f"<tr id=tc{t['id']} style=display:none><td></td><td colspan=6><input id=tci{t['id']} placeholder=\"留言給 #{t['id']}\"> "
-                 f"<button onclick=\"tcom({t['id']})\">送出</button></td></tr>")
-    rows = rows or "<tr><td colspan=7>沒有未完成工單</td></tr>"
+                 f"<tr id=tc{t['id']} style=display:none><td></td><td colspan=7><input id=tci{t['id']} placeholder=\"留言給 #{t['id']}\"> "
+                 f"<button onclick=\"tcom({t['id']})\">送出</button></td></tr></tbody>")
+    rows = rows or "<tr><td colspan=8>沒有未完成工單</td></tr>"
+    ck = lambda name, xs: "".join(f"<label class=ck><input type=checkbox class={name} value=\"{esc(x)}\" checked> {esc(x)}</label>" for x in xs)
+    filt = (f"<div class=tf>顯示 <select id=fn>{''.join(('<option selected>' if n == 30 else '<option>') + str(n) + '</option>' for n in (20, 30, 40, 50))}</select> 筆"
+            "｜排序 <select id=fs><option value=id_d>編號新→舊</option><option value=id_a>編號舊→新</option><option value=pri>優先 高→低</option>"
+            "<option value=st>狀態</option><option value=op>開單人</option></select>"
+            "｜優先 <select id=fp><option value=''>全部</option><option>高</option><option>中</option><option>低</option></select>"
+            f"｜狀態 <select id=fst><option value=''>全部</option>{''.join(f'<option>{esc(s)}</option>' for s in states)}</select>"
+            f"<details class=ckd><summary>開單人（{len(openers)}）</summary>{ck('fo', openers)}</details> <span id=fcnt class=m></span></div>")
+    fjs = """<script>(()=>{const $=s=>document.querySelector(s);function run(){const n=+$('#fn').value,s=$('#fs').value,p=$('#fp').value,st=$('#fst').value;
+const ops=new Set([...document.querySelectorAll('input.fo:checked')].map(x=>x.value));const tb=[...document.querySelectorAll('tbody.tk')];
+const key={id_d:b=>-b.dataset.id,id_a:b=>+b.dataset.id,pri:b=>+b.dataset.pn*1e6-b.dataset.id,st:b=>b.dataset.st,op:b=>b.dataset.op}[s];
+tb.sort((a,b)=>{const x=key(a),y=key(b);return x<y?-1:x>y?1:0;});const tbl=tb.length?tb[0].parentNode:null;let shown=0,match=0;
+tb.forEach(b=>{if(tbl)tbl.appendChild(b);const ok=(!p||b.dataset.pri===p)&&(!st||b.dataset.st===st)&&ops.has(b.dataset.op);if(ok)match++;const v=ok&&shown<n;if(v)shown++;b.style.display=v?'':'none';});
+$('#fcnt').textContent='符合 '+match+' 張，顯示 '+shown+' 張';try{localStorage.setItem('tk-f',JSON.stringify({n,s,p}));}catch(e){}}
+try{const o=JSON.parse(localStorage.getItem('tk-f')||'{}');if(o.n)$('#fn').value=o.n;if(o.s)$('#fs').value=o.s;if(o.p!=null)$('#fp').value=o.p;}catch(e){}
+['#fn','#fs','#fp','#fst'].forEach(i=>$(i).onchange=run);document.querySelectorAll('input.fo').forEach(x=>x.onchange=run);run();})();</script>"""
     opt = lambda xs, sel: "".join(f"<option{' selected' if x == sel else ''}>{x}</option>" for x in xs)
     return f"""<section><h3>📝 開工單</h3>
 <input id=tt placeholder="標題（必填）"><br><br><textarea id=td rows=3 placeholder="說明（要做什麼、要交什麼、相關路徑）"></textarea><br><br>
@@ -319,9 +341,16 @@ def _ticket_section(esc):
 指定給 <select id=tto>{opt(ASSIGNEES, '自動派')}</select>
 難度 <select id=tl><option value="">讓 Claude 定</option>{opt(['小', '中', '大'], '')}</select>
 <button onclick="tnew()">建立工單</button> <span id=tst class=m></span>
-<p class=m>「自動派」＝負責人寫「未定」，派工建議下一輪會排。工單存在 H:\\Agent共用\\待辦\\待辦.json。</p></section>
-<section><h3>📋 最近未完成工單（{len(open_)}）{err}</h3>
-<table><tr><th>#</th><th>標題</th><th>開單人</th><th>負責</th><th>狀態</th><th>難度</th><th></th></tr>{rows}</table></section>"""
+<p class=m>「自動派」＝負責人寫「未定」，派工建議下一輪會排。工單存在 H:\\Agent共用\\待辦\\待辦.json。</p>
+<details open><summary><b>AI 開單格式（給 AI 看；網頁開的單會自動填）</b></summary><pre class=m style="white-space:pre-wrap">python H:\\Agent共用\\待辦\\待辦.py 加 "標題（來源：房間 MM-DD HH:MM 誰說的）" 負責人 高|中|低 --by 開單人 --概要 "誰提 → 誰補 → 誰決定"
+  開單人：寫自己的名字（Claude／Codex／Gemini／輝達／DeepSeek／使用者）；不寫會被記成「未記」
+  概要：1～3 行講這張單怎麼來的；沒寫的話程式會從來源時間附近的對話自動擬一版（標「自動擬，待補」）
+  難度：python 待辦.py 難 #N 小|中|大　　領單：待辦.py 領 #N 名字　　退單：待辦.py 退 #N 缺檔|權限不足|規格未定|超出能力|其他 "原因" 名字
+  舊版：改標題／負責／優先／難度會自動留舊值，python 待辦.py 歷史 #N 查</pre></details></section>
+<style>.tf{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 8px}} .tf select{{padding:2px 4px}} .ckd{{display:inline-block}} .ckd .ck{{display:inline-block;margin-right:8px}}
+.pri0{{color:#fff;background:#e53935;border-radius:6px;padding:0 6px}} .pri1{{color:#fff;background:#fb8c00;border-radius:6px;padding:0 6px}} .pri2{{color:#fff;background:#78909c;border-radius:6px;padding:0 6px}}</style>
+<section><h3>📋 未完成工單（{len(open_)}）{err}</h3>{filt}
+<table><tr><th>#</th><th>標題</th><th>優先</th><th>開單人</th><th>負責</th><th>狀態</th><th>難度</th><th></th></tr>{rows}</table></section>{fjs}"""
 
 
 def page(key=""):
