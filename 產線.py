@@ -137,6 +137,89 @@ def extra_sections():
 
 
 AI_OUT = r"H:\Agent共用\產線狀態.md"
+IDLE_Q = r"H:\Agent共用\專案\團隊系統\閒時驗收佇列.json"
+REVIEW = r"H:\Agent共用\專案\團隊系統\重實驗審查.json"
+STALE_REVIEW_H = 2      # 等審查超過幾小時算卡點
+
+
+def _unreviewed(j, rv):
+    """同 閒時驗收.py reviewed()：指令裡每支 .py 的 SHA 要在審查表、且審查者不是排隊的人。回傳沒過的腳本清單。"""
+    import hashlib
+    bad = []
+    for c in j.get("指令", []):
+        if not str(c).endswith(".py"):
+            continue
+        p = os.path.join(j.get("目錄") or "", c)
+        try:
+            r = rv.get(hashlib.sha256(open(p, "rb").read()).hexdigest())
+        except OSError:
+            bad.append(os.path.basename(p) + "（讀不到）")
+            continue
+        if not r or r.get("審查者") == j.get("誰"):
+            bad.append(os.path.relpath(p, r"H:\Agent共用\專案\手搓算術") if p.startswith(r"H:\Agent共用\專案\手搓算術") else p)
+    return bad
+
+
+def _match_no(j, rs):
+    """做什麼 開頭 #NN → 佇列號；沒有就用腳本所在資料夾名（手搓算術\\X）對備註裡的「X\\」，唯一才算，否則 None。"""
+    m = re.match(r"\s*#(\d+)", j.get("做什麼", ""))
+    if m:
+        return m.group(1)
+    keys = set()
+    for c in [j.get("目錄") or ""] + [str(x) for x in j.get("指令", []) if str(x).endswith(".py")]:
+        p = os.path.join(j.get("目錄") or "", c) if c.endswith(".py") else c
+        mm = re.search(r"手搓算術[\\/]([^\\/]+)", p)
+        if mm:
+            keys.add(mm.group(1))
+    for k in keys:
+        hit = [r["no"] for r in rs if k + "\\" in r["note"] or k + "\\" in r["item"]]
+        if len(hit) == 1:
+            return hit[0]
+    return None
+
+
+def idle_jobs(rs=None):
+    """讀閒時驗收佇列＋審查表 → (每件 [{no, job, st, text}], 未對應 [job], 卡點 [str])。"""
+    import json, time
+    rs = rs if rs is not None else rows()
+    try:
+        q = json.load(open(IDLE_Q, encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], [], []
+    try:
+        rv = json.load(open(REVIEW, encoding="utf-8"))
+    except (OSError, ValueError):
+        rv = {}
+    out, unmatched, stuck = [], [], []
+    now = time.time()
+    for j in q:
+        no = _match_no(j, rs)
+        st, code = j.get("狀態", ""), j.get("結束碼")
+        if st == "已結束" and code == 0:
+            k, t = "pass", f"完整驗收通過（結束碼 0，{(j.get('結束') or '')[5:]}）"
+        elif st == "已結束" or (code not in (None, 0)):
+            k, t = "fail", f"完整驗收失敗（結束碼 {code}，{(j.get('結束') or '')[5:]}，log {j.get('log', '')}）"
+        elif st == "跑中":
+            k, t = "run", f"完整驗收跑中（{(j.get('開始') or '')[5:]} 開始）"
+        elif st == "排隊":
+            bad = _unreviewed(j, rv)
+            if bad:
+                k, t = "review", f"等審查（沒審：{'、'.join(bad)}；{(j.get('加入') or '')[5:]} 排入）"
+                try:
+                    waited = (now - time.mktime(time.strptime(j.get("加入", ""), "%Y-%m-%d %H:%M"))) / 3600
+                except ValueError:
+                    waited = 0
+                if waited > STALE_REVIEW_H:
+                    stuck.append(f"#{no or '?'} 等審查 {waited:.1f} 小時：{'、'.join(bad)}（{j.get('誰', '')}）")
+            else:
+                k, t = "queue", "完整驗收排隊中（已審）"
+        else:
+            k, t = "other", f"完整驗收 {st}"
+        if k == "fail":
+            stuck.append(f"#{no or '?'} 完整驗收失敗：結束碼 {code}，{j.get('做什麼', '')[:40]}，log {j.get('log', '')}")
+        rec = {"no": no, "job": j, "k": k, "text": t}
+        (out if no else unmatched).append(rec)
+    return out, unmatched, stuck
 
 
 def ai_text():
@@ -149,10 +232,26 @@ def ai_text():
          "## 手搓前進線（手搓佇列.md）",
          "｜".join(f"{k} {v['done']}/{len(rs)}" + (f"（進行中 {v['wip']}）" if v["wip"] else "") for k, v in s.items())
          + (f"｜瓶頸：{neck}（門口 {qa.get(neck, 0)} 件）" if neck else "")]
+    jobs, unmatched, stuck = idle_jobs(rs)
+    by_no = {}
+    for x in jobs:
+        by_no.setdefault(x["no"], []).append(x)
     for r in rs:
-        miss = [STAGES[i] for i in range(4) if "✅" not in r["st"][i]]
-        if miss:
-            L.append(f"- #{r['no']} {r['item'][:60]}｜缺：{'、'.join(miss)}")
+        js = by_no.get(r["no"], [])
+        passed = any(x["k"] == "pass" for x in js)
+        miss = [STAGES[i] for i in range(4) if "✅" not in r["st"][i] and not (i == 2 and passed)]
+        if not miss:
+            continue
+        line = f"- #{r['no']} {r['item'][:60]}｜缺：{'、'.join(miss)}"
+        if "✅" not in r["st"][2]:
+            chk = [x["text"] for x in js] or (["交件驗收過、未排完整驗收"] if "交件驗收" in r["note"] else [])
+            if chk:
+                line += "｜檢驗：" + "；".join(chk)
+        L.append(line)
+    L += ["", "## 檢驗（閒時驗收佇列.json＋重實驗審查.json）"]
+    L += [f"- #{x['no']} {x['text']}｜{x['job'].get('誰', '')}" for x in jobs]
+    L += [f"- 未對應：{x['job'].get('做什麼', '')[:50]}｜{x['text']}" for x in unmatched]
+    L += ["", "## 卡點"] + ([f"- {s}" for s in stuck] or [f"- （無：沒有等審查超過 {STALE_REVIEW_H} 小時、沒有完整驗收失敗）"])
     tr = teach_rows()
     L += ["", f"## 教學線（教學線\\教學佇列.md）完成 {sum(1 for r in tr if '完成' in r['st'])}/{len(tr)}"]
     L += [f"- {r['no']} {r['item'][:60]}｜{r['st']}" for r in tr if "完成" not in r["st"] or "待" in r["st"]]
