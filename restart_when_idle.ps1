@@ -3,7 +3,7 @@ param([string]$HubArgs = "")
 function Get-HubPy { Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'hub\.py' -and $_.Name -match 'python' } }
 function Test-Busy {
     foreach ($h in @(Get-HubPy)) {
-        $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($h.ProcessId)" | Where-Object { $_.Name -match 'claude|codex|agy|antigravity|python' }  # 11-18：漏算 Gemini（agy）、輝達（python worker），重開時把它們砍斷了
+        $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($h.ProcessId)" | Where-Object { $_.Name -match 'claude|codex|agy|antigravity|python' } | Where-Object { $_.CommandLine -notmatch '重實驗\.py' }  # 11-21 22:4x：閒時驗收（重實驗.py，DETACHED、重開不會斷）跑好幾小時會讓重開一直等，不算忙  # 11-18：漏算 Gemini（agy）、輝達（python worker），重開時把它們砍斷了
         if ($kids) { return $true }
     }
     # 還在等終端機 Claude 回覆的接力（inbox 有、outbox 還沒有）也算忙：重開會把後面的 Gemini、輝達接力弄丟
