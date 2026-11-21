@@ -120,6 +120,16 @@ class Bot:
             self.send(chat_id, text[4000:])
 
 
+
+def _is_handfill_cmd(text):
+    """「手搓 33*3」「手搓 模 17 5」「手搓 說明」＝玩手搓的指令（不叫 AI）；「手搓匠開工了嗎」這種一般話照常給 AI。"""
+    rest = re.sub(r"^\s*手搓\s*", "", text or "").strip()
+    if re.match(r"^\d", rest) or rest in ("說明", "幫助", "help", "?", "？", "玩法"):
+        return True
+    heads = ("模", "模反", "轉進位", "轉十進位", "遞迴", "行列式", "矩陣加", "矩陣乘", "歐拉", "中國剩餘", "最短", "連通")
+    w = rest.split()
+    return bool(w) and w[0] in heads
+
 class Room:
     """一個獨立的討論房。"""
 
@@ -397,6 +407,9 @@ class Room:
         self.add("使用者", text, src, kind="note")
 
     def user_says(self, text, src, target="both", members=None):
+        if re.match(r"\s*手搓\s*\S", text or "") and _is_handfill_cmd(text):   # 使用者 11-21 09:14：玩手搓當成系統指令，AI 不必起來
+            self.add("使用者", text, src)   # add() 會叫手搓網路算並貼回
+            return
         if re.match(r"\s*check\b", text or "", re.I):   # 使用者 21:47：開頭打 check（大小寫都行）＝核對用量顯示，錯了自動點名負責人
             self.add("使用者", text, src)
             who = re.sub(r'^\s*check\s*', '', text, flags=re.I).strip()
