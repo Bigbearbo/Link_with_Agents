@@ -3085,6 +3085,10 @@ if __name__ == "__main__":
                 importlib.import_module("流程體檢").daily(hub)
             except Exception as e:
                 log(f"流程體檢失敗：{type(e).__name__} {e}")
+            try:   # 使用者 11-17 20:34「OPENROUTER查規則，每天查一次」：原靠輝達提示，搬進 OpenCode 後斷了 → 程式每天查
+                importlib.import_module("免費規則檢查").daily(hub)
+            except Exception as e:
+                log(f"免費規則檢查失敗：{type(e).__name__} {e}")
             time.sleep(3600)
     threading.Thread(target=deepseek_audit_loop, daemon=True).start()
 
