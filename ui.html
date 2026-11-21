@@ -229,6 +229,7 @@ body.fold .m-sys .bubble::after{display:none}
 #pagebar{display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
 #pagebar[hidden]{display:none}
 #pagebar button{border:0;border-radius:14px;padding:5px 12px;font-size:14px;font-weight:700;color:#fff;cursor:pointer}
+.bubble .fol{float:right;margin:4px -4px -2px 8px;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;opacity:.55}.bubble .fol:hover{opacity:1}
 #pagebar button .new{margin-left:4px;background:#fff;color:#c0392b;border-radius:8px;padding:0 5px;font-size:11px}
 </style>
 </head>
@@ -921,6 +922,20 @@ loop(); box.focus();
     const ob = document.getElementById("order");
     if(ob) ob.addEventListener("click", () => { ob.textContent = ob.textContent.startsWith("Claude") ? "Codex 先講" : "Claude 先講"; });
   }catch(e){}
+})();
+/* 工單 #193（使用者 11-22 03:10）：每則訊息右下角「＋關注」→ 訊息版「給你」分頁的「📌 你關注的」 */
+(() => {
+  const K2 = new URLSearchParams(location.search).get("k") || "";
+  const add = el => { if(!el.dataset || el.dataset.idx == null || el.querySelector(".fol") || el.classList.contains("m-sys")) return;
+    const bub = el.querySelector(".bubble"); if(!bub) return;
+    const b = document.createElement("button"); b.className = "fol"; b.textContent = "＋關注"; b.title = "關注這則：有進展會出現在訊息版「給你」";
+    b.onclick = async e => { e.stopPropagation(); try{ const r = await fetch("/api/board_user", {method:"POST", headers:{"X-Key":K2, "Content-Type":"application/json"},
+        body: JSON.stringify({op:"follow", room: (typeof room !== "undefined" ? room : "main"), idx: +el.dataset.idx})}); const j = await r.json();
+        b.textContent = j.ok ? "📌 已關注" : "關注失敗"; }catch(err){ b.textContent = "關注失敗"; } };
+    bub.appendChild(b); };
+  const list = document.getElementById("list"); if(!list) return;
+  list.querySelectorAll(".msg").forEach(add);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if(n.nodeType === 1){ if(n.classList.contains("msg")) add(n); else n.querySelectorAll && n.querySelectorAll(".msg").forEach(add); } }))).observe(list, {childList:true, subtree:true});
 })();
 </script>
 </body>

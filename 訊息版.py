@@ -148,10 +148,15 @@ def user_mark(key, read=True):
     return {"ok": True}
 
 
-def api(data):
+def api(data, hub=None):
     """中樞 /api/board_user 轉到這裡。"""
-    if data.get("op") == "mark" and data.get("key"):
+    op = data.get("op")
+    if op == "mark" and data.get("key"):
         return user_mark(data["key"], bool(data.get("read", True)))
+    if op == "follow":
+        return follow(hub, str(data.get("room") or ""), data.get("idx"))
+    if op == "follow_set" and data.get("key"):
+        return follow_set(str(data["key"]), data.get("state"), data.get("seen"))
     return {"ok": False, "error": "不認得的 op"}
 
 
@@ -257,4 +262,133 @@ section{{background:var(--card);border:1px solid var(--line);border-radius:12px;
 h3{{margin:4px 0 6px;font-size:16px}} .meta{{color:var(--mute);font-size:12px}} li{{margin:8px 0;font-size:14px;overflow-wrap:anywhere}} ul{{padding-left:18px}}
 .tabs{{display:flex;gap:6px;flex-wrap:wrap}} .tabs a{{padding:3px 12px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--ink)}} .tabs a.sel{{background:var(--ink);color:var(--card)}}
 .pre{{white-space:pre-wrap;font-size:13px;padding:4px 0 6px}}
-</style></head><body><div class="tabs">{tabs}</div>{user_section(hub, key, esc)}</body></html>"""
+</style></head><body><div class="tabs">{tabs}</div>{follow_section(hub, key, esc)}{user_section(hub, key, esc)}</body></html>"""
+
+
+# ---------- 關注（使用者 11-22 03:10 工單 #193：訊息框右下角＋關注；訊息版「你關注的」：原訊息 5 行內摘要、
+# 有進展通知、篩選、完成／取消關注） ----------
+FOLLOW = os.path.join(HERE, "logs", "訊息版_關注.json")
+_REF_RX = re.compile(r"#\d{1,4}|\b0\d\d\b|[\w一-鿿]+\.(?:py|md|json)")
+
+
+def _fload():
+    try:
+        d = json.load(open(FOLLOW, encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _fsave(d):
+    tmp = FOLLOW + ".tmp"
+    json.dump(d, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    os.replace(tmp, FOLLOW)
+
+
+def _summary(text):
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out = lines[:5]
+    return "\n".join(x[:120] for x in out) + ("\n…" if len(lines) > 5 else "")
+
+
+def follow(hub, room, idx):
+    r = hub.rooms.get(room) if hub else None
+    if not r:
+        return {"ok": False, "error": "找不到房間"}
+    try:
+        m = r.transcript[int(idx)]
+    except (ValueError, IndexError):
+        return {"ok": False, "error": "找不到這則訊息"}
+    key = f"{room}:{int(idx)}"
+    d = _fload()
+    refs = sorted(set(_REF_RX.findall(m.get("text") or "")))[:12]
+    d[key] = {"房間": r.name, "room": room, "idx": int(idx), "誰": m.get("who"), "時間": m.get("time", ""),
+              "摘要": _summary(m.get("text")), "關鍵": refs, "狀態": "關注中", "建立": time.strftime("%m-%d %H:%M"),
+              "看過到": int(idx)}
+    _fsave(d)
+    return {"ok": True, "key": key}
+
+
+def follow_set(key, state=None, seen=None):
+    d = _fload()
+    if key not in d:
+        return {"ok": False, "error": "沒有這筆關注"}
+    if state in ("關注中", "完成", "取消"):
+        d[key]["狀態"] = state
+        d[key]["改狀態"] = time.strftime("%m-%d %H:%M")
+    if seen is not None:
+        d[key]["看過到"] = int(seen)
+        d[key]["看過時間"] = time.strftime("%m-%d %H:%M")
+    _fsave(d)
+    return {"ok": True}
+
+
+def progress(hub, f):
+    """同房間之後的發言（AI 或系統）＋任何房間提到同一個 #編號／檔名的發言，都算進展。回 (清單, 最後 idx)。"""
+    out, last = [], f.get("看過到", f["idx"])
+    for rid, room in hub.rooms.items():
+        t = room.transcript
+        for i, m in enumerate(t):
+            if m.get("who") == "使用者":
+                continue
+            txt = m.get("text") or ""
+            same = rid == f["room"] and i > f["idx"]
+            ref = any(k in txt for k in f.get("關鍵", [])) and m.get("time", "") > f.get("時間", "") and not (rid == f["room"] and i <= f["idx"])
+            if same and not ref and m.get("who") == "系統":
+                continue   # 同房的系統雜訊（變動通知）不算
+            if same or ref:
+                out.append({"房間": room.name, "i": i, "same": rid == f["room"], "誰": m.get("who"), "時間": m.get("time", ""),
+                            "內容": txt.strip().splitlines()[0][:120] if txt.strip() else ""})
+    out.sort(key=lambda x: x["時間"])
+    return out
+
+
+def follow_section(hub, key, esc):
+    d = _fload()
+    rows = []
+    for k, f in sorted(d.items(), key=lambda kv: kv[1].get("建立", ""), reverse=True):
+        if f.get("狀態") == "取消":
+            continue
+        pr = progress(hub, f) if hub else []
+        new = [p for p in pr if not (p["same"] and p["i"] <= f.get("看過到", f["idx"]))
+               and (p["same"] or p["時間"] > f.get("看過時間", f.get("時間", "")))]
+        last_i = max([p["i"] for p in pr if p["same"]] + [f.get("看過到", f["idx"])])
+        plist = "".join(f'<div class="meta">• {esc(p["時間"])}｜{esc(p["房間"])}｜{esc(p["誰"] or "")}：{esc(p["內容"])}</div>' for p in new[-5:])
+        rows.append(
+            f'<li class="fo" data-key="{esc(k)}" data-state="{esc(f.get("狀態", ""))}" data-new="{len(new)}" data-last="{last_i}">'
+            f'<span class="imp" style="background:{"#ff9100" if new else "#9e9e9e"}">{"新進展 " + str(len(new)) if new else "沒新進展"}</span> '
+            f'<span class="meta">{esc(f.get("房間", ""))}｜{esc(f.get("時間", ""))}｜{esc(f.get("誰") or "")}｜關注於 {esc(f.get("建立", ""))}'
+            f'{"｜✓ 完成 " + esc(f.get("改狀態", "")) if f.get("狀態") == "完成" else ""}'
+            f'{"｜關鍵 " + esc("、".join(f.get("關鍵", []))) if f.get("關鍵") else ""}</span>'
+            f'<div class="pre">{esc(f.get("摘要", ""))}</div>{plist}'
+            f'<button class="fs">👁 看過進展</button> <button class="fd">✓ 完成</button> <button class="fx">✕ 取消關注</button></li>')
+    flt = ('<div class="flt" id="fflt">篩選：<button data-f="new" class="on">有新進展</button><button data-f="on">關注中全部</button>'
+           '<button data-f="done">已完成</button><button data-f="all">全部</button></div>')
+    js = """<script>
+(()=>{const UK=__KEY__;
+async function U(b){const r=await fetch('/api/board_user',{method:'POST',headers:{'X-Key':UK,'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
+let F='new';
+function ap(){document.querySelectorAll('li.fo').forEach(li=>{const st=li.dataset.state,n=+li.dataset.new;
+ li.hidden=!(F==='all'||(F==='new'&&st==='關注中'&&n>0)||(F==='on'&&st==='關注中')||(F==='done'&&st==='完成'));});
+ const c=document.getElementById('fcount');if(c)c.textContent=[...document.querySelectorAll('li.fo')].filter(l=>l.dataset.state==='關注中'&&+l.dataset.new>0).length;}
+document.querySelectorAll('#fflt button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#fflt button').forEach(x=>x.classList.remove('on'));b.classList.add('on');F=b.dataset.f;ap();});
+document.querySelectorAll('li.fo').forEach(li=>{const k=li.dataset.key;
+ li.querySelector('.fs').onclick=async()=>{const j=await U({op:'follow_set',key:k,seen:+li.dataset.last,seen_time:true});if(j.ok){li.dataset.new='0';li.querySelector('.imp').textContent='沒新進展';li.querySelector('.imp').style.background='#9e9e9e';ap();}};
+ li.querySelector('.fd').onclick=async()=>{const j=await U({op:'follow_set',key:k,state:'完成'});if(j.ok){li.dataset.state='完成';ap();}};
+ li.querySelector('.fx').onclick=async()=>{if(!confirm('取消關注這則？'))return;const j=await U({op:'follow_set',key:k,state:'取消'});if(j.ok){li.remove();ap();}};
+});
+ap();})();
+</script>""".replace("__KEY__", json.dumps(key))
+    return ('<section><h3>📌 你關注的（有新進展 <span id="fcount"></span>）</h3>'
+            '<p class="meta">在聊天室訊息右下角按「＋關注」就會出現在這裡：前 5 行摘要；之後同房間的新發言、或任何房間提到同一個 #編號／檔名，都算進展。'
+            '「👁 看過進展」清掉新進展計數；「✓ 完成」收到已完成；「✕ 取消關注」移除。</p>'
+            + flt + "<ul>" + ("".join(rows) or "<li class=meta>還沒有關注任何訊息</li>") + "</ul></section>" + js)
+
+
+def follow_new_count(hub):
+    n = 0
+    for f in _fload().values():
+        if f.get("狀態") == "關注中":
+            pr = progress(hub, f)
+            n += int(any(not (p["same"] and p["i"] <= f.get("看過到", f["idx"])) and (p["same"] or p["時間"] > f.get("看過時間", f.get("時間", ""))) for p in pr))
+    return n

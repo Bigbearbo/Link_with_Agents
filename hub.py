@@ -1460,7 +1460,7 @@ def make_handler(hub):
                 return self._json({"ok": importlib.import_module("資料夾入口").open_dir(data.get("path"))})
             if p == "/api/board_user":   # 網頁工單 #66：訊息版「給你」已讀／取消已讀（邏輯在 訊息版.api）
                 import importlib
-                return self._json(importlib.import_module("訊息版").api(data))
+                return self._json(importlib.import_module("訊息版").api(data, hub))
             if p == "/api/params":   # 設定頁中樞參數拉條「儲存設定」（使用者 11-22 00:37）；驗範圍與寫檔在 中樞參數.set_values
                 return self._json(參數.set_values(data.get("values"), "使用者（網頁）"))
             if p == "/api/errors":   # 報錯頁：回報／認領／已修（使用者 11-21 01:48）
