@@ -220,6 +220,15 @@ body.fold .bubble[data-title]:not(.open) > :first-child{display:none}
 body.fold .m-sys .bubble{max-height:none}
 body.fold .m-sys .bubble::after{display:none}
 </style>
+<style id="u64">/* 使用者 11-22 01:49 網頁工單 #64：群聊開關加寬＋高對比、上排右邊「頁面」鈕展開第二排彩色按鈕 */
+.seg button.skip{padding:0 12px;min-width:34px;font-size:12px;background:#1f7a52 !important;color:#fff !important;font-weight:700;border-left:1px solid #fff}
+.seg button.skip.off{background:#7a1f2b !important;color:#fff !important;text-decoration:none;font-weight:600}
+#pagesBtn{cursor:pointer;background:#2b4a8b;color:#fff;font-weight:700}
+#pagebar{display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+#pagebar[hidden]{display:none}
+#pagebar button{border:0;border-radius:14px;padding:5px 12px;font-size:14px;font-weight:700;color:#fff;cursor:pointer}
+#pagebar button .new{margin-left:4px;background:#fff;color:#c0392b;border-radius:8px;padding:0 5px;font-size:11px}
+</style>
 </head>
 <body>
 <header>
@@ -229,12 +238,14 @@ body.fold .m-sys .bubble::after{display:none}
   <label class="switch" title="開啟後 Claude 與 Codex 可以改檔案、執行指令"><input type="checkbox" id="write"><span class="track"></span><span id="writeLbl">唯讀</span></label>
   <span id="health" class="pill warn" hidden></span>
   <span id="updBtn" class="pill upd" title="網頁有新版本，點一下重新整理" hidden>🔄 有更新，點我重新整理</span>
+  <span id="pagesBtn" class="pill" title="展開／收起第二排：待討論、研究、變動、設定、訊息版…">☰ 頁面</span>
   <span id="foldBtn" class="pill" title="全部縮成 小標題＋三行，點一則展開" style="cursor:pointer">↕ 收合</span>
   <span id="marksBtn" class="pill" title="書籤">🔖 書籤</span>
   <span id="usageBtn" class="pill" title="大家的用量">📊 用量</span>
   <span id="tg" class="pill"><span class="dot"></span>Telegram</span>
   <span id="st" class="pill"><span class="dot"></span>連線中</span>
 </header>
+<div id="pagebar" hidden></div>
 <nav id="rooms" class="rooms"></nav>
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
@@ -874,6 +885,23 @@ $("#new").onclick = () => {
 };
 async function loop(){ await poll(); setTimeout(loop, 1200); }
 loop(); box.focus();
+</script>
+<script id="u64js">/* 網頁工單 #64：第二排頁面按鈕（只有按「☰ 頁面」才展開／收起，記住選擇） */
+(() => {
+  const PAGES = [["decide","待討論","🗳️","#8e44ad"],["research","研究","🔬","#2980b9"],["changes","變動","🕘","#16a085"],
+    ["settings","設定・本房","⚙️","#7f8c8d"],["board","訊息版","📰","#d35400"],["pipeline","產線","🏭","#27ae60"],
+    ["wiki","知識庫","📖","#2c3e50"],["errors","工單＋報錯","📝","#c0392b"]];
+  const bar = document.getElementById("pagebar"), btn = document.getElementById("pagesBtn");
+  if(!bar || !btn) return;
+  for(const [p, label, ic, color] of PAGES){
+    const b = document.createElement("button"); b.style.background = color; b.textContent = ic + " " + label; b.title = label + "（右側面板）";
+    b.onclick = () => { try{ if(p === "settings" && typeof room !== "undefined") openSide("settings", "row_" + room); else openSide(p); }catch(e){} };
+    bar.appendChild(b);
+  }
+  let open = false; try{ open = localStorage.getItem("rt-pagebar") === "1"; }catch(e){}
+  const show = o => { bar.hidden = !o; btn.textContent = o ? "☰ 頁面 ▴" : "☰ 頁面"; try{ localStorage.setItem("rt-pagebar", o ? "1" : "0"); }catch(e){} };
+  show(open); btn.onclick = () => show(bar.hidden);
+})();
 </script>
 </body>
 </html>
