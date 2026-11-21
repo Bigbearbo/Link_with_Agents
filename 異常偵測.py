@@ -300,8 +300,12 @@ def _ticket_section(esc):
     rows = ""
     for t in open_:
         last = esc(t["紀錄"][-1]) if t.get("紀錄") else ""
+        hist = t.get("歷史") or []   # 網頁工單 #65：舊版留著，只顯示最新；點「舊版」才展開
+        hist_html = ("<details><summary class=m>舊版 " + str(len(hist)) + " 筆</summary>"
+                     + "".join(f"<div class=m>{esc(h.get('時間', ''))}｜{esc(h.get('欄位', ''))}｜舊：{esc(str(h.get('舊', ''))[:200])}</div>" for h in hist)
+                     + "</details>") if hist else ""
         rows += (f"<tr><td>#{t['id']}</td><td>{esc(t.get('標題', ''))}"
-                 + (f"<br><span class=m>└ {last}</span>" if last else "")
+                 + (f"<br><span class=m>└ {last}</span>" if last else "") + hist_html
                  + f"</td><td>{esc(t.get('開單人') or '未記')}</td><td>{esc(t.get('負責', ''))}</td><td>{esc(t.get('狀態', ''))}</td>"
                  f"<td>{esc(td.level_text(t)) if td else ''}</td>"
                  f"<td><button onclick=\"tog('tc{t['id']}')\">留言</button></td></tr>"
