@@ -140,6 +140,13 @@ def write():
         importlib.import_module("權限逾時").tick()
     except Exception:
         pass
+    try:   # 使用者 11-21 11:49：完整驗收不急 → 排閒時佇列，使用者不在電腦前才開下一件
+        import importlib.util
+        s = importlib.util.spec_from_file_location("閒時驗收", r"H:\Agent共用\專案\團隊系統\閒時驗收.py")
+        m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+        m.tick(importlib.import_module("權限逾時").user_away())
+    except Exception:
+        pass
     try:   # 使用者 11-21 08:06：派工建議（第 2、3 站）跟著每 10 分鐘刷新
         import runpy
         runpy.run_path(r"H:\Agent共用\待辦\派工建議.py", run_name="__main__")
