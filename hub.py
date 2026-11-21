@@ -126,7 +126,8 @@ def _is_handfill_cmd(text):
     rest = re.sub(r"^\s*手搓\s*", "", text or "").strip()
     if re.match(r"^\d", rest) or rest in ("說明", "幫助", "help", "?", "？", "玩法"):
         return True
-    heads = ("模", "模反", "轉進位", "轉十進位", "遞迴", "行列式", "矩陣加", "矩陣乘", "歐拉", "中國剩餘", "最短", "連通")
+    heads = ("模", "模反", "轉進位", "轉十進位", "遞迴", "行列式", "矩陣加", "矩陣乘", "歐拉", "中國剩餘", "最短", "連通",
+             "三元一次", "多項式除", "積分", "定積分", "二項", "展開係數", "巴斯卡列")
     w = rest.split()
     return bool(w) and w[0] in heads
 
