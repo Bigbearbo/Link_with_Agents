@@ -46,6 +46,30 @@ def terminal_alive():
         return False
 
 
+# 收件監看的心跳（使用者 11-23 00:0x：「監看怎麼常常掛掉？設計個自動偵測＋報錯」）。
+# 終端機 Claude 的 Monitor 每 3 秒寫一次；Monitor 每輪最多 30 分，到期到重掛之間會有空檔。
+# 監看停了超過 MONITOR_SECONDS：這一輪只等 MONITOR_WAIT 就交備援（不空等 20 分），並記一筆斷線紀錄給常駐檢查／巡檢。
+MONITOR_HB = os.path.join(BASE, "monitor_heartbeat.txt")
+MONITOR_SECONDS = 120
+MONITOR_WAIT = 3 * 60
+MONITOR_LOG = os.path.join(HERE, "logs", "監看斷線.log")
+
+
+def monitor_alive():
+    try:
+        return time.time() - os.path.getmtime(MONITOR_HB) < MONITOR_SECONDS
+    except OSError:
+        return False
+
+
+def _log_monitor_gap(rid, room_name):
+    try:
+        with open(MONITOR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%m-%d %H:%M:%S')}\t{rid}\t{room_name}\t監看心跳停了，這輪最多等 {MONITOR_WAIT // 60} 分\n")
+    except OSError:
+        pass
+
+
 def ask_terminal(room_name, body, should_stop, on_wait=None):
     """把請求交給終端機的 Claude，等它回覆。回傳文字；不在線、逾時或被停止回傳 None。"""
     if not terminal_alive():
@@ -60,6 +84,9 @@ def ask_terminal(room_name, body, should_stop, on_wait=None):
     out = os.path.join(OUTBOX, rid + ".txt")
     t0 = time.time()
     limit = _timeout_now()
+    if not monitor_alive():
+        limit = min(limit, MONITOR_WAIT)
+        _log_monitor_gap(rid, room_name)
     try:
         while time.time() - t0 < limit:
             if should_stop():
