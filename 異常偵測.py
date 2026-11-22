@@ -87,9 +87,27 @@ def _summary_fail(lines):
     return [("摘要刷新失敗", "Claude", f"給 AI 讀的摘要刷新失敗 {len(bad)} 次；最近：{bad[-1][:120]}")] if bad else []
 
 
+RESIDENT_JSON = "H:/Agent共用/常駐檢查.json"   # 工單 #260：常駐檢查.py（每10分.py 最後跑）的結果
+
+
+def _resident_missing():
+    """常駐漏跑:<名稱>：常駐檢查.json 裡 ❌ 的項目，負責人用清單的負責欄；結果檔本身 30 分沒更新也算。"""
+    try:
+        age = time.time() - os.path.getmtime(RESIDENT_JSON)
+        d = json.load(open(RESIDENT_JSON, encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if age > 1800:
+        return [("常駐漏跑:常駐檢查", "Claude", f"常駐檢查結果 {age / 60:.0f} 分鐘沒更新（每10分.py 沒在跑？）；重開後漏跑的程式沒人在看。")]
+    return [(f"常駐漏跑:{r['名稱']}", r.get("負責", "Claude"),
+             f"{r.get('說明', '')}；影響：{r.get('影響', '')}；重開：{r.get('重開指令', '')}"[:400])
+            for r in d.get("項目", []) if r.get("狀態") == "❌"]
+
+
 def detect():
     lines = _recent_log_lines()
-    return _usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
+    return (_usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
+            + _resident_missing())
 
 
 def check():
