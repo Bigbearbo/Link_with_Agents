@@ -2254,9 +2254,12 @@ def decisions_page(key):
         # 使用者 11-20 01:29：AI 先討論、給批示意見，使用者按同意就好 → 最新一筆【AI建議】放在按鈕上方
         adv = next((x.split("【AI建議】", 1)[1] for x in reversed(texts) if "【AI建議】" in x), "")
         adv_html = f'<div class="adv">🤝 AI 建議：{_h.escape(adv.strip())}</div>' if adv else '<div class="meta">（AI 還沒給建議）</div>' 
+        # 使用者 11-23 06:20：「待討論那裡幫我詳細點，雖然是我說的但我是複製的」→ 顯示出處／脈絡說明（最新一筆【說明】，沒有就用討論概要）
+        exp = next((x.split("【說明】", 1)[1].split("【AI建議】")[0] for x in reversed(texts) if "【說明】" in x), "") or str(t.get("討論概要") or "")
+        exp_html = f'<div class="adv" style="background:rgba(30,136,229,.10)">📖 說明：{_h.escape(exp.strip())}</div>' if exp.strip() else '<div class="meta">（還沒有說明；Claude 會補出處與脈絡）</div>' 
         rows.append(f"""<section class="{'replied' if replied else ''}"><h3>#{t['id']}　{_h.escape(t['標題'][3:].lstrip('：:') if t['標題'].startswith('待討論') else t['標題'])}{'　<span class="meta">（你回覆過，等我們處理）</span>' if replied else ''}</h3>
 <div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
-{details}{f'<ul>{log_}</ul>' if log_ else ''}
+{exp_html}{details}{f'<ul>{log_}</ul>' if log_ else ''}
 {adv_html}
 <textarea id="t{t['id']}" placeholder="你的回覆（例：同意／不要／改成…）"></textarea>
 <button onclick="send({t['id']})">送出</button>
