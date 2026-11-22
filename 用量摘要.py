@@ -26,10 +26,12 @@ def _advice(used, speed, state):
     s = str(state or "")
     if used is not None and used >= 90:
         return "⛔ 快滿，別派"
-    if "超速" in s or (speed is not None and speed > 1.3):
+    from quota_windows import pace_state   # 使用者 11-23 06:25：超過標準線＋剩餘 20% 才算超速
+    st = pace_state(used, used / speed) if used is not None and speed else None
+    if st == "超速" or (st is None and "超速" in s):
         return "⚠️ 超速，只派必要的"
-    if speed is not None and speed > 1.0:
-        return "🟡 略快，輕量工作"
+    if st == "寬限內":
+        return "🟡 寬限內（比標準線快，但還在 20% 寬限內），照常派"
     return "🟢 寬裕，可以派"
 
 

@@ -1849,8 +1849,18 @@ def _usage_window(w, label=None):
     empty = str(w.get("empty_at") or "")
     if "T" in empty:
         empty = empty[5:16].replace("T", " ")
+    state = w.get("state") or ""
+    try:   # 使用者 11-23 06:25：超過標準線＋剩餘比例 20% 才算超速，各家檔案自己的判斷一律照這條重算
+        from quota_windows import pace_state
+        st = pace_state(float(w["used"]), float(w["elapsed"])) if w.get("elapsed") is not None else None
+        if st:
+            state = st
+            if st != "超速":
+                empty = ""
+    except (ValueError, TypeError, ImportError):
+        pass
     return {"label": label or w.get("label"), "used": float(w["used"]), "elapsed": w.get("elapsed"),
-            "state": w.get("state") or "", "resets": resets, "empty_at": empty}
+            "state": state, "resets": resets, "empty_at": empty}
 
 
 def usage_summary():
