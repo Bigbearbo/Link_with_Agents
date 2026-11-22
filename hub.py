@@ -1322,6 +1322,14 @@ def make_handler(hub):
                     return self._json({"error": "forbidden"}, 403)
                 self._json(hub.snapshot(q.get("room", [MAIN])[0], int(q.get("since", ["0"])[0]),
                                         int(q.get("epoch", ["0"])[0])))
+            elif u.path == "/api/working":   # 工單 #269：誰在做什麼（只讀狀態，30 秒快取）
+                if not self._authed(q):
+                    return self._json({"error": "forbidden"}, 403)
+                import importlib
+                try:
+                    self._json(importlib.import_module("在做什麼").collect(hub))
+                except Exception as e:
+                    self._json({"time": time.strftime("%H:%M:%S"), "rows": [], "error": type(e).__name__})
             elif u.path == "/api/usage":
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
@@ -1367,7 +1375,13 @@ def make_handler(hub):
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
                 import importlib
-                body = importlib.import_module("產線").page(q.get("k", [""])[0]).encode("utf-8")
+                _k = q.get("k", [""])[0]
+                _pg = importlib.import_module("產線").page(_k)
+                try:   # 工單 #269（使用者 11-23 00:50）：產線最前面放「誰在做什麼」
+                    _pg = _pg.replace("<body>", "<body>" + importlib.import_module("在做什麼").section(_k), 1)
+                except Exception:
+                    pass
+                body = _pg.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
