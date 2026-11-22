@@ -33,6 +33,23 @@ def _advice(used, speed, state):
     return "🟢 寬裕，可以派"
 
 
+
+def _codex_plan(used):
+    """使用者 11-22 22:30：Codex 規劃搭重置券用完週額度時別寫超速，改跟 codex-配速.json 的目標線比。回 (狀態, 說明) 或 None。"""
+    import datetime as _dt, time as _t
+    try:
+        p = json.load(open(r"H:\Agent共用\codex-配速.json", encoding="utf-8"))
+        goal = max(0.0, min(100.0, (_t.time() - _dt.datetime.fromisoformat(p["開始"]).timestamp()) / (float(p["天數"]) * 86400) * 100))
+    except (OSError, ValueError, KeyError):
+        return None
+    if used is None:
+        return None
+    lab = p.get("標籤") or "配速目標"
+    if used > goal + 5:
+        return "超過計畫", f"比「{lab}」快：目前 {used:.0f}%／目標 {goal:.0f}%"
+    st = "照計畫" if used >= goal - 10 else "落後計畫"
+    return st, f"照「{lab}」配速（搭重置券），目前 {used:.0f}%／目標 {goal:.0f}%" + ("，落後，可以多派工給 Codex" if st == "落後計畫" else "")
+
 def rows():
     out = []
     c = _load("claude")
@@ -43,7 +60,8 @@ def rows():
     x = _load("codex")
     if x:
         w = x.get("seven_day") or {}
-        out.append(("Codex", "7天", w.get("used"), w.get("speed"), w.get("state") or x.get("判斷"), w.get("resets"), x.get("更新")))
+        cp = _codex_plan(w.get("used"))
+        out.append(("Codex", "7天", w.get("used"), w.get("speed"), (cp[0] if cp else None) or w.get("state") or x.get("判斷"), w.get("resets"), x.get("更新")))
     g = _load("gemini")
     if g:
         for k in ("five_hour", "seven_day"):
@@ -116,7 +134,8 @@ def ai_text():
         L += ["", f"- Gemini 補充：{g['判斷']}"]
     x = _load("codex")
     if x and x.get("判斷"):
-        L.append(f"- Codex 補充：{x['判斷']}（Codex 額度保護見 中樞參數.md）")
+        cp = _codex_plan((x.get("seven_day") or {}).get("used"))
+        L.append(f"- Codex 補充：{cp[1] if cp else x['判斷']}（Codex 額度保護見 中樞參數.md）")
     f = _load("免費池")
     if f:
         sv = f.get("服務", {})
