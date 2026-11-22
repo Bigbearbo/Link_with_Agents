@@ -2203,6 +2203,11 @@ table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,t
 </body></html>"""
 
 
+def _is_decision(t):
+    """待討論頁收哪些：標題開頭「待討論」，或負責人是使用者（使用者 11-23 06:09：「我的工單幫我搬到待討論那裡」）。"""
+    return str(t.get("標題", "")).startswith("待討論") or "使用者" in str(t.get("負責", ""))
+
+
 def decisions_page(key):
     """待討論頁（使用者 11-19 08:05：「待討論那個連結到一個視窗，弄個留言區，方便一起回覆」）。
     列出待辦裡標題開頭「待討論」、還沒完成的項目，每項有紀錄和留言框；送出＝記進待辦紀錄＋貼到主討論給 Claude。"""
@@ -2213,7 +2218,7 @@ def decisions_page(key):
         items = []
     rows = []
     for t in items:
-        if not str(t.get("標題", "")).startswith("待討論") or t.get("狀態") == "完成":
+        if not _is_decision(t) or t.get("狀態") == "完成":
             continue
         log_ = "".join(f"<li>{_h.escape(str(r.get('時間', '') if isinstance(r, dict) else ''))} {_h.escape(str(r.get('內容', r) if isinstance(r, dict) else r))}</li>"
                        for r in (t.get("紀錄") or [])[-5:])
@@ -2236,7 +2241,7 @@ def decisions_page(key):
         # 使用者 11-20 01:29：AI 先討論、給批示意見，使用者按同意就好 → 最新一筆【AI建議】放在按鈕上方
         adv = next((x.split("【AI建議】", 1)[1] for x in reversed(texts) if "【AI建議】" in x), "")
         adv_html = f'<div class="adv">🤝 AI 建議：{_h.escape(adv.strip())}</div>' if adv else '<div class="meta">（AI 還沒給建議）</div>' 
-        rows.append(f"""<section class="{'replied' if replied else ''}"><h3>#{t['id']}　{_h.escape(t['標題'][4:].lstrip('：:'))}{'　<span class="meta">（你回覆過，等我們處理）</span>' if replied else ''}</h3>
+        rows.append(f"""<section class="{'replied' if replied else ''}"><h3>#{t['id']}　{_h.escape(t['標題'][3:].lstrip('：:') if t['標題'].startswith('待討論') else t['標題'])}{'　<span class="meta">（你回覆過，等我們處理）</span>' if replied else ''}</h3>
 <div class="meta">負責：{_h.escape(str(t.get('負責', '')))}｜優先：{_h.escape(str(t.get('優先', '')))}｜建立：{_h.escape(str(t.get('建立', '')))}</div>
 {details}{f'<ul>{log_}</ul>' if log_ else ''}
 {adv_html}
@@ -2323,7 +2328,7 @@ def attention_counts():
         texts = [str(r.get("內容", r) if isinstance(r, dict) else r) for r in (t.get("紀錄") or [])]
         lastu = max((i for i, x in enumerate(texts) if "使用者回覆" in x or "使用者留言" in x), default=-1)
         ask = any("【請使用者看】" in x for x in texts[lastu + 1:])
-        if str(t.get("標題", "")).startswith("待討論"):
+        if _is_decision(t):
             dec += (lastu < 0) or ask
         else:
             res += ask
