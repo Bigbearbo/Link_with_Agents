@@ -1445,6 +1445,16 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/review":   # 工單 #270：待審區（AI 寫不到的檔存這裡，一鍵放行／退回）
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                import importlib
+                body = importlib.import_module("待審區").page(q.get("k", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/rules":   # 使用者 11-22 01:38 網頁工單 #62：規則＋團隊目標條列，新增／提意見都開工單
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1488,6 +1498,9 @@ def make_handler(hub):
                 return self._json(importlib.import_module("訊息版").api(data, hub))
             if p == "/api/params":   # 設定頁中樞參數拉條「儲存設定」（使用者 11-22 00:37）；驗範圍與寫檔在 中樞參數.set_values
                 return self._json(參數.set_values(data.get("values"), "使用者（網頁）"))
+            if p == "/api/review":   # 工單 #270：待審區 list／approve／reject（邏輯在 待審區.api）
+                import importlib
+                return self._json(importlib.import_module("待審區").api(data))
             if p == "/api/errors":   # 報錯頁：回報／認領／已修（使用者 11-21 01:48）
                 import importlib
                 er = importlib.import_module("異常偵測")
@@ -2848,6 +2861,12 @@ if __name__ == "__main__":
                         shutil.copy2(src, keep)
                     git("checkout", "--", f)
                     first_seen.pop(f, None)
+                    try:   # 工單 #270：被擋的版本同時進待審區，使用者可一鍵放行（現有備份照留）
+                        if os.path.exists(keep):
+                            import importlib
+                            importlib.import_module("待審區").submit("unknown", src, keep, "共用區保護擋下的改動（作者不明）")
+                    except Exception as e:
+                        log(f"待審區送件失敗：{type(e).__name__} {e}")
                     log(f"共用區保護：{f} 被改，已改回 git 版，被改版存 {keep}")
                     hub.room("g1004308131170").notice(
                         f"🛡 共用區保護：`{f}` 有沒經過 Claude 的改動（可能是雲端 App 或哪位 AI），已改回上一版。"
