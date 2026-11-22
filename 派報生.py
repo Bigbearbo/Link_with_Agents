@@ -150,6 +150,38 @@ def wake_loop(hub, log):
                     if m.get("who") != "系統":
                         msgs.append((m.get("who"), m.get("time", ""), m.get("text", "")))
                 last_idx = len(room.transcript)
+            # 提醒系統的急件（工單 #267：提醒.py 依收件人推送規則判「急」→ 寫 叫醒請求.jsonl）：照冷卻叫醒，不經小 AI
+            reqp = os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl")
+            try:
+                lines = open(reqp, encoding="utf-8").read().splitlines()
+            except OSError:
+                lines = []
+            for ln in lines[wake_loop.req_seen if hasattr(wake_loop, "req_seen") else len(lines):]:
+                try:
+                    rq = json.loads(ln)
+                except ValueError:
+                    continue
+                name = str(rq.get("給") or "")
+                if name not in SUBS and name not in wa.HOMES:
+                    continue
+                if time.time() - cooldown.get(name, 0) < 60 * 10:   # 急件冷卻 10 分
+                    continue
+                cooldown[name] = time.time()
+                text = f"【提醒】{rq.get('內容') or ''}（{rq.get('原因') or '提醒系統急件'}；規則在 H:\\Agent共用\\訂閱\\{name}.json 的推送規則）"
+                if name in wa.HOMES:
+                    r = wa.nudge(name, "g1004308131170", custom=text)
+                elif room and name in ("DeepSeek", "Codex", "Claude"):
+                    room.notice(f"@{name} " + text)
+                    room.stop_flag = False
+                    room.chain([{"DeepSeek": room.deepseek, "Codex": room.codex, "Claude": room.claude}[name]])
+                    r = "群組點名"
+                else:
+                    continue
+                with open(WAKE_LOG, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": name, "關鍵字": "提醒急件",
+                                        "原因": rq.get("原因"), "結果": r}, ensure_ascii=False) + "\n")
+                log(f"派報生：提醒急件 {name} → {r}")
+            wake_loop.req_seen = len(lines)
             if not changes and not msgs:
                 continue
             for name in SUBS:
