@@ -129,6 +129,15 @@ def _stalled_tickets():
             lt = time.mktime(time.strptime(str(int(time.strftime("%Y")) - 1) + "-" + last, "%Y-%m-%d %H:%M"))
         h = (now - lt) / 3600
         waiting = t.get("狀態") == "等"
+        if waiting:   # 使用者 11-23 06:28：預期該很快有反應（簡單任務）卻沒等到 → 異常通知；「等」紀錄寫「預期 N 分」
+            m = re.search(r"預期\s*(\d+)\s*分", str(rec[-1]) if rec else "")
+            if m:
+                lim = max(2 * int(m.group(1)), 10) / 60
+                if lim <= h < WAIT_STALL_HOURS:
+                    who = t.get("負責") or "（沒人）"
+                    out.append((f"預期回應逾時:#{t['id']}", "Claude",
+                                f"#{t['id']}（負責 {who}）預期 {m.group(1)} 分內有回應，已等 {h * 60:.0f} 分：{str(rec[-1])[12:100]}｜建議：Claude 查對方是否在線（心跳、權限卡住、額度）→ 代為叫醒或改派"))
+                    continue
         if h < (WAIT_STALL_HOURS if waiting else STALL_HOURS):   # 等待是正常的：「等」門檻 24 小時（#272）
             continue
         who = t.get("負責") or "（沒人）"
