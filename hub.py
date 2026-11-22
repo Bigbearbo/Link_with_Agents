@@ -1846,6 +1846,16 @@ def usage_summary():
                 for w in wins:
                     if w["label"] == "7天":
                         w["goal"], w["goal_label"] = round(goal, 1), plan.get("標籤") or "目標"
+                        # 使用者 11-22 22:30：規劃用重置券時別寫超速，改跟配速目標比，落後就多派工給 Codex
+                        if goal < 100 or w["used"] < 100:
+                            if w["used"] <= goal + 5:
+                                w["state"], w["empty_at"] = ("照計畫" if w["used"] >= goal - 10 else "落後計畫"), ""
+                                plan_note = (f"照「{w['goal_label']}」配速（搭重置券），目前 {w['used']:.0f}%／目標 {goal:.0f}%"
+                                             + ("，落後，可以多派工給 Codex" if w["used"] < goal - 10 else ""))
+                            else:
+                                w["state"] = "超過計畫"
+                                plan_note = f"比「{w['goal_label']}」配速快：目前 {w['used']:.0f}%／目標 {goal:.0f}%"
+                            d = dict(d, 判斷=plan_note)
             except (OSError, ValueError, KeyError):
                 pass
         if name == "Gemini":
