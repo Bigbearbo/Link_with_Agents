@@ -104,10 +104,45 @@ def _resident_missing():
             for r in d.get("項目", []) if r.get("狀態") == "❌"]
 
 
+STALL_HOURS = 6     # 使用者 11-23 01:03：產線「卡住？」→ 異常系統 → 通知 Claude 干預；規則見 H:\Agent共用\專案\團隊系統\工單停滯干預.md
+STALL_ESCALATE_HOURS = 24
+
+
+def _stalled_tickets():
+    """工單停滯:#N：「進行中／等」的工單，最後一筆紀錄超過 6 小時。負責干預的是 Claude；訊息裡寫原負責人和建議動作。"""
+    try:
+        todos = json.load(open(r"H:\Agent共用\待辦\待辦.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out, now = [], time.time()
+    for t in todos:
+        if t.get("狀態") not in ("進行中", "等"):
+            continue
+        rec = t.get("紀錄") or []
+        last = str(rec[-1])[:11] if rec else str(t.get("建立", ""))[:11]
+        try:
+            lt = time.mktime(time.strptime(time.strftime("%Y-") + last, "%Y-%m-%d %H:%M"))
+        except ValueError:
+            continue
+        if lt > now + 86400:   # 跨年：MM-DD 比今天晚很多就是去年
+            lt = time.mktime(time.strptime(str(int(time.strftime("%Y")) - 1) + "-" + last, "%Y-%m-%d %H:%M"))
+        h = (now - lt) / 3600
+        if h < STALL_HOURS:
+            continue
+        who = t.get("負責") or "（沒人）"
+        act = ("超過 24 小時：改派或退單（待辦.py 退）" if h >= STALL_ESCALATE_HOURS else
+               "先看是否其實做完（有檔／有 commit → 代結）；在等人 → 改成「等」並寫等誰；否則派報提醒負責人")
+        if "使用者" in str(who):
+            act = "負責人是使用者：放進訊息版「給你」問要不要結或改派，不催"
+        out.append((f"工單停滯:#{t['id']}", "Claude",
+                    f"#{t['id']}（負責 {who}，{t.get('狀態')}）{h:.0f} 小時沒紀錄：{str(t.get('標題', ''))[:60]}｜建議：{act}"))
+    return out
+
+
 def detect():
     lines = _recent_log_lines()
     return (_usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
-            + _resident_missing())
+            + _resident_missing() + _stalled_tickets())
 
 
 def check():
@@ -138,6 +173,15 @@ def check():
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     json.dump(st, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     _write_md(st)
+    stall = [n for n in notes if "[工單停滯:" in n]
+    if stall:   # 使用者 11-23 01:03：工單卡住 → 通知 Claude 干預（走派報生的叫醒請求，一次巡檢只叫一次）
+        try:
+            with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "Claude", "原因": "工單停滯",
+                                    "內容": f"{len(stall)} 張工單停滯，照 H:\\Agent共用\\專案\\團隊系統\\工單停滯干預.md 處理：" + "；".join(s[:80] for s in stall[:5])},
+                                   ensure_ascii=False) + "\n")
+        except OSError:
+            pass
     return "\n".join(["🩺 系統異常巡檢"] + notes) if notes else None
 
 

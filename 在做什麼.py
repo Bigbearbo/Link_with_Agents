@@ -110,6 +110,16 @@ def collect(hub):
         r.update(kind="子代理", state="工作中", doing=s.get("任務", "")[:80], elapsed=int(now - s.get("開始", now)))
         if s.get("單"):
             r["tickets"].append({"id": s["單"], "title": "", "state": "進行中", "last": ""})
+    import glob as _g   # 各 AI 自己登記的子代理（H:\Agent共用\子代理狀態\<主人>.json，使用者 11-23 01:04）
+    for fp in _g.glob(r"H:\Agent共用\子代理狀態\*.json"):
+        owner = os.path.splitext(os.path.basename(fp))[0]
+        for name, s in (_load(fp, {}) or {}).items():
+            if not isinstance(s, dict) or s.get("狀態") == "完成":
+                continue
+            r = row(f"{owner} {name}")
+            r.update(kind=f"{owner} 的子代理", state="工作中", doing=(s.get("進度") or s.get("任務") or "")[:80])
+            if s.get("單"):
+                r["tickets"].append({"id": s["單"], "title": "", "state": "進行中", "last": s.get("更新") or s.get("開始") or ""})
     for p in _small_procs():
         r = row(p["who"])
         r.update(kind="小號", state="工作中", doing=p["task"])
