@@ -106,6 +106,7 @@ def _resident_missing():
 
 STALL_HOURS = 6     # 使用者 11-23 01:03：產線「卡住？」→ 異常系統 → 通知 Claude 干預；規則見 H:\Agent共用\專案\團隊系統\工單停滯干預.md
 STALL_ESCALATE_HOURS = 24
+WAIT_STALL_HOURS = 24   # 狀態「等」的單
 
 
 def _stalled_tickets():
@@ -127,9 +128,15 @@ def _stalled_tickets():
         if lt > now + 86400:   # 跨年：MM-DD 比今天晚很多就是去年
             lt = time.mktime(time.strptime(str(int(time.strftime("%Y")) - 1) + "-" + last, "%Y-%m-%d %H:%M"))
         h = (now - lt) / 3600
-        if h < STALL_HOURS:
+        waiting = t.get("狀態") == "等"
+        if h < (WAIT_STALL_HOURS if waiting else STALL_HOURS):   # 等待是正常的：「等」門檻 24 小時（#272）
             continue
         who = t.get("負責") or "（沒人）"
+        if waiting:
+            lw = next((str(r) for r in reversed(rec) if str(r)[12:14].startswith("等")), "")
+            out.append((f"工單停滯:#{t['id']}", "Claude",
+                        f"#{t['id']}（負責 {who}，等）等誰太久：{lw[12:90] or '（沒寫等誰）'}（{h:.0f} 小時）｜建議：Claude：催被等的人／改派／改成不等"))
+            continue
         act = ("超過 24 小時：改派或退單（待辦.py 退）" if h >= STALL_ESCALATE_HOURS else
                "先看是否其實做完（有檔／有 commit → 代結）；在等人 → 改成「等」並寫等誰；否則派報提醒負責人")
         if "使用者" in str(who):
