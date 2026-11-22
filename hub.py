@@ -217,6 +217,14 @@ class Room:
                 except OSError:
                     _st = "讀不到"
                 text = (s.strip() or "收到。") + f"\n（中樞：拿掉一句沒附檔名的「繼續做」套句；輝達目標檔目前是「{_st}」）"
+        if src == "備援" and text and not text.startswith("〔備援"):
+            # 備援身分（使用者 11-22 20:3x：「小號說話時讓他顯示一下身份，他有些事情不能做，難怪有時候叫了都沒下文」）
+            text = "〔備援 Claude｜終端機那位不在：我不能改檔、跑程式、派工；要動手的事已記到待接清單，終端機 Claude 回來會接〕\n" + text
+            try:
+                with open(os.path.join(HERE, "logs", "備援待接.md"), "a", encoding="utf-8") as _f:
+                    _f.write(f"- [ ] {time.strftime('%m-%d %H:%M')} {self.name}：{(raw_text or '')[:300].replace(chr(10), ' ')}\n")
+            except OSError:
+                pass
         entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M")}
         if raw_text != text:
             entry["raw"] = raw_text
@@ -716,6 +724,9 @@ class Room:
             self.notice("終端機的 Claude 沒有及時回覆，這輪改由備援 Claude 回答。")
         agent.write = bool(self.hub.state.get("write_mode"))
         prompt = agent.build_prompt(snapshot)
+        if agent is self.claude:   # 備援身分：先講清楚自己不能動手，別答應做做不到的事
+            prompt = ("（你是**備援 Claude**：終端機那位 Claude Code 暫時不在。你不能改檔、跑程式、派工或開單；"
+                      "需要動手的事請寫「留給終端機 Claude：…」，不要說「我來做／我去改」。）\n" + prompt)
         if agent.session is None and self.id != MAIN:
             prompt = f"（這是「{self.name}」討論房，和其他房間的討論互相獨立。）\n" + prompt
         log(f"[{self.name}] {agent.name} 開始工作…")
