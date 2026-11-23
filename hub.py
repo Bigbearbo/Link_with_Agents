@@ -798,6 +798,8 @@ class Room:
                 agent.anchor = live["idx"]
 
         def on_say(text):
+            if not (text or "").strip():   # 11-24：Codex 偶爾送出只有空白的一段，群組出現空白訊息 → 不貼
+                return
             if live["text"] is None:
                 live["text"] = text
                 if time.time() - t0 >= ACK_DELAY:
