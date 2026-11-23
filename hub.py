@@ -110,7 +110,16 @@ class Bot:
     def send(self, chat_id, text):
         first = None
         for i in range(0, max(len(text), 1), 4000):
-            r = self.call("sendMessage", chat_id=chat_id, text=text[i:i + 4000] or "（空白）")
+            # 使用者 11-23 10:4x：「訊息寫入 TELE 好像失敗」——10:23:54 sendMessage 遇到連線被重設就直接放棄。
+            # 連線類錯誤（不是 Telegram 回 400 那種）重試 3 次：2、5、10 秒
+            for wait in (2, 5, 10, None):
+                try:
+                    r = self.call("sendMessage", chat_id=chat_id, text=text[i:i + 4000] or "（空白）")
+                    break
+                except RuntimeError as e:
+                    if wait is None or "連線失敗" not in str(e) and "Bad Gateway" not in str(e) and "Too Many Requests" not in str(e):
+                        raise
+                    time.sleep(wait)
             first = first or (r or {}).get("message_id")
         return first
 
