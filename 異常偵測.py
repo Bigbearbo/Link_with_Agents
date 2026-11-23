@@ -189,7 +189,7 @@ def check():
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     json.dump(st, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     _write_md(st)
-    stall = [n for n in notes if "[工單停滯:" in n or "[預期回應逾時:" in n]   # 預期回應逾時也叫 Claude（使用者 11-23 06:28）
+    stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
     if stall:   # 使用者 11-23 01:03：工單卡住 → 通知 Claude 干預（走派報生的叫醒請求，一次巡檢只叫一次）
         try:
             with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as f:
