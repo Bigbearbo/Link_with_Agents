@@ -159,9 +159,16 @@ def collect(hub):
                 continue
     # 舊的 terminal\子代理.json 登記已停用（11-23 規則衝突檢查 S1），只讀共用區的 子代理登記.py 資料
     import glob as _g   # 各 AI 自己登記的子代理（H:\Agent共用\子代理狀態\<主人>.json，使用者 11-23 01:04）
-    for fp in _g.glob(r"H:\Agent共用\子代理狀態\*.json"):
+    entries = []
+    for fp in _g.glob(r"H:\Agent共用\子代理狀態\*.json"):   # 舊格式：<主人>.json 一檔多筆（只讀）
         owner = os.path.splitext(os.path.basename(fp))[0]
-        for name, s in (_load(fp, {}) or {}).items():
+        entries += [(owner, n, s) for n, s in (_load(fp, {}) or {}).items()]
+    for fp in _g.glob(r"H:\Agent共用\子代理狀態\*\*.json"):   # 新格式（11-23 23:0x）：<主人>\<子代理>.json 一個子代理一個檔
+        s = _load(fp, None)
+        if isinstance(s, dict):
+            entries.append((s.get("主人") or os.path.basename(os.path.dirname(fp)),
+                            s.get("子代理") or os.path.splitext(os.path.basename(fp))[0], s))
+    for owner, name, s in entries:
             if not isinstance(s, dict) or s.get("狀態") == "完成":
                 continue
             r = row(f"{owner} {name}")
@@ -216,12 +223,18 @@ const col={"工作中":"#2e9e6b","卡住？":"#d9483b","忘了完？":"#8e44ad",
 const dur=s=>s==null?"":(s<60?s+" 秒":s<3600?Math.round(s/60)+" 分":(s/3600).toFixed(1)+" 小時");
 async function load(){try{const r=await fetch('/api/working?k='+encodeURIComponent(K));const d=await r.json();
 document.getElementById('wk-t').textContent='更新 '+d.time;
-document.getElementById('wk').innerHTML='<tr><th>誰</th><th>狀態</th><th>正在做</th><th>工單</th></tr>'+d.rows.map(x=>
+const isSub=x=>/子代理/.test(x.kind||'');const main=d.rows.filter(x=>!isSub(x)),subs=d.rows.filter(isSub);
+let open=true;try{open=localStorage.getItem('wk-sub-open')!=='0'}catch(e){}
+const busy=subs.filter(x=>x.state==='工作中').length;
+const head='<tr id="wk-subhead" style="cursor:pointer;background:#f4f4f4"><td colspan="4"><b>'+(open?'▾':'▸')+' 子代理 '+subs.length+' 個</b><span class="meta">（工作中 '+busy+'；點一下'+(open?'收合':'展開')+'）</span></td></tr>';
+const R=x=>
 '<tr><td><b>'+esc(x.who)+'</b><div class="meta">'+esc(x.kind)+(x.rooms.length?'｜'+esc(x.rooms.join('、')):'')+'</div></td>'+
 '<td><span style="color:#fff;background:'+(col[x.state]||'#9e9e9e')+';border-radius:6px;padding:0 6px;font-size:12px;font-weight:700">'+esc(x.state)+'</span>'+
 (x.elapsed!=null?'<div class="meta">'+dur(x.elapsed)+'</div>':'')+'</td>'+
 '<td class="note">'+esc(x.doing)+'</td>'+
-'<td class="note">'+x.tickets.map(t=>'#'+t.id+(t.title?' '+esc(t.title):'')+(t.last?'（'+esc(t.last)+'）':'')).join('<br>')+'</td></tr>').join('');
+'<td class="note">'+x.tickets.map(t=>'#'+t.id+(t.title?' '+esc(t.title):'')+(t.last?'（'+esc(t.last)+'）':'')).join('<br>')+'</td></tr>';
+document.getElementById('wk').innerHTML='<tr><th>誰</th><th>狀態</th><th>正在做</th><th>工單</th></tr>'+main.map(R).join('')+(subs.length?head+(open?subs.map(R).join(''):''):'');
+const h=document.getElementById('wk-subhead');if(h)h.onclick=()=>{try{localStorage.setItem('wk-sub-open',open?'0':'1')}catch(e){};load();};
 }catch(e){document.getElementById('wk-t').textContent='讀取失敗';}}
 load();setInterval(load,60000);})();
 </script>"""
