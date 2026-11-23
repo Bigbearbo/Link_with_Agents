@@ -326,6 +326,15 @@ class CodexAgent(Agent):
             elif t in ("error", "turn.failed"):
                 errors.append(json.dumps(ev, ensure_ascii=False))
         rc, errtext = self._finish(err)
+        # 使用者 11-23 18:56：主討論 Codex 連兩輪 thread-store conflict——同一個對話串正被 Codex 視窗開著寫入。
+        # 改用分身（fork，不寫回原對話）回答這一輪，不讓使用者看到失敗。
+        if not msgs and self.session and not self.fork_from and "already has an active writer" in (errtext + " ".join(errors)):
+            self.step("對話串正被 Codex 視窗佔用，改用分身回答")
+            self.fork_from = self.session
+            try:
+                return self.run(prompt)
+            finally:
+                self.fork_from = None
         if not msgs:
             raise RuntimeError(f"Codex 沒有回覆（exit {rc}）：{' '.join(errors)[-500:]}\n{errtext[-500:]}")
         return "\n\n".join(m.strip() for m in msgs if m.strip())
