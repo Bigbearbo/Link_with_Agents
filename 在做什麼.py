@@ -100,6 +100,8 @@ def _codex_sessions(now):
             where = CODEX_WHERE.get(str(p.get("cwd", "")).lower().rstrip("\\"), str(p.get("cwd", "")))
             if src == "exec" and p.get("originator") == "codex_exec":
                 where = "中樞房間"
+            elif src == "cli":   # 使用者 11-23 22:4x：終端機裡的 Codex CLI 叫「電腦Codex」（負責統合文法）
+                where = "電腦Codex"
             spawn = (sub or {}).get("thread_spawn") if isinstance(sub, dict) else None
             name = (spawn.get("agent_nickname") or os.path.basename(str(spawn.get("agent_path", "")))) if spawn else ""
             if spawn and spawn.get("agent_path"):
