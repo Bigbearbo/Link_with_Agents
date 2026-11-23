@@ -18,8 +18,24 @@ MASK = [
     (re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"), "〔信箱〕"),
     (re.compile(r"(?<!\d)(09\d{2}[-\s]?\d{3}[-\s]?\d{3}|0\d{1,2}[-\s]?\d{6,8})(?!\d)"), "〔電話〕"),
 ]
+import os
+
+# 學生資料（使用者 11-24 04:4x：「學生資料擋有名字那種就行」）：不再看關鍵字（「學生資料」「家長」這些詞本身不是隱私），
+# 改成「出現名單上的學生姓名」才擋。名單放本機、不進 git：H:\Claude用\三方討論\secrets\學生名單.txt（一行一個名字）。
+# 現在還沒有名單（妹妹還沒開始用導師助手），所以這條目前不會擋任何東西；導師助手資料夾的路徑照擋。
+ROSTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets", "學生名單.txt")
+
+
+def _roster_rx():
+    try:
+        names = [n.strip() for n in open(ROSTER, encoding="utf-8-sig") if len(n.strip()) >= 2]
+    except OSError:
+        return None
+    return re.compile("|".join(map(re.escape, sorted(set(names), key=len, reverse=True)))) if names else None
+
+
 BLOCK = [
-    ("學生資料", re.compile(r"導師助手|學生資料|座號|成績單|家長|班級名單")),
+    ("學生資料", re.compile(r"導師助手[\\/]")),
     ("未公開研究結果", re.compile(r"\d[\d,]*\s*/\s*\d[\d,]*\s*(全對|正確)|正確率\s*\d|窮舉|\d+\s*(個)?單元|\d[\d,]*\s*權重|loss\s*[=＝:]?\s*\d", re.I)),
     # 11-24：曾加「大數比值／全形斜線也擋」，使用者 04:4x：「大數先解開，應該沒問題，而且我們也會放到 git 和 hugg」→ 拿掉
 ]
@@ -33,6 +49,9 @@ def check(text, max_len=4000):
     for why, rx in BLOCK:
         if rx.search(t):
             return False, "", f"含{why}，留本機"
+    rr = _roster_rx()
+    if rr and rr.search(t):
+        return False, "", "含學生姓名，留本機"
     for rx, rep in MASK:
         t = rx.sub(rep, t)
     return True, t, "可送（已遮金鑰／信箱／電話）" if t != text else "可送"
