@@ -186,6 +186,10 @@ def wake_loop(hub, log):
     room = hub.rooms.get("g1004308131170")
     last_idx = len(room.transcript) if room else 0
     cooldown = {}
+    try:   # 開機時已有的請求不補送；之後（含第一輪累積喚醒寫的）都要送
+        wake_loop.req_seen = len(open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), encoding="utf-8").read().splitlines())
+    except OSError:
+        wake_loop.req_seen = 0
     while True:
         time.sleep(120)
         try:
