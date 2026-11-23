@@ -38,6 +38,38 @@ DEFAULT_WAKE = {"Claude": ["@Claude", "中樞", "三方討論", "權限"], "Code
                 "Gemini": ["@Gemini"], "輝達": ["@輝達"], "DeepSeek": ["@DeepSeek", "小模型池"]}
 
 
+INBOX_ONLY = {"電腦Codex"}   # 沒有視窗控制介面、不在中樞輪流裡：叫醒＝寫收件檔＋群組 @（使用者 11-24 04:0x）
+INBOX_DIR = os.path.join(SHARED, "訂閱", "收件")
+
+
+def inbox_drop(name, text, why):
+    """寫 H:\\Agent共用\\訂閱\\收件\\<名字>.md（新的在上面，留最近 10 筆）；讀完可刪或清空。回檔案路徑。"""
+    os.makedirs(INBOX_DIR, exist_ok=True)
+    p = os.path.join(INBOX_DIR, f"{name}.md")
+    try:
+        old = open(p, encoding="utf-8").read().split("\n## ")[1:10]
+    except OSError:
+        old = []
+    head = f"# {name} 收件（派報生寫；讀完可刪或清空這個檔）\n"
+    body = f"\n## {time.strftime('%m-%d %H:%M')}｜{why}\n{text}\n" + "".join("\n## " + x for x in old)
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        f.write(head + body)
+    os.replace(p + ".tmp", p)
+    return p
+
+
+def ticket_drop(name, text, why):
+    """視窗 agent 叫不醒時，在它家 群組\\待回\\ 留一張單（等單.py 會醒）。累積喚醒單只留最新一張。回結果文字。"""
+    import window_agent as wa
+    box = os.path.join(wa.HOMES[name], "群組", "待回")
+    os.makedirs(box, exist_ok=True)
+    p = os.path.join(box, f"派報-{why}.md")
+    mode = "w" if why == "累積喚醒" else "a"
+    with open(p, mode, encoding="utf-8") as f:
+        f.write(f"# 派報：{why}｜{time.strftime('%m-%d %H:%M')}\n{text}\n\n讀完把這張單移到 待回\\已處理\\（只需讀、有要回的再回）。\n")
+    return f"留單 {p}"
+
+
 def load_rule(name):
     p = SUBS[name]
     try:
@@ -167,25 +199,45 @@ def wake_loop(hub, log):
                         msgs.append((m.get("who"), m.get("time", ""), m.get("text", "")))
                 last_idx = len(room.transcript)
             # 提醒系統的急件（工單 #267：提醒.py 依收件人推送規則判「急」→ 寫 叫醒請求.jsonl）：照冷卻叫醒，不經小 AI
+            # 累積喚醒（使用者 11-24 04:0x）：主討論累積則數到門檻 → 累積喚醒.py 寫一筆叫醒請求，下面照同一管道送
+            try:
+                import 累積喚醒
+                累積喚醒.run(log=log)
+            except Exception as e:
+                log(f"累積喚醒錯誤：{type(e).__name__} {e}")
             reqp = os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl")
             try:
                 lines = open(reqp, encoding="utf-8").read().splitlines()
             except OSError:
                 lines = []
+            todo = getattr(wake_loop, "retry", [])   # 上一輪撞到冷卻、先擱著的累積喚醒
+            wake_loop.retry = []
             for ln in lines[wake_loop.req_seen if hasattr(wake_loop, "req_seen") else len(lines):]:
                 try:
-                    rq = json.loads(ln)
+                    todo.append(json.loads(ln))
                 except ValueError:
                     continue
+            for rq in todo:
                 name = str(rq.get("給") or "")
-                if name not in SUBS and name not in wa.HOMES:
+                acc = rq.get("原因") == "累積喚醒"
+                if name not in SUBS and name not in wa.HOMES and name not in INBOX_ONLY:
                     continue
                 if time.time() - cooldown.get(name, 0) < 60 * _P("急件冷卻分", 10):   # 急件冷卻 10 分（見團隊參數：急件冷卻分）
+                    if acc and time.time() - rq.setdefault("_擱", time.time()) < 7200:
+                        wake_loop.retry.append(rq)   # 累積喚醒不丟：冷卻過了再送（最多擱 2 小時）
                     continue
                 cooldown[name] = time.time()
-                text = f"【提醒】{rq.get('內容') or ''}（{rq.get('原因') or '提醒系統急件'}；規則在 H:\\Agent共用\\訂閱\\{name}.json 的推送規則）"
-                if name in wa.HOMES:
+                text = (f"{rq.get('內容') or ''}" if acc else
+                        f"【提醒】{rq.get('內容') or ''}（{rq.get('原因') or '提醒系統急件'}；規則在 H:\\Agent共用\\訂閱\\{name}.json 的推送規則）")
+                if name in INBOX_ONLY:   # 沒有視窗控制介面（電腦Codex）：寫收件檔＋群組 @，不接力
+                    r = inbox_drop(name, text, rq.get("原因") or "提醒")
+                    if room:
+                        room.notice(f"@{name} {text.splitlines()[0][:200]}（全文在 {r}）")
+                    r = f"收件檔＋群組 @：{r}"
+                elif name in wa.HOMES:
                     r = wa.nudge(name, "g1004308131170", custom=text)
+                    if "只留單" in r:   # agy（Gemini）沒有輸入框介面：留一張單，它的 等單.py 會醒
+                        r = ticket_drop(name, text, rq.get("原因") or "提醒") + f"（{r}）"
                 elif room and name in ("DeepSeek", "Codex", "Claude"):
                     room.notice(f"@{name} " + text)
                     room.stop_flag = False
@@ -194,9 +246,9 @@ def wake_loop(hub, log):
                 else:
                     continue
                 with open(WAKE_LOG, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": name, "關鍵字": "提醒急件",
+                    f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": name, "關鍵字": "累積喚醒" if acc else "提醒急件",
                                         "原因": rq.get("原因"), "結果": r}, ensure_ascii=False) + "\n")
-                log(f"派報生：提醒急件 {name} → {r}")
+                log(f"派報生：{'累積喚醒' if acc else '提醒急件'} {name} → {r}")
             wake_loop.req_seen = len(lines)
             if not changes and not msgs:
                 continue
