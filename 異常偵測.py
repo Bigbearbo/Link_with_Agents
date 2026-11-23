@@ -178,10 +178,34 @@ def _stalled_tickets():
     return out
 
 
+def _long_working():
+    """工作過久:<名字>：某個 AI 連續「工作中」超過 N 分（團隊參數「工作中過久分」，預設 30）。
+    使用者 11-23 22:5x：「輝達 工作中 · 231:53 這個也加入監測，設置 30 分鐘異常，參數化」。
+    只在中樞程序裡跑得到（從 __main__ 拿 hub）；外部手動執行時回空。"""
+    h = getattr(sys.modules.get("__main__"), "hub", None)
+    if h is None or not hasattr(h, "rooms"):
+        return []
+    lim = _P("工作中過久分", 30) * 60
+    now, out, seen = time.time(), [], set()
+    for room in list(h.rooms.values()):
+        try:
+            items = [(a.name, now - (a.started or now)) for a in room.agents() if a.busy]
+            items += [(w["who"], w.get("elapsed") or 0) for w in room.window_progress()]
+        except Exception:
+            continue
+        for name, sec in items:
+            if sec >= lim and name not in seen:
+                seen.add(name)
+                out.append((f"工作過久:{name}", "Claude",
+                            f"{name} 已經連續工作中 {int(sec // 60)} 分鐘（門檻 {int(lim // 60)} 分，房間 {room.name}）｜"
+                            "建議：Claude 看它在跑什麼——長實驗就請它回報進度與預計結束；重複舊工作或卡住就叫停、改派"))
+    return out
+
+
 def detect():
     lines = _recent_log_lines()
     return (_usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
-            + _resident_missing() + _stalled_tickets())
+            + _resident_missing() + _stalled_tickets() + _long_working())
 
 
 def check():
@@ -219,18 +243,18 @@ def check():
         for n in notes:
             if not n.startswith("🆕"):
                 continue
-            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑|領單無成果):([^\]]*)\]", n)
+            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑|領單無成果|工作過久):([^\]]*)\]", n)
             if not m:
                 continue
             kind = {"權限卡住": "權限", "工單停滯": "等人太久" if "等誰太久" in n else "沒進度",
-                    "預期回應逾時": "等人太久", "常駐漏跑": "環境", "領單無成果": "沒進度"}[m.group(1)]
+                    "預期回應逾時": "等人太久", "常駐漏跑": "環境", "領單無成果": "沒進度", "工作過久": "沒進度"}[m.group(1)]
             who = re.search(r"（負責 ([^，）]+)", n)
             who = who.group(1) if who else m.group(2).split(":")[0] if m.group(1) == "權限卡住" else "?"
             tk = re.search(r"#(\d+)", m.group(2))
             _km.add(who, kind, n[:400], int(tk.group(1)) if tk else None)
     except Exception:
         pass
-    stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n or "[領單無成果:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
+    stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n or "[領單無成果:" in n or "[工作過久:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
     if stall:   # 使用者 11-23 01:03：工單卡住 → 通知 Claude 干預（走派報生的叫醒請求，一次巡檢只叫一次）
         try:
             with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as f:
