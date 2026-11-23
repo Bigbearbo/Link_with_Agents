@@ -3,7 +3,23 @@ from datetime import datetime, time, timedelta, timezone
 from math import isfinite
 
 
-PACE_MARGIN = 0.2   # 使用者 11-23 06:25：用量可以超過標準速度線「剩餘比例的 20%」才算超速（例：時間過 60%，剩 40%×0.2＝8%，用到 68% 才開始調整）
+def _P(名, 預設):
+    """讀團隊參數（共用區 團隊參數.json）；載入失敗就用原值，不能讓中樞因此壞掉。"""
+    try:
+        import sys
+        import importlib.util as _u
+        _m = sys.modules.get("團隊參數")
+        if _m is None:
+            _s = _u.spec_from_file_location("團隊參數", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+            _m = _u.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            sys.modules["團隊參數"] = _m
+        return _m.get(名, 預設)
+    except Exception:
+        return 預設
+
+
+PACE_MARGIN = _P("用量配速寬限比例", 0.2)  # 使用者 11-23 06:25：用量可以超過標準速度線「剩餘比例的 20%」才算超速（例：時間過 60%，剩 40%×0.2＝8%，用到 68% 才開始調整）
 
 
 def pace_state(used, elapsed):

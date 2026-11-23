@@ -12,6 +12,22 @@ r"""派報生：每位 AI 訂閱自己想追的消息，並自己設定「什麼
 """
 import json, os, re, sys, time
 
+
+def _P(名, 預設):
+    """讀團隊參數（共用區 團隊參數.json）；載入失敗就用原值，不能讓中樞因此壞掉。"""
+    try:
+        import importlib.util as _u
+        _m = sys.modules.get("團隊參數")
+        if _m is None:
+            _s = _u.spec_from_file_location("團隊參數", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+            _m = _u.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            sys.modules["團隊參數"] = _m
+        return _m.get(名, 預設)
+    except Exception:
+        return 預設
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHARED = r"H:\Agent共用"
 SUBS = {"輝達": r"H:\免費模型用\訂閱.json", "Gemini": r"H:\Gemini用\訂閱.json", "DeepSeek": r"H:\DeepSeek用\訂閱.json",
@@ -164,7 +180,7 @@ def wake_loop(hub, log):
                 name = str(rq.get("給") or "")
                 if name not in SUBS and name not in wa.HOMES:
                     continue
-                if time.time() - cooldown.get(name, 0) < 60 * 10:   # 急件冷卻 10 分
+                if time.time() - cooldown.get(name, 0) < 60 * _P("急件冷卻分", 10):   # 急件冷卻 10 分（見團隊參數：急件冷卻分）
                     continue
                 cooldown[name] = time.time()
                 text = f"【提醒】{rq.get('內容') or ''}（{rq.get('原因') or '提醒系統急件'}；規則在 H:\\Agent共用\\訂閱\\{name}.json 的推送規則）"

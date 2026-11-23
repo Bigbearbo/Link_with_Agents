@@ -13,6 +13,22 @@ import subprocess
 import sys
 import time
 
+
+def _P(名, 預設):
+    """讀團隊參數（共用區 團隊參數.json）；載入失敗就用原值，不能讓中樞因此壞掉。"""
+    try:
+        import importlib.util as _u
+        _m = sys.modules.get("團隊參數")
+        if _m is None:
+            _s = _u.spec_from_file_location("團隊參數", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+            _m = _u.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            sys.modules["團隊參數"] = _m
+        return _m.get(名, 預設)
+    except Exception:
+        return 預設
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUBS = os.path.join(HERE, "terminal", "子代理.json")
 TODO = r"H:\Agent共用\待辦\待辦.json"
@@ -77,7 +93,7 @@ def _todos():
 
 
 def collect(hub):
-    if _cache["v"] is not None and time.time() - _cache["t"] < 30:
+    if _cache["v"] is not None and time.time() - _cache["t"] < _P("誰在做什麼快取秒", 30):
         return _cache["v"]
     rows, now = {}, time.time()
 
@@ -112,7 +128,7 @@ def collect(hub):
             r = row(f"{owner} {name}")
             # 規則衝突檢查 S4：忘了「完」會永遠掛著 → 開始或上次進度超過 6 小時標「忘了完？」
             last = s.get("更新") or s.get("開始") or ""
-            stale = bool(last) and last < time.strftime("%m-%d %H:%M", time.localtime(now - 6 * 3600))
+            stale = bool(last) and last < time.strftime("%m-%d %H:%M", time.localtime(now - _P("子代理忘了完小時", 6) * 3600))
             r.update(kind=f"{owner} 的子代理", state="忘了完？" if stale else "工作中",
                      doing=(s.get("進度") or s.get("任務") or "")[:80])
             if s.get("單"):
@@ -135,7 +151,7 @@ def collect(hub):
     for r in rows.values():
         if r["state"] != "工作中" and r["tickets"]:
             last = max((t["last"] for t in r["tickets"] if t["last"]), default="")
-            if last and last < time.strftime("%m-%d %H:%M", time.localtime(now - 6 * 3600)):
+            if last and last < time.strftime("%m-%d %H:%M", time.localtime(now - _P("工單卡住小時", 6) * 3600)):
                 r["state"] = "卡住？"   # 進行中的單超過 6 小時沒紀錄
     order = {"工作中": 0, "卡住？": 1, "忘了完？": 1, "有單待接": 2, "閒置": 3}
     v = {"time": time.strftime("%H:%M:%S"), "rows": sorted(rows.values(), key=lambda r: (order.get(r["state"], 9), r["kind"] != "AI", r["who"]))}

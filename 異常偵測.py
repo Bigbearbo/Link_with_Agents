@@ -16,15 +16,32 @@ import glob
 import json
 import os
 import re
+import sys
 import time
 
 import usage_activity
+
+
+def _P(名, 預設):
+    """讀團隊參數（共用區 團隊參數.json）；載入失敗就用原值，不能讓中樞因此壞掉。"""
+    try:
+        import importlib.util as _u
+        _m = sys.modules.get("團隊參數")
+        if _m is None:
+            _s = _u.spec_from_file_location("團隊參數", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+            _m = _u.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            sys.modules["團隊參數"] = _m
+        return _m.get(名, 預設)
+    except Exception:
+        return 預設
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "logs", "異常狀態.json")
 LOG = os.path.join(HERE, "logs", "hub.log")
 OUT = r"H:\Agent共用\系統異常.md"
-REMIND_SEC = 6 * 3600
+REMIND_SEC = _P("異常提醒間隔小時", 6) * 3600
 OWNER = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "輝達": "輝達", "免費池": "Claude"}
 
 
@@ -104,9 +121,9 @@ def _resident_missing():
             for r in d.get("項目", []) if r.get("狀態") == "❌"]
 
 
-STALL_HOURS = 6     # 使用者 11-23 01:03：產線「卡住？」→ 異常系統 → 通知 Claude 干預；規則見 H:\Agent共用\專案\團隊系統\工單停滯干預.md
-STALL_ESCALATE_HOURS = 24
-WAIT_STALL_HOURS = 24   # 狀態「等」的單
+STALL_HOURS = _P("工單停滯小時", 6)     # 使用者 11-23 01:03：產線「卡住？」→ 異常系統 → 通知 Claude 干預；規則見 H:\Agent共用\專案\團隊系統\工單停滯干預.md
+STALL_ESCALATE_HOURS = _P("停滯升級小時", 24)
+WAIT_STALL_HOURS = _P("等待停滯小時", 24)  # 狀態「等」的單
 
 
 def _stalled_tickets():
@@ -132,7 +149,7 @@ def _stalled_tickets():
         if waiting:   # 使用者 11-23 06:28：預期該很快有反應（簡單任務）卻沒等到 → 異常通知；「等」紀錄寫「預期 N 分」
             m = re.search(r"預期\s*(\d+)\s*分", str(rec[-1]) if rec else "")
             if m:
-                lim = max(2 * int(m.group(1)), 10) / 60
+                lim = max(_P("預期逾時倍數", 2) * int(m.group(1)), _P("預期逾時最少分", 10)) / 60
                 if lim <= h < WAIT_STALL_HOURS:
                     who = t.get("負責") or "（沒人）"
                     out.append((f"預期回應逾時:#{t['id']}", "Claude",
@@ -146,7 +163,7 @@ def _stalled_tickets():
             out.append((f"工單停滯:#{t['id']}", "Claude",
                         f"#{t['id']}（負責 {who}，等）等誰太久：{lw[12:90] or '（沒寫等誰）'}（{h:.0f} 小時）｜建議：Claude：催被等的人／改派／改成不等"))
             continue
-        act = ("超過 24 小時：改派或退單（待辦.py 退）" if h >= STALL_ESCALATE_HOURS else
+        act = (f"超過 {STALL_ESCALATE_HOURS:g} 小時：改派或退單（待辦.py 退）" if h >= STALL_ESCALATE_HOURS else
                "先看是否其實做完（有檔／有 commit → 代結）；在等人 → 改成「等」並寫等誰；否則派報提醒負責人")
         if "使用者" in str(who):
             act = "負責人是使用者：放進訊息版「給你」問要不要結或改派，不催"

@@ -13,15 +13,31 @@ import sys
 import time
 import uuid
 
+
+def _P(名, 預設):
+    """讀團隊參數（共用區 團隊參數.json）；載入失敗就用原值，不能讓中樞因此壞掉。"""
+    try:
+        import importlib.util as _u
+        _m = sys.modules.get("團隊參數")
+        if _m is None:
+            _s = _u.spec_from_file_location("團隊參數", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+            _m = _u.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            sys.modules["團隊參數"] = _m
+        return _m.get(名, 預設)
+    except Exception:
+        return 預設
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.join(HERE, "terminal")
 INBOX, OUTBOX = os.path.join(BASE, "inbox"), os.path.join(BASE, "outbox")
 HEARTBEAT = os.path.join(BASE, "heartbeat.txt")
 ALIVE_SECONDS = 90         # 心跳多久內算「終端機在線」
-REPLY_TIMEOUT = 20 * 60    # 等終端機回覆最多多久，逾時改用備援 Claude
+REPLY_TIMEOUT = _P("終端機回覆逾時分", 20) * 60   # 等終端機回覆最多多久，逾時改用備援 Claude
 # 上一次已經逾時、終端機還沒回過任何一則：下一輪只等短一點就交備援。
 # 11-20 04:42–05:45 終端機程序在但沒人接，連續三輪各空等 20 分鐘（流程優化員 11-20）。
-RETRY_TIMEOUT = 3 * 60
+RETRY_TIMEOUT = _P("終端機重試逾時分", 3) * 60
 _stalled = set()   # 逾時沒回的請求 id；終端機回了任何一則（含遲到的）就清掉
 
 
@@ -50,8 +66,8 @@ def terminal_alive():
 # 終端機 Claude 的 Monitor 每 3 秒寫一次；Monitor 每輪最多 30 分，到期到重掛之間會有空檔。
 # 監看停了超過 MONITOR_SECONDS：這一輪只等 MONITOR_WAIT 就交備援（不空等 20 分），並記一筆斷線紀錄給常駐檢查／巡檢。
 MONITOR_HB = os.path.join(BASE, "monitor_heartbeat.txt")
-MONITOR_SECONDS = 120
-MONITOR_WAIT = 3 * 60
+MONITOR_SECONDS = _P("監看心跳停止秒", 120)
+MONITOR_WAIT = _P("監看停止後等待分", 3) * 60
 MONITOR_LOG = os.path.join(HERE, "logs", "監看斷線.log")
 
 
