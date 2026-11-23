@@ -145,6 +145,12 @@ def _stalled_tickets():
         if lt > now + 86400:   # 跨年：MM-DD 比今天晚很多就是去年
             lt = time.mktime(time.strptime(str(int(time.strftime("%Y")) - 1) + "-" + last, "%Y-%m-%d %H:%M"))
         h = (now - lt) / 3600
+        # 使用者 11-23 12:2x：「領了 2 小時沒做出成果就找你回報抉擇，可以合作或再拆分」——最後一筆是「領」、之後沒有做／完
+        if rec and str(rec[-1])[12:14].startswith("領") and h >= _P("領單無成果小時", 2) and t.get("狀態") == "進行中":
+            who = t.get("負責") or "（沒人）"
+            out.append((f"領單無成果:#{t['id']}", "Claude",
+                        f"#{t['id']}（負責 {who}）領了 {h:.1f} 小時還沒有進度或成果：{str(t.get('標題', ''))[:60]}｜建議：Claude 問負責人卡在哪 → 合作（加一位）／拆成小單／改派"))
+            continue
         waiting = t.get("狀態") == "等"
         if waiting:   # 使用者 11-23 06:28：預期該很快有反應（簡單任務）卻沒等到 → 異常通知；「等」紀錄寫「預期 N 分」
             m = re.search(r"預期\s*(\d+)\s*分", str(rec[-1]) if rec else "")
@@ -213,18 +219,18 @@ def check():
         for n in notes:
             if not n.startswith("🆕"):
                 continue
-            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑):([^\]]*)\]", n)
+            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑|領單無成果):([^\]]*)\]", n)
             if not m:
                 continue
             kind = {"權限卡住": "權限", "工單停滯": "等人太久" if "等誰太久" in n else "沒進度",
-                    "預期回應逾時": "等人太久", "常駐漏跑": "環境"}[m.group(1)]
+                    "預期回應逾時": "等人太久", "常駐漏跑": "環境", "領單無成果": "沒進度"}[m.group(1)]
             who = re.search(r"（負責 ([^，）]+)", n)
             who = who.group(1) if who else m.group(2).split(":")[0] if m.group(1) == "權限卡住" else "?"
             tk = re.search(r"#(\d+)", m.group(2))
             _km.add(who, kind, n[:400], int(tk.group(1)) if tk else None)
     except Exception:
         pass
-    stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
+    stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n or "[領單無成果:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
     if stall:   # 使用者 11-23 01:03：工單卡住 → 通知 Claude 干預（走派報生的叫醒請求，一次巡檢只叫一次）
         try:
             with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as f:
