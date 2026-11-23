@@ -26,6 +26,10 @@ def _advice(used, speed, state):
     s = str(state or "")
     if used is not None and used >= 90:
         return "⛔ 快滿，別派"
+    # 11-24 02:3x：Codex 照配速目標線（搭重置券）判斷時，建議要跟狀態一致，不再拿速度另判「超速」
+    plan = {"落後計畫": "🟢 落後計畫，可以多派", "照計畫": "🟢 照計畫，照常派", "超過計畫": "⚠️ 超過計畫，只派必要的"}
+    if s in plan:
+        return plan[s]
     from quota_windows import pace_state   # 使用者 11-23 06:25：超過標準線＋剩餘 20% 才算超速
     st = pace_state(used, used / speed) if used is not None and speed else None
     if st == "超速" or (st is None and "超速" in s):
