@@ -170,7 +170,10 @@ def summarize(new):
                     raw = (pool.ask(prov, prompt, max_tokens=600, timeout=40) or "").strip()
                     raw = re.sub(r"(?s)<think>.*?</think>", "", raw).strip()
                     if len(raw) >= 20:
-                        rows = [x.strip() for x in raw.splitlines() if x.strip()][:5]
+                        rows = [x.strip() for x in raw.splitlines() if x.strip()]
+                        if len(rows) < 3:   # 11-24：模型常回一整段不換行 → 照句號切開
+                            rows = [x.strip() + "。" for x in re.split(r"[。！？]", " ".join(rows)) if x.strip()]
+                        rows = [r if len(r) <= 120 else r[:118] + "…" for r in rows[:5]]
                         return "\n".join(rows), f"{prov}:{pool.PROVIDERS[prov][2]}"
                 except Exception:
                     continue
