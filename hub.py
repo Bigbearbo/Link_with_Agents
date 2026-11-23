@@ -186,7 +186,8 @@ class Room:
         with open(os.path.join(LOG_DIR, self.log_name), "w", encoding="utf-8") as f:
             f.write(f"# 三方討論：{self.name}\n\n")
             for m in self.transcript:
-                f.write(f"## {m['who']}（{m.get('src', '')}）{m['time']}\n\n{m['text']}\n\n")
+                pre = "旁聽｜" if m.get("kind") == "silent" else ""   # 按日切片的掃描程式（承諾掃描、意思確認、流程體檢）認「## 使用者」，旁聽不算
+                f.write(f"## {pre}{m['who']}（{m.get('src', '')}）{m['time']}\n\n{m['text']}\n\n")
 
     # ---------- Telegram 目標 ----------
     def targets(self):
@@ -215,6 +216,15 @@ class Room:
     def add(self, who, text, src, kind=None, track=None):
         """src: 電腦 / Telegram / 系統 / 回覆。非 Telegram 來源會轉貼到本房間的群組。
         kind="report" 是完成回報；track 傳 dict 時會記下各群組的 Telegram 訊息編號（之後可更新進度）。"""
+        if kind == "silent":
+            # 旁聽（使用者 11-23 18:0x「把我跟大家視窗說的話也同步到主討論，不用喚醒」，視窗同步.py 送來）：
+            # 只存進紀錄當上文，下面所有觸發（點名、求救、報錯、轉信、Dot、更正提醒、Telegram）一律跳過
+            entry = {"who": who, "text": text, "src": src, "time": time.strftime("%m-%d %H:%M"), "kind": "silent"}
+            with self.hub.lock:
+                self.transcript.append(entry)
+                idx = len(self.transcript) - 1
+                self.hub.save()
+            return idx
         raw_text = text   # 去重用原文（下面會改 text，改過就對不上同一則從另一個管道送來的原文 → 06:45、06:48 重複貼兩次）
         if who == "輝達" and text:
             # 使用者 11-20 06:19：輝達自主進度出錯——目標檔「暫停」、11-18 後沒新檔，回報卻一直套「我的部分繼續……」。
@@ -1672,6 +1682,18 @@ def make_handler(hub):
                     return self._json({"ok": False})
                 room.set_window_status(who, (data.get("text") or "").strip() or None, bool(data.get("done")))
                 return self._json({"ok": True})
+            if p == "/api/listen" and agent is None:
+                # 旁聽（使用者 11-23 18:0x）：使用者在各 AI 視窗講的話（視窗同步.py）掛進房間當上文；kind=silent，不叫任何人
+                text, win = (data.get("text") or "").strip(), str(data.get("window") or "").strip()[:20]
+                if not text or not win:
+                    return self._json({"ok": False, "error": "缺 text 或 window"})
+                cid = str(data.get("client_id") or "")[:80]
+                if cid:
+                    if cid in hub.seen_posts:
+                        return self._json({"ok": True, "duplicate": True})
+                    hub.seen_posts.append(cid)
+                    del hub.seen_posts[:-200]
+                return self._json({"ok": True, "idx": room.add(f"使用者（在 {win} 視窗）", text, "旁聽", kind="silent")})
             if p in ("/api/claude_says", "/api/agent_says"):
                 # 終端機的 Claude 或 App 裡的 Codex 以自己的身分在房間發言，可指定接著由誰回應
                 text = (data.get("text") or "").strip()
@@ -3070,6 +3092,30 @@ if __name__ == "__main__":
     threading.Thread(target=subscription_loop, daemon=True).start()
     import 派報生   # 使用者 11-20 00:22：訂閱＋提前喚醒規則（各自的 訂閱.json「喚醒」）
     threading.Thread(target=lambda: 派報生.wake_loop(hub, log), daemon=True).start()
+
+    def window_sync_loop():
+        """視窗同步（使用者 11-23 18:0x）：使用者在終端機 Claude／Codex／輝達／Gemini 視窗講的話＋回覆摘要，旁聽貼進主討論。
+        另開行程跑 視窗同步.py（壞了不拖累中樞）；間隔看團隊參數「視窗同步間隔秒」。"""
+        time.sleep(30)
+        while True:
+            try:
+                r = subprocess.run([sys.executable.replace("pythonw.exe", "python.exe"), "-X", "utf8", os.path.join(HERE, "視窗同步.py")],
+                                   capture_output=True, timeout=600, creationflags=0x08000000 if os.name == "nt" else 0)
+                if r.returncode != 0:
+                    log(f"視窗同步失敗：{r.stderr.decode('utf-8', 'replace')[-200:]}")
+            except Exception as e:
+                log(f"視窗同步失敗：{type(e).__name__} {e}")
+            gap = 120
+            try:
+                import importlib.util as _u
+                _s = _u.spec_from_file_location("團隊參數_視窗同步", r"H:\Agent共用\專案\團隊系統\團隊參數.py")
+                _m = _u.module_from_spec(_s)
+                _s.loader.exec_module(_m)
+                gap = _m.get("視窗同步間隔秒", 120)
+            except Exception:
+                pass
+            time.sleep(max(30, int(gap)))
+    threading.Thread(target=window_sync_loop, daemon=True).start()
 
     def dispatch_loop():
         """派工員 v1（使用者 11-19 05:08：「沒事的話系統照演算法派工，幫忙調控用量」；06:45：輝達今天還好多次數）。

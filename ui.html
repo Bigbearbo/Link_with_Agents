@@ -429,13 +429,13 @@ function appendMsg(m, idx){
 }
 function render(m, idx){
   // 不認得的發言者（例如共用區 inbox 的「視窗Claude」「GPT」）：用一般對話框，名字照寫
-  const w = WHO[m.who] || ((m.src === "共用區" || m.src === "子代理" || m.src === "雲端硬碟" || /^小AI|^手搓網路$/.test(m.who || "")) ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
+  const w = m.src === "旁聽" ? Object.assign({}, WHO["使用者"], {name: esc(m.who)}) : WHO[m.who] || ((m.src === "共用區" || m.src === "子代理" || m.src === "雲端硬碟" || /^小AI|^手搓網路$/.test(m.who || "")) ? {cls:"m-other", face:"f-other", ch:esc((m.who||"?").slice(0,1)), name:esc(m.who)} : WHO["系統"]);
   const el = document.createElement("div");
-  el.className = "msg " + w.cls + (m.kind === "note" ? " note" : "");
+  el.className = "msg " + w.cls + (m.kind === "note" || m.kind === "silent" ? " note" : "");
   el.dataset.idx = idx;
   if(w.cls === "m-sys"){ el.innerHTML = `<div class="bubble">${esc(m.text)}</div>`; return el; }
   const src = m.src === "Telegram" ? " · 來自 Telegram" : m.src === "電腦" ? " · 電腦" : m.src === "備援" ? " · 備援 Claude（終端機不在）" : m.src === "App" ? " · 來自 Codex App" : m.src === "共用區" ? " · 從共用區 inbox" : "";
-  const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
+  const tag = m.kind === "report" ? `<span class="tag">完成回報</span>` : m.kind === "note" ? `<span class="tag">只記下</span>` : m.kind === "silent" ? `<span class="tag" title="你在這個 AI 視窗講的話，同步過來當上文，不會叫醒任何人">旁聽</span>` : m.kind === "side" ? `<span class="tag" title="主線還在做先前的事，這則是先回答的">先回答</span>` : "";
   const ab = abbrHits(m.text);   // 使用者 11-21 06:13：縮寫介紹（訊息框左邊，預設不展開）
   el.innerHTML = `<div class="lcol"><div class="face ${w.face}">${w.ch}</div>${ab.length ? `<button type="button" class="abbrBtn" aria-expanded="false" title="這則訊息裡的縮寫是什麼意思">縮寫介紹</button>` : ""}</div><div class="body">
     <div class="meta"><button class="bm${isMarked(idx) ? " on" : ""}" title="加入／移除書籤">🔖</button><b>${w.name}</b>${tag}${esc(m.time||"")}${src}</div>
