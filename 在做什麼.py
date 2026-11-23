@@ -102,14 +102,7 @@ def collect(hub):
                     r["rooms"].append(room.name)
             except Exception:
                 continue
-    subs = _load(SUBS, {})
-    for name, s in subs.items():
-        if s.get("狀態") == "完成":
-            continue
-        r = row(name)
-        r.update(kind="子代理", state="工作中", doing=s.get("任務", "")[:80], elapsed=int(now - s.get("開始", now)))
-        if s.get("單"):
-            r["tickets"].append({"id": s["單"], "title": "", "state": "進行中", "last": ""})
+    # 舊的 terminal\子代理.json 登記已停用（11-23 規則衝突檢查 S1），只讀共用區的 子代理登記.py 資料
     import glob as _g   # 各 AI 自己登記的子代理（H:\Agent共用\子代理狀態\<主人>.json，使用者 11-23 01:04）
     for fp in _g.glob(r"H:\Agent共用\子代理狀態\*.json"):
         owner = os.path.splitext(os.path.basename(fp))[0]
@@ -117,7 +110,11 @@ def collect(hub):
             if not isinstance(s, dict) or s.get("狀態") == "完成":
                 continue
             r = row(f"{owner} {name}")
-            r.update(kind=f"{owner} 的子代理", state="工作中", doing=(s.get("進度") or s.get("任務") or "")[:80])
+            # 規則衝突檢查 S4：忘了「完」會永遠掛著 → 開始或上次進度超過 6 小時標「忘了完？」
+            last = s.get("更新") or s.get("開始") or ""
+            stale = bool(last) and last < time.strftime("%m-%d %H:%M", time.localtime(now - 6 * 3600))
+            r.update(kind=f"{owner} 的子代理", state="忘了完？" if stale else "工作中",
+                     doing=(s.get("進度") or s.get("任務") or "")[:80])
             if s.get("單"):
                 r["tickets"].append({"id": s["單"], "title": "", "state": "進行中", "last": s.get("更新") or s.get("開始") or ""})
     for p in _small_procs():
@@ -140,7 +137,7 @@ def collect(hub):
             last = max((t["last"] for t in r["tickets"] if t["last"]), default="")
             if last and last < time.strftime("%m-%d %H:%M", time.localtime(now - 6 * 3600)):
                 r["state"] = "卡住？"   # 進行中的單超過 6 小時沒紀錄
-    order = {"工作中": 0, "卡住？": 1, "有單待接": 2, "閒置": 3}
+    order = {"工作中": 0, "卡住？": 1, "忘了完？": 1, "有單待接": 2, "閒置": 3}
     v = {"time": time.strftime("%H:%M:%S"), "rows": sorted(rows.values(), key=lambda r: (order.get(r["state"], 9), r["kind"] != "AI", r["who"]))}
     _cache.update(t=now, v=v)
     return v
@@ -151,7 +148,7 @@ SECTION = """<section id="working"><h3>👥 誰在做什麼 <span class="meta" i
 <table id="wk"><tr><th>誰</th><th>狀態</th><th>正在做</th><th>工單</th></tr></table></section>
 <script>
 (()=>{const K=__KEY__;const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const col={"工作中":"#2e9e6b","卡住？":"#d9483b","有單待接":"#d99a1e","閒置":"#9e9e9e"};
+const col={"工作中":"#2e9e6b","卡住？":"#d9483b","忘了完？":"#8e44ad","有單待接":"#d99a1e","閒置":"#9e9e9e"};
 const dur=s=>s==null?"":(s<60?s+" 秒":s<3600?Math.round(s/60)+" 分":(s/3600).toFixed(1)+" 小時");
 async function load(){try{const r=await fetch('/api/working?k='+encodeURIComponent(K));const d=await r.json();
 document.getElementById('wk-t').textContent='更新 '+d.time;
