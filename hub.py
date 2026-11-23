@@ -78,7 +78,26 @@ TG_HELP = ("直接說話：Claude、Codex 發表意見，Gemini 最後補充挑�
            "開頭連續點名＝串接：@Gemini @輝達 問題（依序回答）；@all 或 @大家＝四位都回\n/more 2：讓他們再討論 2 輪\n"
            "/note 文字：只記下，不叫他們（下次叫時會一起看到）\n"
            "/order 換誰先講　/stop 中斷　/new 這個房間開新討論\n/write on 或 off：開關寫檔權限\n"
-           "/allow、/deny：同意或拒絕安全相關請求\n/unbind 這個群組靜音　/bind 重新啟用")
+           "/allow、/deny：同意或拒絕安全相關請求\n/unbind 這個群組靜音　/bind 重新啟用\n"
+           "/用量：顯示用量表（不叫醒 AI）")
+
+
+def usage_chat_text():
+    """聊天指令 /用量（使用者 11-24 02:34）：精簡用量表，網頁貼進房間、Telegram 直接回。"""
+    try:
+        import importlib
+        um = importlib.import_module("用量摘要")
+        lines = ["📊 用量表（" + time.strftime("%m-%d %H:%M") + "）", "誰｜窗口｜已用%｜速度｜狀態｜重置｜建議"]
+        for who, win, used, speed, state, reset, upd in um.rows():
+            adv = "資料過期" if um._stale(upd) else um._advice(used, speed, state)
+            m = re.match(r"\d{4}-(\d\d-\d\d)T(\d\d:\d\d)", str(reset or ""))
+            reset = f"{m.group(1)} {m.group(2)}" if m else reset
+            lines.append(f"{who}｜{win}｜{'—' if used is None else used}｜{'—' if speed is None else speed}"
+                         f"｜{state or '—'}｜{reset or '—'}｜{adv or '—'}")
+        lines.append("速度＝已用% ÷ 時間已過%；大於 1 會在重置前用完。完整版：網頁「用量」頁。")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"📊 用量表讀取失敗：{type(e).__name__}: {e}"
 
 
 def log(msg):
@@ -437,6 +456,10 @@ class Room:
     def user_says(self, text, src, target="both", members=None):
         if re.match(r"\s*手搓\s*\S", text or "") and _is_handfill_cmd(text):   # 使用者 11-21 09:14：玩手搓當成系統指令，AI 不必起來
             self.add("使用者", text, src)   # add() 會叫手搓網路算並貼回
+            return
+        if (text or "").strip() in ("/用量", "/usage"):   # 使用者 11-24 02:34：聊天指令顯示用量表，不叫醒 AI
+            self.add("使用者", text, src)
+            self.notice(usage_chat_text())
             return
         if re.match(r"\s*check\b", text or "", re.I):   # 使用者 21:47：開頭打 check（大小寫都行）＝核對用量顯示，錯了自動點名負責人
             self.add("使用者", text, src)
@@ -1285,6 +1308,8 @@ class Hub:
         elif word == "/note":
             if arg:
                 room.note(arg, "Telegram")
+        elif word in ("/用量", "/usage"):
+            self.bot.send(cid, usage_chat_text())
         elif word in ("/help", "/start"):
             self.bot.send(cid, TG_HELP)
         elif word:
