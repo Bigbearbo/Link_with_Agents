@@ -112,6 +112,9 @@ def counted(msg, acc):
     _, _, label, _, body = msg
     if is_me(label, acc) or kind(label) not in acc["只算"]:
         return False
+    # 11-24 使用者：「加一個條件，自己未讀的訊息量」→ 標題含這些字的（例：旁聽自自己的視窗）不算未讀
+    if any(k and k in label for k in acc.get("排除標題含", [])):
+        return False
     return not any(k and k in body for k in acc.get("排除含", []))
 
 
