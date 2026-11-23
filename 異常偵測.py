@@ -189,6 +189,24 @@ def check():
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     json.dump(st, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     _write_md(st)
+    try:   # 使用者 11-23 11:2x：卡住要留 LOG 供之後修錯、研究怎麼不卡 → 新出現的卡住類異常記進 卡住紀錄
+        import importlib.util as _iu
+        _sp = _iu.spec_from_file_location("卡住紀錄", r"H:\Agent共用\專案\團隊系統\卡住紀錄.py")
+        _km = _iu.module_from_spec(_sp); _sp.loader.exec_module(_km)
+        for n in notes:
+            if not n.startswith("🆕"):
+                continue
+            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑):([^\]]*)\]", n)
+            if not m:
+                continue
+            kind = {"權限卡住": "權限", "工單停滯": "等人太久" if "等誰太久" in n else "沒進度",
+                    "預期回應逾時": "等人太久", "常駐漏跑": "環境"}[m.group(1)]
+            who = re.search(r"（負責 ([^，）]+)", n)
+            who = who.group(1) if who else m.group(2).split(":")[0] if m.group(1) == "權限卡住" else "?"
+            tk = re.search(r"#(\d+)", m.group(2))
+            _km.add(who, kind, n[:400], int(tk.group(1)) if tk else None)
+    except Exception:
+        pass
     stall = [n for n in notes if ("[工單停滯:" in n or "[預期回應逾時:" in n) and not n.startswith("✅")]   # 已恢復的不叫醒（11-23 08:52 誤叫）
     if stall:   # 使用者 11-23 01:03：工單卡住 → 通知 Claude 干預（走派報生的叫醒請求，一次巡檢只叫一次）
         try:
