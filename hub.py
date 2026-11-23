@@ -440,6 +440,21 @@ class Room:
                 picked += ["claude", "codex", "gemini", "nvidia"] if k == "all" else [k]
                 text = text[m.end():]
             picked = list(dict.fromkeys(picked))  # 去重，保留順序
+            # 使用者 11-23 08:13：「開頭 @ 後面沒對象能對上時，沿用上一個 @ 的儲存對象」——每個房間記住最後一次 @ 的名單
+            _lp = os.path.join(HERE, "logs", "上次點名.json")
+            try:
+                _last = json.load(open(_lp, encoding="utf-8"))
+            except (OSError, ValueError):
+                _last = {}
+            if picked:
+                _last[self.id] = picked
+                try:
+                    json.dump(_last, open(_lp, "w", encoding="utf-8"), ensure_ascii=False)
+                except OSError:
+                    pass
+            elif re.match(r"\s*[@＠]", text) and _last.get(self.id):
+                picked = list(_last[self.id])
+                text = re.sub(r"^\s*[@＠]\s*", "", text, count=1)
             if not picked and members is not None:  # 網頁「問大家」的群組名單（下方按鈕旁的「群聊跳過」決定誰在名單裡）
                 # 使用者 11-20 04:47：小 AI 也有「群／略」；s:nvidia 是 NVIDIA NIM，和輝達（nvidia）分開
                 self._group_small = [m[2:] for m in members if m in ("s:groq", "s:cohere", "s:nvidia", "s:cloudflare", "s:google")]
