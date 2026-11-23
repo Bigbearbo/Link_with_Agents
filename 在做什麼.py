@@ -72,6 +72,43 @@ def _small_procs():
     return out
 
 
+CODEX_WHERE = {r"d:\codex用": "Codex 視窗", r"h:\codex用": "Codex 工作區", r"h:\有下文視窗codex用": "有下文 Codex 視窗",
+               r"h:\codex小號": "Codex 小號"}
+
+
+def _codex_sessions(now):
+    """近幾分鐘有寫入的 Codex 對話（主線＋子代理；guardian 審核子代理不算）。只讀每個檔的第一行 session_meta。"""
+    out, lim = [], _P("Codex對話活動分", 10) * 60
+    base = os.path.join(os.path.expanduser("~"), ".codex", "sessions")
+    for root, _, files in os.walk(base):
+        for fn in files:
+            if not fn.endswith(".jsonl"):
+                continue
+            fp = os.path.join(root, fn)
+            try:
+                age = now - os.path.getmtime(fp)
+                if age > lim:
+                    continue
+                with open(fp, encoding="utf-8") as f:
+                    p = (json.loads(f.readline()) or {}).get("payload") or {}
+            except (OSError, ValueError):
+                continue
+            src = p.get("source")
+            sub = src.get("subagent") if isinstance(src, dict) else None
+            if isinstance(sub, dict) and "other" in sub:
+                continue   # guardian 等審核用的子代理
+            where = CODEX_WHERE.get(str(p.get("cwd", "")).lower().rstrip("\\"), str(p.get("cwd", "")))
+            if src == "exec" and p.get("originator") == "codex_exec":
+                where = "中樞房間"
+            spawn = (sub or {}).get("thread_spawn") if isinstance(sub, dict) else None
+            name = (spawn.get("agent_nickname") or os.path.basename(str(spawn.get("agent_path", "")))) if spawn else ""
+            if spawn and spawn.get("agent_path"):
+                name = os.path.basename(str(spawn["agent_path"]))
+            out.append({"sub": bool(spawn), "name": name or fn[-12:-6], "where": where, "age": int(age),
+                        "doing": f"{'子代理 ' + name if spawn else '對話'}｜{int(age // 60)} 分前有動靜"})
+    return out
+
+
 def _todos():
     """負責人 → 進行中的工單（最多 3 張）＋最後紀錄時間。"""
     by = {}
@@ -133,6 +170,15 @@ def collect(hub):
                      doing=(s.get("進度") or s.get("任務") or "")[:80])
             if s.get("單"):
                 r["tickets"].append({"id": s["單"], "title": "", "state": "進行中", "last": s.get("更新") or s.get("開始") or ""})
+    for s in _codex_sessions(now):   # 使用者 11-23 20:2x：Codex 有好多個 agent，只顯示一個 → 直接看 ~/.codex/sessions
+        key = f"Codex {s['name']}" if s["sub"] else f"Codex 主線（{s['where']}）"
+        if s["sub"]:   # 已經自己登記過的（Codex.json／視窗Codex.json）就併進那一列，不重複
+            key = next((k for k in rows if "Codex" in k.split(" ")[0] and k.endswith(" " + s["name"])), key)
+        r = rows.get(key) or row(key)
+        r.update(kind="Codex 的子代理" if s["sub"] else "Codex 對話", state="工作中",
+                 doing=r.get("doing") or s["doing"], elapsed=r.get("elapsed") or s["age"])
+        if s["sub"] and s["where"] not in r["rooms"]:
+            r["rooms"].append(s["where"])
     for p in _small_procs():
         r = row(p["who"])
         r.update(kind="小號", state="工作中", doing=p["task"])
