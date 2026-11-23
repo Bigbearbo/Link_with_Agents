@@ -202,10 +202,40 @@ def _long_working():
     return out
 
 
+def _duplicate_procs():
+    """重複程序:<指令>：同一條 python 指令同時跑兩份以上（11-23 23:1x：_87 子代理以為舊驗收已終止，其實還在跑，
+    兩份合計吃掉 5.6GB）。只報不殺；負責查的是 Claude。"""
+    import subprocess
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+                              "ForEach-Object { \"$($_.ProcessId)`t$([int]($_.WorkingSetSize/1MB))`t$($_.CommandLine)\" }"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30).stdout
+    except Exception:
+        return []
+    groups = {}
+    for line in out.splitlines():
+        parts = line.split("	", 2)
+        if len(parts) < 3 or not parts[2].strip():
+            continue
+        cmd = re.sub(r"\s+", " ", parts[2]).strip()
+        if "multiprocessing" in cmd or "spawn_main" in cmd:
+            continue   # 平行子程序本來就同指令
+        groups.setdefault(cmd, []).append((parts[0], int(parts[1] or 0)))
+    res = []
+    for cmd, ps in groups.items():
+        if len(ps) >= 2 and sum(m for _, m in ps) >= _P("重複程序報警MB", 500):
+            short = cmd[-80:]
+            res.append((f"重複程序:{short[-40:]}", "Claude",
+                        f"同一條指令同時跑 {len(ps)} 份（PID {', '.join(p for p, _ in ps)}，共 {sum(m for _, m in ps)} MB）：…{short}"
+                        "｜建議：問是誰開的，留下真正在等的那份，其他結束"))
+    return res
+
+
 def detect():
     lines = _recent_log_lines()
     return (_usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
-            + _resident_missing() + _stalled_tickets() + _long_working())
+            + _resident_missing() + _stalled_tickets() + _long_working() + _duplicate_procs())
 
 
 def check():
