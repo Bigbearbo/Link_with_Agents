@@ -166,6 +166,15 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 #marks{position:fixed;left:16px;top:118px;width:230px;max-height:calc(100vh - 140px);overflow-y:auto;
   background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:12.5px;z-index:5;
   box-shadow:0 2px 10px rgba(0,0,0,.05)}
+#roomSide{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+#roomSide .rs-h{font-weight:700;font-size:13px;margin-bottom:2px}
+#roomSide button{text-align:left;font:inherit;font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer;display:flex;align-items:center;gap:6px}
+#roomSide button:hover{background:var(--sys-bg)}
+#roomSide button.sel{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#roomSide .badge{width:7px;height:7px;border-radius:50%;background:var(--codex);display:inline-block}
+#roomSide .badge.ap{background:var(--claude)}
+#roomSide .new{font-size:11px;background:var(--me);color:#fff;border-radius:999px;padding:0 6px;margin-left:auto}
+#roomSide .rs-add{justify-content:center;border-style:dashed;color:var(--me);font-weight:650}
 #marksTools{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
 #marksTools button{font:inherit;font-weight:650;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px;cursor:pointer}
 #marksTools button[aria-expanded="true"]{background:var(--sys-bg);border-color:var(--muted)}
@@ -345,8 +354,14 @@ function switchRoom(id){
 let lastRooms = null, attn = {decide: 0, research: 0};
 function renderRooms(rooms){ lastRooms = rooms;
   const nav = $("#rooms");
-  nav.hidden = rooms.length < 2;
+  nav.hidden = false;
   nav.innerHTML = "";
+  // #319（使用者 11-25 04:23）：房間改放左欄，像聊天程式；上方這條只留頁面按鈕
+  let side = $("#roomSide");
+  const wide = window.innerWidth >= 1380;   // 窄螢幕左欄（書籤列）是收起來的 → 房間照舊放上方
+  if(!side && $("#marks") && wide){ side = document.createElement("div"); side.id = "roomSide"; $("#marks").prepend(side); }
+  if(side && !wide){ side.remove(); side = null; }
+  if(side){ side.innerHTML = '<div class="rs-h">💬 聊天室</div>'; }
   for(const r of rooms){
     const b = document.createElement("button");
     if(r.id === room) seenTotals[r.id] = r.total;
@@ -357,7 +372,20 @@ function renderRooms(rooms){ lastRooms = rooms;
     b.innerHTML = `${r.busy ? '<span class="badge"></span>' : ""}${r.approval ? '<span class="badge ap"></span>' : ""}${esc(r.name)}${unread ? `<span class="new">新 ${Math.min(r.total - seenTotals[r.id], 99)}${r.total - seenTotals[r.id] > 99 ? "+" : ""}</span>` : ""}`;
     b.title = r.linked ? "已連到 Telegram" : "沒有連到 Telegram";
     b.onclick = () => switchRoom(r.id);
-    nav.appendChild(b);
+    (side || nav).appendChild(b);
+  }
+  if(side){
+    const add = document.createElement("button"); add.className = "rs-add"; add.textContent = "＋ 開新房";
+    add.title = "開一間專題房（不用 Telegram 群組）";
+    add.onclick = async () => {
+      const name = prompt("房名（例：算力經濟）："); if(!name || !name.trim()) return;
+      const pack = prompt("資訊包路徑（可留空，例 H:\\Agent共用\\專題房\\算力經濟\\資訊包.md）：") || "";
+      const goal = prompt("這次要決定什麼？（可留空）") || "";
+      const res = await fetch("/api/newroom", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({name: name.trim(), pack, goal, who: "使用者"})}).then(x => x.json()).catch(() => ({ok:false}));
+      if(res.ok){ switchRoom(res.id); } else alert("開房失敗：" + (res.error || "中樞沒回應（可能要重啟中樞才有這個功能）"));
+    };
+    side.appendChild(add);
   }
   // 使用者 11-20 00:54：待討論／研究／變動跟房間放同一條，點了在右側面板切換
   const gap = document.createElement("span"); gap.className = "spacer"; nav.appendChild(gap);

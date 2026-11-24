@@ -1559,6 +1559,27 @@ def make_handler(hub):
                 return self._json(importlib.import_module("訊息版").api(data, hub))
             if p == "/api/params":   # 設定頁中樞參數拉條「儲存設定」（使用者 11-22 00:37）；驗範圍與寫檔在 中樞參數.set_values
                 return self._json(參數.set_values(data.get("values"), "使用者（網頁）"))
+            if p == "/api/newroom":   # #319 專題房（使用者 11-25 04:23）：網頁左欄「＋」開新房，不用 Telegram 群組
+                name = str(data.get("name") or "").strip()[:40]
+                if not name:
+                    return self._json({"ok": False, "error": "要有房名"})
+                with hub.lock:
+                    rid = f"w{int(time.time())}"
+                    hub.rooms[rid] = Room(hub, rid, {"name": name, "solo": None})
+                    hub.save()
+                r = hub.rooms[rid]
+                pack = str(data.get("pack") or "").strip()
+                intro = f"🆕 專題房「{name}」由 {str(data.get('who') or '使用者')[:20]} 開房。"
+                if pack:
+                    intro += f"\n資訊包：{pack}（請先讀再發言）"
+                if data.get("goal"):
+                    intro += f"\n這次要決定：{str(data.get('goal'))[:500]}"
+                try:
+                    r.notice(intro)
+                except Exception:
+                    pass
+                log(f"新增專題房：{name}（{rid}）")
+                return self._json({"ok": True, "id": rid})
             if p == "/api/review":   # 工單 #270：待審區 list／approve／reject（邏輯在 待審區.api）
                 import importlib
                 return self._json(importlib.import_module("待審區").api(data))
