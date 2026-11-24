@@ -418,7 +418,7 @@ def brief(added, changed):
         out += f"\n\n📄 新報告" + (f"（{who}）" if who else "") + f"：{title or os.path.basename(rel)}"
         if intro:
             out += f"\n簡介：{intro}"
-        out += f"\n連結：{full}"
+        out += f"\n連結：{os.path.normpath(full)}"
     more = sum(1 for r in added if is_report(r)) - len(reps)
     if more > 0:
         out += f"\n（另有 {more} 份新報告，看「變動」頁）"
