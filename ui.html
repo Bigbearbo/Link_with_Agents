@@ -224,6 +224,8 @@ select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);
 body.side-max #sidePane{width:100vw}body.side-max main,body.side-max footer,body.side-max #marks{display:none}
 body.dragging iframe{pointer-events:none}body.dragging{user-select:none;cursor:col-resize}
 .cp{border:none;background:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:.55;vertical-align:1px;user-select:none;-webkit-user-select:none}
+.cpblk{border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;padding:6px 16px;min-width:150px;background:#2563eb;color:#fff;user-select:none;-webkit-user-select:none}
+.cpblk:hover{background:#1d4ed8}.cpblk.ok{background:#16a34a}
 .cp::selection{background:transparent}.cp:hover{opacity:1}
 a.fp{font-family:Consolas,monospace;font-size:.92em}
 /* 收合模式：每則只顯示 小標題＋三行，點一下展開 */
@@ -517,10 +519,13 @@ function decorate(bub, m){
     if(pre.dataset.cp) return; pre.dataset.cp = "1";
     const txt = pre.innerText;
     const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:6px;align-items:center;margin:4px 0";
-    const b = document.createElement("button"); b.className = "cp"; b.textContent = "📋"; b.title = "複製這整塊（不含按鈕）";
-    b.onclick = e => { e.stopPropagation(); copyText(txt, b); };
-    const lab = document.createElement("span"); lab.className = "meta"; lab.textContent = "複製全部（" + txt.split("\n").length + " 行）";
-    bar.append(b, lab);
+    const lbl = "📋 複製全部（" + txt.split("\n").length + " 行）";
+    const b = document.createElement("button"); b.className = "cpblk"; b.textContent = lbl; b.title = "複製這整塊（不含按鈕）";
+    b.onclick = e => { e.stopPropagation();
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+        () => { b.textContent = "✓ 已複製"; b.classList.add("ok"); setTimeout(() => { b.textContent = lbl; b.classList.remove("ok"); }, 1500); },
+        () => prompt("複製這段：", txt)); };
+    bar.append(b);
     if(txt.split("\n").length > 12){
       const det = document.createElement("details"); const sum = document.createElement("summary");
       sum.textContent = "展開內容"; det.append(sum); pre.replaceWith(det); det.append(pre); det.before(bar);
