@@ -512,6 +512,20 @@ function copyText(s, btn){
 const PATH_RE = /\b[A-Za-z]:\\[^\s`'"<>|*?：，。；、（）()「」]+/g;
 function decorate(bub, m){
   if(!bub) return;
+  // 使用者 11-25 04:40：DPSK 網頁單貼在聊天視窗，要有複製按鈕、長的自動收合 → 每個 ``` 區塊加「📋 複製全部」，超過 12 行收合
+  bub.querySelectorAll("pre").forEach(pre => {
+    if(pre.dataset.cp) return; pre.dataset.cp = "1";
+    const txt = pre.innerText;
+    const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:6px;align-items:center;margin:4px 0";
+    const b = document.createElement("button"); b.className = "cp"; b.textContent = "📋"; b.title = "複製這整塊（不含按鈕）";
+    b.onclick = e => { e.stopPropagation(); copyText(txt, b); };
+    const lab = document.createElement("span"); lab.className = "meta"; lab.textContent = "複製全部（" + txt.split("\n").length + " 行）";
+    bar.append(b, lab);
+    if(txt.split("\n").length > 12){
+      const det = document.createElement("details"); const sum = document.createElement("summary");
+      sum.textContent = "展開內容"; det.append(sum); pre.replaceWith(det); det.append(pre); det.before(bar);
+    } else pre.before(bar);
+  });
   bub.querySelectorAll("a[href^='http']").forEach(a => {   // 網址：開新分頁＋複製鈕（複製的是實際網址）
     a.target = "_blank"; a.rel = "noopener";
     const b = document.createElement("button"); b.className = "cp"; b.textContent = "📋"; b.title = "複製網址：" + a.href;
