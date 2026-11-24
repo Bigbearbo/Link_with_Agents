@@ -549,6 +549,18 @@ class Room:
         self.stop_flag = False
         if "dot" in picked and len(picked) > 1:
             notify_dot(self.name, "使用者", time.strftime("%m-%d %H:%M"), text)  # 群聊名單有 Dot：留點名單
+        # 使用者 11-25 05:55：「只問 Codex」改成直接交給電腦Codex（CLI，主線負責人），少一層傳話；
+        # 中樞房間裡的 Codex 只在群聊名單、@Codex 接力時才出場。團隊參數「只問Codex轉電腦Codex」=0 可關掉。
+        if target == "codex" and len(picked) <= 1 and _team_param("只問Codex轉電腦Codex", 1):
+            try:
+                with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as _f:
+                    _f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "電腦Codex", "原因": "使用者只問Codex",
+                                         "內容": f"使用者在「{self.name}」只問你：{text}\n請直接回在那個房間（照你平常回群組的方式）。"},
+                                        ensure_ascii=False) + "\n")
+                threading.Timer(1, lambda: self.notice("已轉給電腦Codex（它讀收件檔後回在這裡）。")).start()
+                return
+            except OSError:
+                pass
         seq = [a for p in picked for a in self.seq_for(p)] if len(picked) > 1 else self.seq_for(target)
         # 使用者 11-20 08:21「回復排序還沒修，似乎一起說」：忙碌那位的分身原本立刻開講，會搶在排它前面的人之前。
         # 改成：分身等排在它前面、這輪會講的人都在使用者這句之後發過言（最多等 10 分鐘），才開講。
@@ -2179,6 +2191,14 @@ def render_perm_page():
 
 CORRECTION_RE = re.compile(r"^(我是指|我是說|我指的是|不是這個意思|你(們)?誤會|你(們)?搞錯|你(們)?理解錯|我的意思是|不是啦|不對，)|誤會了|搞錯了|歪錯重點")   # 使用者更正的說法（16:36 待補註解）
 ROUTE_HINT = r"H:\免費模型用\路由建議.json"   # 輝達當路由員：{"先回": "deepseek", "原因": "..."}，2 小時內有效
+
+
+def _team_param(name, default):
+    """讀團隊參數（H:\\Agent共用\\團隊參數.json）；讀不到回預設。每次現讀，改參數不用重啟中樞。"""
+    try:
+        return json.load(open(r"H:\Agent共用\團隊參數.json", encoding="utf-8"))[name]["值"]
+    except Exception:
+        return default
 
 
 def usage_pressure(who):
