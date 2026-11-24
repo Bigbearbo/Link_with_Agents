@@ -18,6 +18,11 @@ def api(path, body=None):
     return json.loads(urllib.request.urlopen(req, timeout=10).read())
 
 
+if sys.argv[1] == "--newroom":   # #319：終端機 Claude 代使用者開專題房（使用者 11-25 05:15「你幫我填」）
+    # python say.py --newroom <房名> [資訊包路徑] [要決定的事]
+    a = sys.argv[2:] + ["", ""]
+    print(api("/api/newroom", {"name": a[0], "pack": a[1], "goal": a[2], "who": "Claude（代使用者）"}))
+    sys.exit(0)
 room_arg, text_file = sys.argv[1], sys.argv[2]
 then = sys.argv[sys.argv.index("--then") + 1] if "--then" in sys.argv else None
 rooms = api("/api/poll?room=main&since=999999&epoch=0")["rooms"]
