@@ -377,7 +377,8 @@ class Room:
             note = m_note.group(1).strip()[:200] if m_note else ""
             if m_note:
                 text = text[:m_note.start()].rstrip()
-                entry["text"] = text
+                # 11-25：Codex 的最後一段常常只有【筆記】一行 → 拿掉筆記後變空白，群組出現只有名字的空白訊息（真正原因）
+                entry["text"] = text or f"📝 {note}"
             with self.hub.lock:
                 ri = getattr(self, "reply_to", {}).pop(who, None)   # 這位這一輪開始時對應的使用者訊息編號
                 if ri is not None and ri < len(self.transcript) and self.transcript[ri].get("who") == "使用者":
