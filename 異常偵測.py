@@ -202,6 +202,39 @@ def _long_working():
     return out
 
 
+def _codex_quota_stop():
+    """Codex額度將盡：Codex 週額度用到「Codex停工通知%」（團隊參數，預設 99）就通知電腦Codex／Codex 收尾存檔、停工。
+    使用者 11-24 11:09：「99%通知他停，以免存檔問題」。同一個重置週期只通知一次（記在 logs/派報/codex停工通知.json）。"""
+    try:
+        w = json.load(open("H:/Agent共用/codex-用量.json", encoding="utf-8"))["seven_day"]
+        used, reset = float(w.get("used") or 0), float(w.get("resets_at_unix") or 0)
+    except Exception:
+        return []
+    lim = _P("Codex停工通知%", 99)
+    if used < lim or time.time() > reset:
+        return []
+    st_p = os.path.join(HERE, "logs", "派報", "codex停工通知.json")
+    try:
+        done = json.load(open(st_p, encoding="utf-8")).get("reset") == reset
+    except Exception:
+        done = False
+    if not done:
+        msg = (f"Codex 週額度已用 {used:.0f}%（門檻 {lim:.0f}%）。請把手上的工作收尾：存檔、commit、"
+               "在目標檔「## 下一步」寫清楚做到哪、怎麼續，然後停工，等使用者復活或額度重置。")
+        try:
+            with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as f:
+                for to in ("電腦Codex", "Codex"):
+                    f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": to, "原因": "額度將盡停工",
+                                        "內容": msg}, ensure_ascii=False) + "\n")
+            json.dump({"reset": reset, "時間": time.strftime("%m-%d %H:%M"), "used": used},
+                      open(st_p, "w", encoding="utf-8"), ensure_ascii=False)
+        except OSError:
+            pass
+    return [("額度將盡:Codex", "Claude",
+             f"Codex 週額度已用 {used:.0f}%（門檻 {lim:.0f}%），已通知電腦Codex／Codex 收尾存檔停工｜"
+             "建議：Claude 確認它有 commit、目標檔寫了下一步；它停工期間的線先標「等」")]
+
+
 def _duplicate_procs():
     """重複程序:<指令>：同一條 python 指令同時跑兩份以上（11-23 23:1x：_87 子代理以為舊驗收已終止，其實還在跑，
     兩份合計吃掉 5.6GB）。只報不殺；負責查的是 Claude。"""
@@ -235,7 +268,7 @@ def _duplicate_procs():
 def detect():
     lines = _recent_log_lines()
     return (_usage_stale() + usage_activity.detect() + _call_failures(lines) + _permission_stuck(lines) + _summary_fail(lines)
-            + _resident_missing() + _stalled_tickets() + _long_working() + _duplicate_procs())
+            + _resident_missing() + _stalled_tickets() + _long_working() + _duplicate_procs() + _codex_quota_stop())
 
 
 def check():
@@ -273,11 +306,11 @@ def check():
         for n in notes:
             if not n.startswith("🆕"):
                 continue
-            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑|領單無成果|工作過久):([^\]]*)\]", n)
+            m = re.search(r"\[(權限卡住|工單停滯|預期回應逾時|常駐漏跑|領單無成果|工作過久|額度將盡):([^\]]*)\]", n)
             if not m:
                 continue
             kind = {"權限卡住": "權限", "工單停滯": "等人太久" if "等誰太久" in n else "沒進度",
-                    "預期回應逾時": "等人太久", "常駐漏跑": "環境", "領單無成果": "沒進度", "工作過久": "沒進度"}[m.group(1)]
+                    "預期回應逾時": "等人太久", "常駐漏跑": "環境", "領單無成果": "沒進度", "工作過久": "沒進度", "額度將盡": "環境"}[m.group(1)]
             who = re.search(r"（負責 ([^，）]+)", n)
             who = who.group(1) if who else m.group(2).split(":")[0] if m.group(1) == "權限卡住" else "?"
             tk = re.search(r"#(\d+)", m.group(2))
