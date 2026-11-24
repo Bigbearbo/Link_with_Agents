@@ -420,13 +420,15 @@ def brief(added, changed):
     return out
 
 
-REPORT_DIRS = ("報告", "GPT報告", "SLE_NN_Research_Exchange", "Gemini", "DeepSeek", "交接", "研究想法庫")
+REPORT_DIRS = ("視窗AI(APP)用", "報告", "GPT報告", "SLE_NN_Research_Exchange", "Gemini", "DeepSeek", "交接", "研究想法庫")
 REPORT_WORDS = ("報告", "REPORT", "RESULT", "回報", "結論", "交件", "回執", "研究觀察", "交接")
 
 
 def is_report(rel):
     """新檔算不算「報告」：放在約好的報告區，或檔名有報告類字眼；只看 .md／.txt。"""
     r = rel.replace("\\", "/")
+    if r.startswith("視窗AI(APP)用/") and r.lower().endswith(".zip"):   # 視窗 App 的 AI（Pro）常交壓縮包
+        return True
     if not r.lower().endswith((".md", ".txt")) or "/_" in r or r.split("/")[-1].startswith("_"):
         return False
     return r.split("/")[0] in REPORT_DIRS or any(w.lower() in r.split("/")[-1].lower() for w in REPORT_WORDS)
