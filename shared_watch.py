@@ -406,8 +406,46 @@ def brief(added, changed):
         k = rel.replace("\\", "/").split("/")[0]
         top[k] = top.get(k, 0) + 1
     main = "、".join(f"{k}（{n}）" for k, n in sorted(top.items(), key=lambda x: -x[1])[:4])
-    return (f"共用區有變動：新 {len(added)}、改 {len(changed)}，主要在 {main}。"
-            "細節用網頁「變動」頁查（可篩誰、關鍵字、時間），或 `PY H:\Claude用\三方討論\變動查詢.py 關鍵字 --since 11-19`。")
+    out = (f"共用區有變動：新 {len(added)}、改 {len(changed)}，主要在 {main}。"
+           "細節用網頁「變動」頁查（可篩誰、關鍵字、時間），或 `PY H:\Claude用\三方討論\變動查詢.py 關鍵字 --since 11-19`。")
+    # 使用者 11-25 05:17：視窗 App 的 AI 寫的報告要顯示出來，才能主動收到他們的貢獻 → 新報告列標題
+    reps = [r for r in added if is_report(r)][:4]
+    for rel in reps:
+        full = os.path.join(SHARED, rel)
+        who = owner_of(full)
+        out += f"\n📄 新報告：{rel.replace(chr(92), '/')}" + (f"（{who}）" if who else "") + (f"——{report_title(full)}" if report_title(full) else "")
+    more = sum(1 for r in added if is_report(r)) - len(reps)
+    if more > 0:
+        out += f"\n（另有 {more} 份新報告，看「變動」頁）"
+    return out
+
+
+REPORT_DIRS = ("報告", "GPT報告", "SLE_NN_Research_Exchange", "Gemini", "DeepSeek", "交接", "研究想法庫")
+REPORT_WORDS = ("報告", "REPORT", "RESULT", "回報", "結論", "交件", "回執", "研究觀察", "交接")
+
+
+def is_report(rel):
+    """新檔算不算「報告」：放在約好的報告區，或檔名有報告類字眼；只看 .md／.txt。"""
+    r = rel.replace("\\", "/")
+    if not r.lower().endswith((".md", ".txt")) or "/_" in r or r.split("/")[-1].startswith("_"):
+        return False
+    return r.split("/")[0] in REPORT_DIRS or any(w.lower() in r.split("/")[-1].lower() for w in REPORT_WORDS)
+
+
+def report_title(path):
+    """報告標題：「摘要：」優先，沒有就第一個 # 標題或第一行非空字。"""
+    h = headline(path)
+    if h:
+        return h
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(8), f):
+                t = line.strip().lstrip("#").strip()
+                if t:
+                    return t[:80]
+    except OSError:
+        pass
+    return ""
 
 
 def query_changes(q="", since="", until="", kind="", limit=200):
