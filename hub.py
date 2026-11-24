@@ -244,6 +244,9 @@ class Room:
                 idx = len(self.transcript) - 1
                 self.hub.save()
             return idx
+        if who not in ("使用者", "系統") and not (text or "").strip():
+            # 11-25：on_say 擋了空白片段，Codex 的「最後回覆」仍會送空字串進來 → 群組一直出現只有名字的空白訊息，在入口一律擋掉
+            return len(self.transcript) - 1
         raw_text = text   # 去重用原文（下面會改 text，改過就對不上同一則從另一個管道送來的原文 → 06:45、06:48 重複貼兩次）
         if who == "輝達" and text:
             # 使用者 11-20 06:19：輝達自主進度出錯——目標檔「暫停」、11-18 後沒新檔，回報卻一直套「我的部分繼續……」。
