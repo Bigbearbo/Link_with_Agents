@@ -395,7 +395,8 @@ class Room:
         if who != "Dot" and (re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I)
                              or (who == "使用者" and kind != "note" and (self.solo == "dot" or (text or "").startswith("（只問 Dot）")))):
             notify_dot(self.name, who, entry["time"], text)  # Dot 不在線：留一張點名單，Dot 巡檢時看到再回
-        if src != "Telegram":
+        # 使用者 11-25 06:39：「共用區有變動」只留網頁，不用貼到 Telegram
+        if src != "Telegram" and not (who == "系統" and (text or "").startswith("共用區有變動")):
             label = (("主人（電腦）" + ("・只記下" if kind == "note" else "")) if who == "使用者"
                      else who + ("（完成回報）" if kind == "report" else ""))
             tg_text = f"{ICON.get(who, '')} {label}\n\n{text}"
