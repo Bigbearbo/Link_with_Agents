@@ -408,12 +408,17 @@ def brief(added, changed):
     main = "、".join(f"{k}（{n}）" for k, n in sorted(top.items(), key=lambda x: -x[1])[:4])
     out = (f"共用區有變動：新 {len(added)}、改 {len(changed)}，主要在 {main}。"
            "細節用網頁「變動」頁查（可篩誰、關鍵字、時間），或 `PY H:\Claude用\三方討論\變動查詢.py 關鍵字 --since 11-19`。")
-    # 使用者 11-25 05:17：視窗 App 的 AI 寫的報告要顯示出來，才能主動收到他們的貢獻 → 新報告列標題
+    # 使用者 11-25 05:17：視窗 App 的 AI 寫的報告要顯示出來，才能主動收到他們的貢獻
+    # 使用者 11-25 05:30：自動抓報告前段的簡介推到群組＋連結，他們就不用另外寫一份留言
     reps = [r for r in added if is_report(r)][:4]
     for rel in reps:
         full = os.path.join(SHARED, rel)
         who = owner_of(full)
-        out += f"\n📄 新報告：{rel.replace(chr(92), '/')}" + (f"（{who}）" if who else "") + (f"——{report_title(full)}" if report_title(full) else "")
+        title, intro = report_brief(full)
+        out += f"\n\n📄 新報告" + (f"（{who}）" if who else "") + f"：{title or os.path.basename(rel)}"
+        if intro:
+            out += f"\n簡介：{intro}"
+        out += f"\n連結：{full}"
     more = sum(1 for r in added if is_report(r)) - len(reps)
     if more > 0:
         out += f"\n（另有 {more} 份新報告，看「變動」頁）"
@@ -432,6 +437,67 @@ def is_report(rel):
     if not r.lower().endswith((".md", ".txt")) or "/_" in r or r.split("/")[-1].startswith("_"):
         return False
     return r.split("/")[0] in REPORT_DIRS or any(w.lower() in r.split("/")[-1].lower() for w in REPORT_WORDS)
+
+
+def _md_lines(path):
+    """報告的前 80 行文字；.zip 讀裡面的 README.md（沒有就讀根目錄第一份 .md）。"""
+    try:
+        if path.lower().endswith(".zip"):
+            import zipfile
+            with zipfile.ZipFile(path) as z:
+                names = [i.filename for i in z.infolist()]
+                pick = next((n for n in names if n.lower().endswith("readme.md") and n.count("/") <= 1), None) \
+                    or next((n for n in names if n.lower().endswith(".md") and "/" not in n), None)
+                if not pick:
+                    return []
+                return z.read(pick).decode("utf-8", "replace").splitlines()[:80]
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return [l.rstrip("\n") for _, l in zip(range(80), f)]
+    except Exception:
+        return []
+
+
+def _plain(t):
+    import re
+    t = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", t)      # [字](連結) → 字
+    t = re.sub(r"[*_`>]+", "", t).strip()
+    return t
+
+
+def report_brief(path, limit=220):
+    """（標題, 簡介）。簡介：有「摘要：」就用；否則取「結論／摘要／重點」標題下第一段；再不然取第一段夠長的正文。"""
+    lines = _md_lines(path)
+    title = next((_plain(l.lstrip("#")) for l in lines if l.strip().startswith("#")), "")
+    for l in lines[:10]:
+        t = l.strip().lstrip("#\"' ").strip()
+        if t.startswith("摘要："):
+            return title, _plain(t[3:])[:limit]
+
+    def para_from(i):
+        buf = []
+        for l in lines[i:]:
+            s = l.strip()
+            if not s:
+                if buf:
+                    break
+                continue
+            if s.startswith(("#", "|", "```", "【未驗證", "日期：", "- [", "!")):
+                if buf:
+                    break
+                continue
+            buf.append(_plain(s.lstrip("-•0123456789. ")))
+        return " ".join(buf)
+
+    for i, l in enumerate(lines):
+        if l.strip().startswith("#") and any(k in l for k in ("結論", "摘要", "重點", "Summary", "TL;DR")):
+            p = para_from(i + 1)
+            if len(p) >= 20:
+                return title, p[:limit] + ("…" if len(p) > limit else "")
+    for i in range(len(lines)):
+        p = para_from(i)
+        if len(p) >= 30:
+            return title, p[:limit] + ("…" if len(p) > limit else "")
+    return title, ""
 
 
 def report_title(path):
