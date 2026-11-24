@@ -547,14 +547,16 @@ function decorate(bub, m){
     if(pre.dataset.cp) return; pre.dataset.cp = "1";
     const txt = pre.innerText;
     const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:6px;align-items:center;margin:4px 0";
-    const lbl = "📋 複製全部（" + txt.split("\n").length + " 行）";
+    // 11-25 Dot 抓到：Marked 輸出的區塊尾端多一個換行，被算成多一行（12 行標成 13、也被收合）→ 只剝尾端一個換行來計數
+    const lineCount = txt.replace(/\n$/, "").split("\n").length;
+    const lbl = "📋 複製全部（" + lineCount + " 行）";
     const b = document.createElement("button"); b.className = "cpblk"; b.textContent = lbl; b.title = "複製這整塊（不含按鈕）";
     b.onclick = e => { e.stopPropagation();
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
         () => { b.textContent = "✓ 已複製"; b.classList.add("ok"); setTimeout(() => { b.textContent = lbl; b.classList.remove("ok"); }, 1500); },
         () => prompt("複製這段：", txt)); };
     bar.append(b);
-    if(txt.split("\n").length > 12){
+    if(lineCount > 12){
       const det = document.createElement("details"); const sum = document.createElement("summary");
       sum.textContent = "展開內容"; det.append(sum); pre.replaceWith(det); det.append(pre); det.before(bar);
     } else pre.before(bar);
