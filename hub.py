@@ -559,7 +559,10 @@ class Room:
             notify_dot(self.name, "使用者", time.strftime("%m-%d %H:%M"), text)  # 群聊名單有 Dot：留點名單
         # 使用者 11-25 05:55：「只問 Codex」改成直接交給電腦Codex（CLI，主線負責人），少一層傳話；
         # 中樞房間裡的 Codex 只在群聊名單、@Codex 接力時才出場。團隊參數「只問Codex轉電腦Codex」=0 可關掉。
-        if target == "codex" and len(picked) <= 1 and _team_param("只問Codex轉電腦Codex", 1):
+        # 使用者 11-25 08:35：Telegram 要另一套設定（在 Telegram 說話＝人不在電腦旁）→ Telegram 來的照舊叫中樞房間的 Codex（即時回），
+        # 網頁來的才轉電腦Codex；兩邊各一個團隊參數
+        if target == "codex" and len(picked) <= 1 and _team_param(
+                "Telegram只問Codex轉電腦Codex" if src == "Telegram" else "只問Codex轉電腦Codex", 0 if src == "Telegram" else 1):
             try:
                 with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as _f:
                     _f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "電腦Codex", "原因": "使用者只問Codex",
