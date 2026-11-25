@@ -179,7 +179,14 @@ def news_router(name, wake, hits):
         raw = pool.ask("groq", prompt, max_tokens=1200, timeout=40)
         m = re.search(r"\{.*\}", raw or "", re.S)
         j = json.loads(m.group(0))
-        return bool(j.get("叫醒")), str(j.get("新聞") or "").strip()
+        news = str(j.get("新聞") or "").strip()
+        # 11-25 16:33 第 5 次誤植：小 AI 不照「逐字摘錄」格式 → 程式檢查：新聞裡要有一段 ≥12 字是候選原文逐字；
+        # 沒有就丟掉它的轉述，改用程式直接摘錄候選原文（不再讓小 AI 改寫誰說了什麼）
+        flat = re.sub(r"\s+", "", "".join(hits))
+        body = re.sub(r"\s+", "", news)
+        if not any(body[i:i + 12] in flat for i in range(0, max(len(body) - 11, 0))):
+            news = "原文摘錄（小 AI 轉述未通過逐字檢查，改用原文）：\n" + "\n".join("・" + h[:160] for h in hits[:3])
+        return bool(j.get("叫醒")), news
     except Exception:
         return True, ""
 
