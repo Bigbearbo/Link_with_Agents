@@ -170,6 +170,9 @@ def news_router(name, wake, hits):
         prompt = (f"你是派報新聞員，替 AI 同事「{name}」整理消息。{name} 關心：{interest}。\n"
                   f"即時叫醒的條件：{wake.get('叫醒條件') or '需要他現在動手（他負責的東西壞了、有人在等他、點名問他），只是資訊更新就放下一期摘要'}。\n"
                   "候選消息：\n" + "\n".join("- " + h for h in hits) +
+                  # 11-25 三次把別人的工作寫成「Claude 宣布 N 分鐘完成」「這屬於 Codex 負責」→ 明令不准推測歸屬、時程
+                  "\n嚴格規則：只寫候選消息裡明寫的事；誰說的、誰負責、多久完成，原文沒寫就不要寫，不准推測或補上時間。"
+                  "負責人以原文寫的為準，原文寫「請 X 驗收」就照寫，不要改成別人。\n"
                   '\n只回 JSON：{"叫醒": true 或 false, "新聞": "2～4 行繁體中文：發生了什麼；為什麼跟他有關；原文在哪（照抄路徑或誰幾點說的）"}')
         raw = pool.ask("groq", prompt, max_tokens=1200, timeout=40)
         m = re.search(r"\{.*\}", raw or "", re.S)
