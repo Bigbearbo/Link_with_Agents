@@ -184,8 +184,10 @@ def news_router(name, wake, hits):
         # 沒有就丟掉它的轉述，改用程式直接摘錄候選原文（不再讓小 AI 改寫誰說了什麼）
         flat = re.sub(r"\s+", "", "".join(hits))
         body = re.sub(r"\s+", "", news)
-        if not any(body[i:i + 12] in flat for i in range(0, max(len(body) - 11, 0))):
-            news = "原文摘錄（小 AI 轉述未通過逐字檢查，改用原文）：\n" + "\n".join("・" + h[:160] for h in hits[:3])
+        # 16:35 Codex：摘對 12 字仍可能把「給別人的建議」報成「你需立即處理」→ 小 AI 只負責判斷叫不叫醒，
+        # 新聞內容一律由程式直接摘錄原文（誰、幾點、原句），不再附小 AI 的「為什麼跟你有關」
+        _ = body, flat
+        news = "原文摘錄：\n" + "\n".join("・" + h[:200] for h in hits[:3])
         return bool(j.get("叫醒")), news
     except Exception:
         return True, ""
