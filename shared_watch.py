@@ -317,6 +317,25 @@ class Throttle:
 ALARM_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "共用區告警.jsonl")
 
 
+def _untracked(rels):
+    """回傳 rels 裡 git 歷史從沒收過的。git 出錯就當全都收過（寧可多告警）。"""
+    if not rels:
+        return []
+    import subprocess
+    rels, tracked = list(rels), set()
+    try:
+        for i in range(0, len(rels), 80):   # Windows 命令列長度上限，分批問
+            # 不能只看 HEAD：刪掉後別人可能已提交（11-26 02:53 改名那批，舊路徑已不在 HEAD）。看全部歷史有沒有收過。
+            p = subprocess.run(["git", "-C", SHARED, "-c", "core.quotepath=false", "log", "--all", "--no-renames", "--format=", "--name-only", "-z", "--"] + rels[i:i + 80],
+                               capture_output=True, timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if p.returncode != 0:
+                return []
+            tracked |= {s.strip("\n") for s in p.stdout.decode("utf-8", "replace").split("\0")}
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [k for k in rels if k not in tracked]
+
+
 class Alarm:
     """不走合併／冷卻：10 分鐘內刪掉 ≥ N 個檔（通知規則「大量刪檔」，預設 10），或敏感檔被刪／一次縮小一半以上。
     feed() 回傳 [(負責人集合, 訊息)]。量測用：每次告警記一行到 logs\\共用區告警.jsonl。"""
@@ -335,6 +354,29 @@ class Alarm:
                 and not os.path.exists(os.path.join(SHARED, k))]   # 讀檔失敗被掃漏的不算刪
         self.recent = [(t, k) for t, k in self.recent if not tmpish(k)]
         out = []
+        # 11-26 流程優化員：今天 3 次大量刪檔告警都是誤報（02:53 改檔名加包號＝搬移；03:47、03:57 子代理清自己剛產的暫存），每次都叫醒 Claude。
+        # 不算「刪」的兩種（敏感檔照舊一律檢查，不受影響）：
+        #  ① 搬移／改名：同內容（sha）在這次快照的新路徑出現。
+        #  ② 新暫存：git 從沒收過（每小時快照都沒趕上），且最後修改在 3 小時內。沒進 git 的舊檔被刪仍照常告警。
+        exempt = {}
+        if gone:
+            new_shas = {v[1] for k, v in snap.items() if k not in prev and len(v) > 1}
+            for k in gone:
+                if len(prev[k]) > 1 and prev[k][1] in new_shas:
+                    exempt[k] = "搬移"
+            fresh = [k for k in gone if k not in exempt and now - prev[k][0] < 3 * 3600]
+            for k in _untracked(fresh):
+                exempt[k] = "新暫存"
+            gone = [k for k in gone if k not in exempt]
+        if len(exempt) >= r["mass_delete"]:   # 量測用：記下「本來會告警、這次放過」的
+            try:
+                os.makedirs(os.path.dirname(ALARM_LOG), exist_ok=True)
+                with open(ALARM_LOG, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"時間": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)), "類": "放過",
+                                        "檔數": len(exempt), "原因": {w: sum(1 for v in exempt.values() if v == w) for w in set(exempt.values())},
+                                        "路徑": sorted(exempt)[:20]}, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
         self.recent = [(t, k) for t, k in self.recent if now - t < self.WINDOW] + [(now, k) for k in gone]
         if len(self.recent) >= r["mass_delete"] and now >= self.mass_until:
             rels = [k for _, k in self.recent]
