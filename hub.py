@@ -462,6 +462,9 @@ class Room:
         if re.match(r"\s*手搓\s*\S", text or "") and _is_handfill_cmd(text):   # 使用者 11-21 09:14：玩手搓當成系統指令，AI 不必起來
             self.add("使用者", text, src)   # add() 會叫手搓網路算並貼回
             return
+        # 使用者 11-25 08:28／08:31：開頭打 cld（＝Claude）是在叫 Claude，即使網頁勾的是只問 Codex 也改成只問 Claude
+        if re.match(r"\s*cld(?![A-Za-z0-9_])", text or "", re.I):
+            target, members = "claude", None
         if (text or "").strip() in ("/用量", "/usage"):   # 使用者 11-24 02:34：聊天指令顯示用量表，不叫醒 AI
             self.add("使用者", text, src)
             self.notice(usage_chat_text())
