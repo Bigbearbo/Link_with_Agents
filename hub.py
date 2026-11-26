@@ -2115,16 +2115,28 @@ def usage_summary():
     from openrouter_usage import REFRESH_SECONDS, account_daily_quota
     from quota_windows import nvidia_window
 
+    # 使用者 11-27 04:29：輝達＝NVIDIA NIM（官網，全部給團隊、不用留），每分鐘限制、沒有每日刷新；
+    # OpenRouter 改成使用者自己用的那列（照舊每天 08:00 重置）。
+    try:
+        import importlib
+        nim = importlib.reload(importlib.import_module("nim_usage")).usage()
+        out.append({"name": "輝達", "windows": [{"label": "近 1 分鐘", "used": round(100 * nim["近1分鐘"] / nim["每分鐘上限"], 1),
+                                                "elapsed": None, "state": "", "resets": "每分鐘滾動（沒有每日上限）", "empty_at": "",
+                                                "count": f"{nim['近1分鐘']}/{nim['每分鐘上限']} 次／分；今天 {nim['今天呼叫']:,} 次"}],
+                    "verdict": "NVIDIA NIM（build.nvidia.com）：免費、不會每天刷新，只限每分鐘約 40 次；全部給團隊用。",
+                    "updated": nim["更新"][5:], "age_min": 0})
+    except Exception:
+        out.append({"name": "輝達", "missing": True})
     quota = account_daily_quota()
     if quota is None:
-        out.append({"name": "輝達", "missing": True})
+        out.append({"name": "OpenRouter（使用者）", "missing": True})
     else:
         window = _usage_window(nvidia_window(quota.used, quota.limit))
         window["count"] = f"{quota.used:,}/{quota.limit:,}"
-        verdict = f"OpenRouter 帳號今天已用 {quota.used:,} 次，剩 {quota.remaining:,} 次。每天台北時間 08:00 重置。"
+        verdict = f"使用者自己用的 OpenRouter：今天已用 {quota.used:,} 次，剩 {quota.remaining:,} 次。每天台北時間 08:00 重置。"
         if quota.age_min >= REFRESH_SECONDS // 60:
             verdict += " 顯示最近一次成功查詢。"
-        out.append({"name": "輝達", "windows": [window], "verdict": verdict, "source": "openrouter_account",
+        out.append({"name": "OpenRouter（使用者）", "windows": [window], "verdict": verdict, "source": "openrouter_account",
                     "checked_at": quota.checked.isoformat(), "updated": quota.checked_local.strftime("%m-%d %H:%M"),
                     "age_min": quota.age_min})
     try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）
@@ -2165,7 +2177,7 @@ def usage_summary():
                     used, rem = round(_CF_CACHE[1] / 100, 1), f"{max(0, 10000 - _CF_CACHE[1]):,.0f} Neurons（Cloudflare 統計）"
             # Codex 04:36 核對：各家重置規則不同，不能都寫 08:00；本機次數和服務回報的剩餘分開標
             RESET = {"groq": "每日 08:00（另有每分鐘限制）", "cloudflare": "每日 08:00（看 Neurons 不看次數）",
-                     "google": "每日 16:00（美西午夜）", "cohere": "試用每月 1,000 次", "nvidia": "日上限未驗證（NIM，不是輝達 OpenCode）"}
+                     "google": "每日 16:00（美西午夜）", "cohere": "試用每月 1,000 次", "nvidia": "沒有每日上限，每分鐘約 40 次（輝達＝NIM，使用者 11-27 04:29）"}
             wins.append({"label": n + ("（NIM）" if n == "nvidia" else ""), "used": used, "elapsed": None, "state": "用量比例待補" if used is None else "",
                          "resets": RESET.get(n, "未查"), "empty_at": "",
                          "count": f"本機今天 {c} 次" + (f"｜服務回報剩 {rem}" if rem is not None else "")})

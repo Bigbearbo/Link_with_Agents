@@ -112,7 +112,7 @@ def nvidia_calls_today():
            "每日預算": NVIDIA_DAILY_BUDGET, "比例": round(n / NVIDIA_DAILY_BUDGET, 3),
            "說明": "OpenCode 這邊的次數（UTC 日，台北 08:00 換日）；聊天室用量條＝這個＋worker 的次數，共用 900。派工員超過 70% 就不再派，90% 群組提醒。預算改 window_agent.NVIDIA_DAILY_BUDGET。"}
     try:
-        with open(r"H:\Agent共用\輝達-用量.json", "w", encoding="utf-8") as f:
+        with open(r"H:\Agent共用\OpenRouter-用量.json", "w", encoding="utf-8") as f:   # 11-27：輝達-用量.json 改由 nim_usage.py 寫（NIM）
             json.dump(rec, f, ensure_ascii=False, indent=1)
     except OSError:
         pass
