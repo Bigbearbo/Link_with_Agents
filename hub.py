@@ -2120,23 +2120,23 @@ def usage_summary():
     try:
         import importlib
         nim = importlib.reload(importlib.import_module("nim_usage")).usage()
-        out.append({"name": "輝達官網（NIM）", "windows": [{"label": "近 1 分鐘", "used": round(100 * nim["近1分鐘"] / nim["每分鐘上限"], 1),
+        out.append({"name": "輝達官網", "windows": [{"label": "近 1 分鐘", "used": round(100 * nim["近1分鐘"] / nim["每分鐘上限"], 1),
                                                 "elapsed": None, "state": "", "resets": "每分鐘滾動（沒有每日上限）", "empty_at": "",
                                                 "count": f"{nim['近1分鐘']}/{nim['每分鐘上限']} 次／分；今天 {nim['今天呼叫']:,} 次"}],
-                    "verdict": "NVIDIA NIM（build.nvidia.com）：免費、不會每天刷新，只限每分鐘約 40 次；全部給團隊用。",
+                    "verdict": "輝達官網＝NVIDIA NIM 金鑰（build.nvidia.com）：免費、不會每天刷新，只限每分鐘約 40 次；全部給團隊用。",
                     "updated": nim["更新"][5:], "age_min": 0})
     except Exception:
-        out.append({"name": "輝達官網（NIM）", "missing": True})
+        out.append({"name": "輝達官網", "missing": True})
     quota = account_daily_quota()
     if quota is None:
-        out.append({"name": "輝達（OpenRouter）", "missing": True})
+        out.append({"name": "輝達", "missing": True})
     else:
         window = _usage_window(nvidia_window(quota.used, quota.limit))
         window["count"] = f"{quota.used:,}/{quota.limit:,}"
-        verdict = f"OpenRouter 輝達（Claude 管理；每天 900 給團隊＋100 留使用者，最後 4 小時線性返還）：今天已用 {quota.used:,} 次，剩 {quota.remaining:,} 次。每天台北時間 08:00 重置。"
+        verdict = f"輝達＝OpenRouter 金鑰（Claude 管理；每天 900 給團隊＋100 留使用者，最後 4 小時線性返還）：今天已用 {quota.used:,} 次，剩 {quota.remaining:,} 次。每天台北時間 08:00 重置。"
         if quota.age_min >= REFRESH_SECONDS // 60:
             verdict += " 顯示最近一次成功查詢。"
-        out.append({"name": "輝達（OpenRouter）", "windows": [window], "verdict": verdict, "source": "openrouter_account",
+        out.append({"name": "輝達", "windows": [window], "verdict": verdict, "source": "openrouter_account",
                     "checked_at": quota.checked.isoformat(), "updated": quota.checked_local.strftime("%m-%d %H:%M"),
                     "age_min": quota.age_min})
     try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）

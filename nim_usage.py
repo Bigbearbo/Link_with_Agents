@@ -52,7 +52,7 @@ def usage(write=True):
     rec = {"更新": time.strftime("%Y-%m-%d %H:%M"), "制度": "每分鐘限制（沒有每日額度、不會每天刷新）",
            "近1分鐘": last60, "每分鐘上限": RPM_USE, "今天呼叫": today, "每日目標": DAILY_TARGET,
            "比例": round(today / DAILY_TARGET, 3),   # 給 總指揮派工 的免費算力提醒用（<30% 就催大家用）
-           "說明": "輝達＝NVIDIA NIM（build.nvidia.com），全部給團隊用（使用者 11-27 04:29）。使用者自己用 OpenRouter。"
+           "說明": "輝達官網＝NVIDIA NIM 金鑰（build.nvidia.com），全部給團隊用（使用者 11-27 04:29／04:48）。「輝達」＝OpenRouter 金鑰（Claude 管理，900＋返還）。"
                    "每分鐘最多 40 次；今天呼叫只是統計，沒有上限。"}
     if write:
         try:
