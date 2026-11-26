@@ -44,7 +44,7 @@ class WindowAgent(rt.Agent):
                                              + "；中樞貼出後自動銷單\n")
         new = not os.path.exists(p)
         with open(p, "a", encoding="utf-8") as f:
-            f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n")
+            f.write(head + f"\n## {time.strftime('%m-%d %H:%M')} 有人找你\n{prompt}\n" + _attach_notes(self.name))
         # 11-19 03:28 使用者：「輝達好像沒收到消息」——原本只有「新單」才叫，輝達回完沒把單移走，
         # 之後同一張單一直追加卻不再叫。改成：新單、或距離上次叫醒超過 NUDGE_GAP 秒就再叫一次（避免一直插話）。
         # DeepSeek 03:29：同一張單最多叫 NUDGE_MAX 次（避免它慢時疊出重複處理）；它在忙就先不叫
@@ -165,6 +165,18 @@ def nvidia_total_today():
 
 
 LAST_ROOM = {}  # 最後一次叫醒是為了哪個房間；OpenCode 忙碌時「工作中」就顯示在那個房間
+
+
+def _attach_notes(name):
+    """訂閱\\<誰>.json 自訂提醒標「附在單上」且條件成立的，附在留單尾（提醒.attach_notes；壞了就不附）。Gemini 11-27 提案 002 通用版。"""
+    try:
+        import importlib.util as _u
+        s = _u.spec_from_file_location("提醒_附帶", r"H:\Agent共用\專案\團隊系統\提醒.py")
+        m = _u.module_from_spec(s)
+        s.loader.exec_module(m)
+        return m.attach_notes(name)
+    except Exception:
+        return ""
 
 
 def opencode_busy(name):

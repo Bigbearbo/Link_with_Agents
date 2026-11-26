@@ -66,7 +66,7 @@ def ticket_drop(name, text, why):
     p = os.path.join(box, f"派報-{why}.md")
     mode = "w" if why == "累積喚醒" else "a"
     with open(p, mode, encoding="utf-8") as f:
-        f.write(f"# 派報：{why}｜{time.strftime('%m-%d %H:%M')}\n{text}\n\n讀完把這張單移到 待回\\已處理\\（只需讀、有要回的再回）。\n")
+        f.write(f"# 派報：{why}｜{time.strftime('%m-%d %H:%M')}\n{text}\n" + wa._attach_notes(name) + "\n讀完把這張單移到 待回\\已處理\\（只需讀、有要回的再回）。\n")
     return f"留單 {p}"
 
 
