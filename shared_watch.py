@@ -359,6 +359,7 @@ class Alarm:
         #  ① 搬移／改名：同內容（sha）在這次快照的新路徑出現。
         #  ② 新暫存：git 從沒收過（每小時快照都沒趕上），且最後修改在 3 小時內。沒進 git 的舊檔被刪仍照常告警。
         exempt = {}
+        gone_all = list(gone)   # Dot 11-26 13:53：敏感檔檢查要用豁免前的清單（豁免只給「大量刪檔」用）
         if gone:
             new_shas = {v[1] for k, v in snap.items() if k not in prev and len(v) > 1}
             for k in gone:
@@ -387,7 +388,7 @@ class Alarm:
             where = "、".join(f"{k}（{n}）" for k, n in sorted(top.items(), key=lambda x: -x[1])[:4])
             out.append((owners, "大量刪檔", rels, f"10 分鐘內共用區刪掉 {len(rels)} 個檔，主要在 {where}。"))
             self.mass_until = now + self.WINDOW
-        hits = [(k, "被刪除") for k in gone if sens(k)]
+        hits = [(k, "被刪除" + ("（搬移）" if exempt.get(k) == "搬移" else "")) for k in gone_all if sens(k)]
         for k, v in snap.items():
             old = prev.get(k)
             if old and len(old) > 2 and len(v) > 2 and old[2] >= 200 and v[2] < old[2] * 0.5 and sens(k):
