@@ -14,7 +14,7 @@ import time
 LEDGER = r"H:\Agent共用\ai-call\免費AI池-用量.jsonl"
 OUT = r"H:\Agent共用\輝達-用量.json"
 RPM_LIMIT = 40          # 官方預設（不保證）
-RPM_USE = 40            # 使用者 04:29：不用留給使用者，全部給團隊
+RPM_USE = 30            # 使用者 04:29 不用留；11-27 05:00 實測 6 並行約 35 次／分就開始 429（Too Many Requests，不是日額度）→ 排隊設 30
 DAILY_TARGET = 3000     # 不是上限：總指揮用來判斷「今天用得少、該派工」（平均約 2 次／分鐘）
 
 
