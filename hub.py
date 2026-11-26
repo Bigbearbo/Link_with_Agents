@@ -280,8 +280,8 @@ class Room:
             except OSError:
                 pass
         _pick = [("nvidia" if x.lower() == "nim" else x) for x in
-                 re.findall(r"@(groq|cohere|nvidia|nim|cloudflare|google)\b", text or "", re.I)] if who == "使用者" else []  # @nim＝NVIDIA NIM，不會被當成 @輝達
-        if who == "使用者":   # 「問大家」名單裡設成「群」的小 AI（user_says 放進來，用一次就清掉）
+                 re.findall(r"@(groq|cohere|nvidia|nim|cloudflare|google)\b", text or "", re.I)] if who == "使用者" and kind != "command" else []  # @nim＝NVIDIA NIM，不會被當成 @輝達
+        if who == "使用者" and kind != "command":   # 「問大家」名單裡設成「群」的小 AI（user_says 放進來，用一次就清掉）
             _pick += getattr(self, "_group_small", [])
             self._group_small = []
         if _pick:
@@ -305,7 +305,7 @@ class Room:
                     except Exception as e:
                         self.notice(f"小AI·{n} 叫不動：{type(e).__name__} {str(e)[:80]}")
             threading.Thread(target=_small, daemon=True).start()
-        if who == "使用者" and re.match(r"^\s*手搓\s*\S", text or ""):   # 11-21 09:1x：也收大學題「手搓 模 17 5」與「手搓 說明」
+        if who == "使用者" and kind == "command":   # 11-21 09:1x：也收大學題「手搓 模 17 5」與「手搓 說明」
             # 使用者 11-20 08:15「期待手搓網路能做點小事」：行首「手搓 33*3」→ 手搓 v2 網路真的算一遍（手搓計算.py）
             def _calc(t=text):
                 try:
@@ -339,7 +339,7 @@ class Room:
                     msg = f"🎧 報錯接線生出錯了（{type(e).__name__}），這則請 @Claude 直接看。"
                 self.notice(msg)
             threading.Thread(target=_support, daemon=True).start()
-        if who not in ("系統", "有下文 Codex") and "@有下文" in (text or ""):
+        if kind != "command" and who not in ("系統", "有下文 Codex") and "@有下文" in (text or ""):
             # 使用者 11-20 02:36：給《有下文》視窗一個身分，讓其他 AI 能送信給它 → 房間裡 @有下文 就自動投一封信到它的信箱（Codex 建的檔案信箱）
             try:
                 box = r"H:\Agent共用\agent-通訊\有下文\待處理"
@@ -352,14 +352,14 @@ class Room:
                 threading.Timer(1, lambda: self.notice(f"📮 已轉一封信給有下文 Codex（mail-{mid}），它開工時會看，回條在 agent-通訊\\有下文\\回覆\\。")).start()
             except OSError as e:
                 log(f"轉信給有下文失敗：{e}")
-        if who != "系統" and ("轉譯" in (text or "")[:12]):   # 轉譯提案（使用者 14:48）
+        if kind != "command" and who != "系統" and ("轉譯" in (text or "")[:12]):   # 轉譯提案（使用者 14:48）
             try:
                 msg = dialect.handle_proposal(who, text, set(self.hub.rooms))
                 if msg:
                     threading.Timer(1, lambda m=msg: self.notice(m)).start()
             except Exception as e:
                 log(f"轉譯提案處理失敗：{e}")
-        if who != "系統" and ("放寬" in (text or "")[:20]):
+        if kind != "command" and who != "系統" and ("放寬" in (text or "")[:20]):
             try:
                 msg = relax.handle(who, text, lambda n, dirs, by: grant_write(n, dirs, self.name, by))
                 if msg:
@@ -396,7 +396,7 @@ class Room:
             self.transcript.append(entry)
             idx = len(self.transcript) - 1
             self.hub.save()
-        if who != "Dot" and (re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I)
+        if kind != "command" and who != "Dot" and (re.search(r"(?m)^\s*@Dot(?![A-Za-z])|DOT_REQUEST", text or "", re.I)
                              or (who == "使用者" and kind != "note" and (self.solo == "dot" or (text or "").startswith("（只問 Dot）")))):
             notify_dot(self.name, who, entry["time"], text)  # Dot 不在線：留一張點名單，Dot 巡檢時看到再回
         # 使用者 11-25 06:39：「共用區有變動」只留網頁，不用貼到 Telegram
@@ -460,7 +460,7 @@ class Room:
 
     def user_says(self, text, src, target="both", members=None):
         if re.match(r"\s*手搓\s*\S", text or "") and _is_handfill_cmd(text):   # 使用者 11-21 09:14：玩手搓當成系統指令，AI 不必起來
-            self.add("使用者", text, src)   # add() 會叫手搓網路算並貼回
+            self.add("使用者", text, src, kind="command")   # add() 會叫手搓網路算並貼回
             return
         # 使用者 11-25 08:28／08:31：開頭打 cld（＝Claude）是在叫 Claude，即使網頁勾的是只問 Codex 也改成只問 Claude
         if re.match(r"\s*cld(?![A-Za-z0-9_])", text or "", re.I):
@@ -1264,6 +1264,11 @@ class Hub:
         first = text.split(" ", 1)[0]
         if first.startswith("/") and "@" in first and not first.lower().endswith(mention.lower()):
             return  # 給別的 bot 的指令
+        try:
+            import pc_presence
+            pc_presence.note_telegram(msg.get("date"))
+        except OSError as e:
+            log(f"無法更新 Telegram 使用狀態：{type(e).__name__}")
         text = re.sub(re.escape(mention), "", text, flags=re.I).strip()
         word = text.split(" ", 1)[0].split("@")[0].lower() if text.startswith("/") else ""
         arg = text.split(" ", 1)[1].strip() if " " in text else ""
@@ -1418,6 +1423,16 @@ def make_handler(hub):
                 if not self._authed():
                     return self._json({"error": "forbidden"}, 403)
                 self._json(usage_summary())
+            elif u.path == "/api/pc-presence":
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                import pc_presence
+                self._json(pc_presence.payload())
+            elif u.path == "/api/resources":
+                if not self._authed():
+                    return self._json({"error": "forbidden"}, 403)
+                import resource_snapshot
+                self._json(resource_snapshot.payload())
             elif u.path == "/api/restart_at":   # 使用者 11-20 08:34：要關中樞前顯示倒數（restart_when_idle.ps1 寫 restart-countdown.txt）
                 try:
                     at = int(open(os.path.join(HERE, "restart-countdown.txt"), encoding="ascii").read().strip())
@@ -1539,6 +1554,16 @@ def make_handler(hub):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif u.path == "/whiteboard":   # 使用者 11-26 22:34：「白板幫我放在上方條（待討論那裡）」
+                if not self._authed(q):
+                    return self._json({"error": "請用啟動程式開啟的網址"}, 403)
+                import importlib
+                body = importlib.reload(importlib.import_module("白板頁")).page(q.get("k", [""])[0], q.get("f", [""])[0]).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
             elif u.path == "/rules":   # 使用者 11-22 01:38 網頁工單 #62：規則＋團隊目標條列，新增／提意見都開工單
                 if not self._authed(q):
                     return self._json({"error": "請用啟動程式開啟的網址"}, 403)
@@ -1574,6 +1599,17 @@ def make_handler(hub):
                     room.user_says(text, "電腦", data.get("target") if data.get("target") in ("claude", "codex", "gemini", "nvidia", "deepseek", "dot") else "both",
                                    members=[m for m in mem if isinstance(m, str)] if isinstance(mem, list) else None)
                 return self._json({"ok": True})
+            if p == "/api/pc-presence":
+                if "mode" in data:
+                    import pc_presence
+                    mode = data["mode"]
+                    if not isinstance(mode, str) or mode not in pc_presence.MODES:
+                        return self._json({"error": "invalid PC mode"}, 400)
+                    return self._json(pc_presence.set_mode(mode))
+                if type(data.get("unused")) is not bool:
+                    return self._json({"error": "unused must be boolean"}, 400)
+                import pc_presence
+                return self._json(pc_presence.set_manual(data["unused"]))
             if p == "/api/open":   # 設定頁「📂 資料夾入口」：在檔案總管開啟（只開 資料夾入口.ENTRIES 裡的路徑；使用者 11-21 02:35）
                 import importlib
                 return self._json({"ok": importlib.import_module("資料夾入口").open_dir(data.get("path"))})
@@ -1905,6 +1941,53 @@ def auto_loop(hub):
         time.sleep(60)
 
 
+NVIDIA_GOAL = r"H:\免費模型用\目標.md"
+
+
+def nvidia_window_auto_loop(hub):
+    """使用者 11-22 19:22：輝達搬進 OpenCode 視窗後（11-18）AUTO_AGENTS 清空，定時喚醒就斷了，
+    它卻以為「中樞每 30 分叫一次」。改走視窗通道：照目標檔「喚醒：N分」叫它，視窗忙、有權限等人按、用量超前就跳過。"""
+    import window_agent as wa
+    last = 0
+    time.sleep(180)
+    while True:
+        try:
+            head = open(NVIDIA_GOAL, encoding="utf-8", errors="replace").read(400) if os.path.exists(NVIDIA_GOAL) else ""
+            if "狀態：進行中" in head or "狀態:進行中" in head:
+                m = re.search(r"喚醒[間隔]*[：:]\s*(\d+)\s*分", head)
+                base_gap = max(10, min(240, int(m.group(1)))) * 60 if m else 1800
+                ok, gap, _steps = _auto_pace("nvidia", base_gap)
+                # 使用者 11-23 11:0x：「輝達怎麼一直刷同樣的輸出」——目標檔內容（去掉「更新：」行）跟上次叫醒時一樣＝沒進度：
+                # 連續 2 次沒進度就不再叫，改發一則通知給 Claude 派新單，直到目標檔內容有變
+                body = re.sub(r"^更新：.*$", "", open(NVIDIA_GOAL, encoding="utf-8", errors="replace").read(), flags=re.M)
+                sig = hash(body)
+                same = getattr(nvidia_window_auto_loop, "same", 0)
+                if sig == getattr(nvidia_window_auto_loop, "sig", None) and same >= 2:
+                    if not getattr(nvidia_window_auto_loop, "warned", False):
+                        nvidia_window_auto_loop.warned = True
+                        try:
+                            with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as _f:
+                                _f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "Claude", "原因": "輝達沒進度",
+                                                     "內容": "輝達連續 2 次自主時段目標檔沒變（重複回報），已停叫；請派新單或改目標檔「下一步」"}, ensure_ascii=False) + "\n")
+                        except OSError:
+                            pass
+                        log("[我 vs 輝達] 目標檔連續沒進度，暫停自主叫醒，通知 Claude")
+                    time.sleep(60)
+                    continue
+                if ok and time.time() - last >= gap and not wa.opencode_busy("輝達") and not wa.pending_permissions("輝達"):
+                    last = time.time()
+                    nvidia_window_auto_loop.same = same + 1 if sig == getattr(nvidia_window_auto_loop, "sig", None) else 0
+                    nvidia_window_auto_loop.sig = sig
+                    if nvidia_window_auto_loop.same == 0:
+                        nvidia_window_auto_loop.warned = False
+                    r = wa.nudge("輝達", "solo-nvidia", custom="【中樞通知】" + AUTO_PROMPT.format(goal=NVIDIA_GOAL)
+                                 + "回報發在房間 solo-nvidia（發送箱 room 寫 solo-nvidia）。目標檔「下一步」若在等別人，先去待辦領一件自己能做的（python H:\\Agent共用\\待辦\\待辦.py 誰 輝達）。")
+                    log(f"[我 vs 輝達] 自主工作時段（視窗）：{r}")
+        except Exception as e:
+            log(f"輝達視窗自主時段錯誤：{e}")
+        time.sleep(60)
+
+
 DOT_DIR = r"H:\Agent共用\給Dot"
 
 
@@ -1981,7 +2064,9 @@ def _usage_window(w, label=None):
 
 
 def usage_summary():
-    """網頁側邊用量表：Claude、Codex、Gemini 讀共用區的用量檔；輝達讀 OpenRouter worker 的當日計數。"""
+    """網頁側邊用量表：Claude、Codex、Gemini 讀共用區的用量檔；輝達顯示 OpenRouter 帳號當日免費請求額度。"""
+    from quota_windows import deepseek_windows
+
     out = []
     for name, fn in (("Claude", "claude-用量.json"), ("Codex", "codex-用量.json"), ("Gemini", "gemini-用量.json")):
         p = os.path.join(r"H:\Agent共用", fn)
@@ -2027,31 +2112,29 @@ def usage_summary():
         out.append({"name": name, "windows": wins, "verdict": verdict,
                     "updated": upd[5:16].replace("T", " ") if len(upd) >= 16 else upd,
                     "age_min": int((time.time() - os.path.getmtime(p)) / 60)})
-    try:  # 輝達：worker 的 UTC 日計數（台北 08:00 換日），上限 900（已扣保留）
-        import datetime
-        paths = json.load(open(r"H:\Agent共用\ai-call\paths.json", encoding="utf-8"))
-        b = json.load(open(paths.get("budget", r"D:\Codex用\work\openrouter-worker\budget.json"), encoding="utf-8"))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        import window_agent as _wa
-        used, _w, oc = _wa.nvidia_total_today() or (b.get("attempts", 0) if b.get("day") == now.date().isoformat() else 0, 0, 0)
-        elapsed = (now.hour * 3600 + now.minute * 60 + now.second) / 864
-        pct = used / 9
-        state = "正常" if elapsed < 3 or pct <= elapsed else "略快" if pct <= elapsed * 1.2 else "超速"
-        out.append({"name": "輝達", "windows": [{"label": "今天", "used": round(pct, 1), "elapsed": round(elapsed, 1),
-                                                "state": state, "resets": "08:00", "empty_at": "",
-                                                "count": f"{used}/900"}],
-                    "verdict": f"今天 {used}/900 次（依 OpenCode 紀錄數的；網站數字沒辦法自動查，每週手動對一次；台北 08:00 換日）", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
-    except Exception:
+    from openrouter_usage import REFRESH_SECONDS, account_daily_quota
+    from quota_windows import nvidia_window
+
+    quota = account_daily_quota()
+    if quota is None:
         out.append({"name": "輝達", "missing": True})
+    else:
+        window = _usage_window(nvidia_window(quota.used, quota.limit))
+        window["count"] = f"{quota.used:,}/{quota.limit:,}"
+        verdict = f"OpenRouter 帳號今天已用 {quota.used:,} 次，剩 {quota.remaining:,} 次。每天台北時間 08:00 重置。"
+        if quota.age_min >= REFRESH_SECONDS // 60:
+            verdict += " 顯示最近一次成功查詢。"
+        out.append({"name": "輝達", "windows": [window], "verdict": verdict, "source": "openrouter_account",
+                    "checked_at": quota.checked.isoformat(), "updated": quota.checked_local.strftime("%m-%d %H:%M"),
+                    "age_min": quota.age_min})
     try:  # DeepSeek：付費，看本機花費帳（每日／每月上限在 H:\Agent共用\ai-call\deepseek\設定.json）
         import deepseek_agent as dsa
         ds = dsa._ds()
         d, m = ds.spent()
         c = ds.conf()
         dl, ml = c["每日上限美元"], c["每月上限美元"]
-        out.append({"name": "DeepSeek", "windows": [
-            {"label": "今天", "used": round(100 * d / dl, 1), "elapsed": None, "state": "", "resets": "00:00", "empty_at": ""},
-            {"label": "本月", "used": round(100 * m / ml, 1), "elapsed": None, "state": "", "resets": "", "empty_at": ""}],
+        windows = [_usage_window(w) for w in deepseek_windows(d, m, dl, ml)]
+        out.append({"name": "DeepSeek", "windows": [w for w in windows if w is not None],
             "verdict": f"今天 ${d:.3f}／${dl}，本月 ${m:.3f}／${ml}", "updated": time.strftime("%m-%d %H:%M"), "age_min": 0})
     except Exception:
         out.append({"name": "DeepSeek", "missing": True})
@@ -2069,7 +2152,7 @@ def usage_summary():
         for n, s in u.get("服務", {}).items():
             c = led.get(n, 0) if led is not None else (s.get("今天次數", 0) if s.get("日") == today else 0)
             lim, rem = s.get("上限"), s.get("剩餘") if s.get("日") == today else s.get("上限")
-            used = round(100 * (lim - rem) / lim, 1) if lim and rem is not None else 0
+            used = round(100 * (lim - rem) / lim, 1) if lim and rem is not None else None
             if s.get("贈點"):   # Claude／OpenAI 贈點：顯示本機估算花費／額度
                 spent = _pool.credit_spent(n) if _pool else (s.get("已用美元") or 0)
                 wins.append({"label": n + "（贈點）", "used": round(100 * spent / s["贈點"], 1), "elapsed": None, "state": "",
@@ -2083,7 +2166,7 @@ def usage_summary():
             # Codex 04:36 核對：各家重置規則不同，不能都寫 08:00；本機次數和服務回報的剩餘分開標
             RESET = {"groq": "每日 08:00（另有每分鐘限制）", "cloudflare": "每日 08:00（看 Neurons 不看次數）",
                      "google": "每日 16:00（美西午夜）", "cohere": "試用每月 1,000 次", "nvidia": "日上限未驗證（NIM，不是輝達 OpenCode）"}
-            wins.append({"label": n + ("（NIM）" if n == "nvidia" else ""), "used": used, "elapsed": None, "state": "",
+            wins.append({"label": n + ("（NIM）" if n == "nvidia" else ""), "used": used, "elapsed": None, "state": "用量比例待補" if used is None else "",
                          "resets": RESET.get(n, "未查"), "empty_at": "",
                          "count": f"本機今天 {c} 次" + (f"｜服務回報剩 {rem}" if rem is not None else "")})
         if wins:
@@ -2761,6 +2844,7 @@ if __name__ == "__main__":
 
     threading.Thread(target=hub.shared_loop, daemon=True).start()
     threading.Thread(target=auto_loop, args=(hub,), daemon=True).start()
+    threading.Thread(target=nvidia_window_auto_loop, args=(hub,), daemon=True).start()   # 11-22：輝達視窗定時喚醒
 
     def drive_post_loop():
         """App 裡的 AI 從雲端硬碟「群組發言」資料夾貼文（drive_post.py；使用者 11-19）。走自己的 /api/agent_says，跟其他發言同一套去重與點名。"""
@@ -3024,7 +3108,7 @@ if __name__ == "__main__":
                             except OSError:
                                 pass
                 # 使用者 11-21 01:35／01:41：一個來源兩種輸出 → 每 10 分鐘把給 AI 讀的版本刷新（用量、產線、中樞參數）
-                for _mod, _fn in (("用量摘要", "write"), ("產線", None), ("中樞參數", None), ("資料夾入口", "write")):
+                for _mod, _fn in (("用量摘要", "write"), ("產線", None), ("中樞參數", None), ("資料夾入口", "write"), ("resource_snapshot", "write"), ("pc_presence", "write")):
                     try:
                         import importlib
                         _m = importlib.import_module(_mod)
@@ -3368,7 +3452,8 @@ if __name__ == "__main__":
         if r.solo:  # 一對一房不自動補答（Gemini／輝達／Dot 都不在重開時補）
             continue
         t = r.transcript
-        last_user = max((i for i, m in enumerate(t) if m["who"] == "使用者" and m.get("kind") != "note"), default=None)
+        last_user = max((i for i, m in enumerate(t) if m["who"] == "使用者" and m.get("kind") not in ("note", "command")
+                         and not (re.match(r"\s*手搓\s*\S", m["text"]) and _is_handfill_cmd(m["text"]))), default=None)
         if last_user is None:
             continue
         text = t[last_user]["text"]

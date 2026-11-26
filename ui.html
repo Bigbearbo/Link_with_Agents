@@ -281,7 +281,7 @@ body.fold .m-sys .bubble::after{display:none}
 <main id="main"><div class="wrap" id="list"></div></main>
 <aside id="usage"><h3>大家的用量 <small id="usageTime"></small></h3><div id="usageList">載入中…</div>
 <div class="u-legend">色條＝已用；黑線＝時間窗已過多少。色條超過黑線＝用得比時間快。</div></aside>
-<aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button><button data-p="board">訊息版</button>
+<aside id="sidePane" hidden><div id="sideGrip" title="拖曳調整寬度"></div><div class="side-tabs"><button data-p="decide">待討論</button><button data-p="whiteboard">白板</button><button data-p="research">研究</button><button data-p="changes">變動</button><button data-p="settings">設定</button><button data-p="board">訊息版</button>
 <span class="spacer"></span><button id="sideMax" title="放大成整頁／還原（左邊聊天縮掉）">⤢</button><button id="sideReload" title="重新整理">↻</button><button id="sideClose" title="收起">✕</button></div>
 </aside>
 <aside id="marks" aria-label="書籤列">
@@ -328,6 +328,7 @@ body.fold .m-sys .bubble::after{display:none}
     <button id="stop">停止</button>
     <button id="new">新討論</button>
     <button id="decide" hidden>待討論</button>
+    <button id="whiteboard" title="讀題路線白板（使用者 11-26 22:34）">白板</button>
     <button id="research" hidden>研究</button>
     <button id="changes" hidden>變動</button>
   </div>
@@ -718,7 +719,7 @@ async function loadUsage(){
                      w.goal != null ? `${esc(w.goal_label || "目標")}：該到 ${Math.round(w.goal)}%（虛線）` : "",
                      w.resets ? `${esc(w.resets)} 重置` : ""].filter(Boolean).join("・");
         return `<div class="u-win"><div class="u-row"><span>${esc(w.label)}</span><b>${right}</b></div>
-          <div class="u-bar"><div class="u-fill ${cls}" style="width:${Math.min(100,w.used)}%"></div>${tick}</div>
+          ${w.used == null ? "" : `<div class="u-bar"><div class="u-fill ${cls}" style="width:${Math.min(100,w.used)}%"></div>${tick}</div>`}
           <div class="u-row"><span>${sub}</span></div></div>`;
       }).join("");
       const hot = /超速|要省/.test(a.verdict||"");
@@ -1057,7 +1058,7 @@ document.querySelectorAll("#target button[data-t]:not(.skip)").forEach(b => b.on
 });
 $("#write").onchange = e => api("/api/write", {on: e.target.checked});
 // 使用者 11-20 00:46：待討論／研究／變動不要開新分頁，放右邊、切換型
-const SIDE_PAGES = {rules: ["規則", "/rules"], review: ["待審", "/review"], decide: ["待討論", "/decisions"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["工單＋報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
+const SIDE_PAGES = {rules: ["規則", "/rules"], review: ["待審", "/review"], decide: ["待討論", "/decisions"], whiteboard: ["白板", "/whiteboard"], research: ["研究", "/research"], changes: ["變動", "/changes"], settings: ["設定", "/settings"], board: ["訊息版", "/board"], pipeline: ["產線", "/pipeline"], wiki: ["知識庫", "/wiki"], errors: ["工單＋報錯", "/errors"]};   // 中文路徑瀏覽器會編碼成 %E5…，中樞比不到（網頁巡檢員 11-20 抓到）
 function openSide(name, hash, keep){
   const pane = $("#sidePane"), k = encodeURIComponent(new URLSearchParams(location.search).get("k") || "");
   if(hash){   // 定位到某一列（本房設定）
