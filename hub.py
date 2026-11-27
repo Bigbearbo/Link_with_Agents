@@ -564,14 +564,27 @@ class Room:
         if target == "codex" and len(picked) <= 1 and _team_param(
                 "Telegram只問Codex轉電腦Codex" if src == "Telegram" else "只問Codex轉電腦Codex", 0 if src == "Telegram" else 1):
             try:
-                with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as _f:
-                    _f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "電腦Codex", "原因": "使用者只問Codex",
-                                         "內容": f"使用者在「{self.name}」只問你：{text}\n請直接回在那個房間（照你平常回群組的方式）。"},
-                                        ensure_ascii=False) + "\n")
-                threading.Timer(1, lambda: self.notice("已轉給電腦Codex（它讀收件檔後回在這裡）。")).start()
+                # 11-27 使用者「他手上沒在做事…是推送機制問題」：原本寫叫醒請求→派報生（約 1 分）→收件檔→電腦Codex 的監看
+                # 等 3 分＋每 2 分一輪才 queue，整條約 10 分。改成中樞直接寫收件檔、立刻用同一條 codex queue 叫醒他；
+                # 他自己的監看（H:\Codex用\outputs\inbox-watch）照舊當備援。
+                import 派報生
+                body = f"使用者在「{self.name}」只問你：{text}\n請直接回在那個房間（照你平常回群組的方式）。"
+                box = 派報生.inbox_drop("電腦Codex", body, "使用者只問Codex")
+                threading.Thread(target=_queue_codex_cli, args=(f"【收件：使用者只問 Codex，請先回】\n收件檔：{box}",),
+                                 daemon=True).start()
+                threading.Timer(1, lambda: self.notice("已轉給電腦Codex（已直接叫醒，它讀收件檔後回在這裡）。")).start()
                 return
-            except OSError:
-                pass
+            except Exception as e:
+                log(f"只問Codex 直接叫醒失敗，改走叫醒請求：{type(e).__name__} {e}")
+                try:
+                    with open(os.path.join(HERE, "logs", "派報", "叫醒請求.jsonl"), "a", encoding="utf-8") as _f:
+                        _f.write(json.dumps({"時間": time.strftime("%m-%d %H:%M"), "給": "電腦Codex", "原因": "使用者只問Codex",
+                                             "內容": f"使用者在「{self.name}」只問你：{text}\n請直接回在那個房間（照你平常回群組的方式）。"},
+                                            ensure_ascii=False) + "\n")
+                    threading.Timer(1, lambda: self.notice("已轉給電腦Codex（它讀收件檔後回在這裡）。")).start()
+                    return
+                except OSError:
+                    pass
         seq = [a for p in picked for a in self.seq_for(p)] if len(picked) > 1 else self.seq_for(target)
         # 使用者 11-20 08:21「回復排序還沒修，似乎一起說」：忙碌那位的分身原本立刻開講，會搶在排它前面的人之前。
         # 改成：分身等排在它前面、這輪會講的人都在使用者這句之後發過言（最多等 10 分鐘），才開講。
@@ -2316,6 +2329,20 @@ def _team_param(name, default):
         return json.load(open(r"H:\Agent共用\團隊參數.json", encoding="utf-8"))[name]["值"]
     except Exception:
         return default
+
+
+def _queue_codex_cli(message):
+    """直接叫醒電腦Codex：用他收件監看同一條路（codex queue --thread <他的對話> --resume）。
+    thread／codex.exe 讀他自己的設定 H:\\Codex用\\work\\inbox-watch\\config.json（唯讀）。"""
+    try:
+        cfg = json.load(open(r"H:\Codex用\work\inbox-watch\config.json", encoding="utf-8"))
+        r = subprocess.run([cfg["codex"], "queue", "--thread", cfg["thread"], "--message", message, "--resume"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        ok = "Queued message" in (r.stdout or "")
+        log(f"只問Codex：直接叫醒電腦Codex {'成功' if ok else '沒確認'}（rc={r.returncode}）")
+    except Exception as e:
+        log(f"只問Codex：直接叫醒電腦Codex 失敗 {type(e).__name__} {e}（監看備援仍會叫）")
 
 
 def usage_pressure(who):
