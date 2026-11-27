@@ -634,6 +634,9 @@ class Room:
                     if terminal:   # 流程優化員 11-21：終端機分身回過的訊息，主線下一輪不要再當「新訊息」重送（01:49 那則被送 4 次）
                         with self.hub.lock:
                             self.term_seen = max(self.term_seen, len(snapshot))
+                    else:   # 11-27 使用者「電腦CODEX增殖成2個」：Codex 分身回過的，主線做完 pending 重跑時又回同一則（5704 被回兩次）→ 記下分身看到哪
+                        with self.hub.lock:
+                            agent.side_seen = max(getattr(agent, "side_seen", 0), len(snapshot))
                     self.add(agent.name, reply, "回覆", kind="side")
                     log(f"[{self.name}] {agent.name} 分身先回答了新訊息")
                 else:
@@ -863,7 +866,7 @@ class Room:
         except Exception as e:
             live["done"] = True
             if live["idx"] is not None:
-                agent.seen = len(snapshot)  # 已經說出口的話保留，不算白講
+                agent.seen = max(len(snapshot), getattr(agent, "side_seen", 0))  # 已經說出口的話保留，不算白講
                 tg_progress("⚠️ 這輪中途失敗")
             if not self.stop_flag:
                 log(f"[{self.name}] {agent.name} 失敗：{e}")
@@ -876,7 +879,7 @@ class Room:
             agent.on_say = None
             agent.anchor = None
             agent.report_progress = None
-        agent.seen = len(snapshot)  # 自己的發言會被過濾；途中新增的訊息下次看得到
+        agent.seen = max(len(snapshot), getattr(agent, "side_seen", 0))  # 自己的發言會被過濾；途中新增的訊息下次看得到；分身回過的不再重答（11-27 使用者：Codex 增殖成 2 個）
         agent.extra_allow = []      # 允許一次：用完即清
         if live["idx"] is None:
             # 很快就做完（或沒有中途說話）：只貼一則，就是最後的結論
