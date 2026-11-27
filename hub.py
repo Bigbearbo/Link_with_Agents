@@ -2291,8 +2291,16 @@ def render_perm_page():
     out += ["", "## 各視窗自己的「永久允許」（中樞只讀抓出來；Gemini 03:18 建議）",
             "你在 agy／OpenCode／Claude Code 視窗裡按的「永遠允許」存在它們自己的設定檔，列在這裡讓大家看得到。"]
     out += window_allow_lists()
+    new = "\n".join(out) + "\n"
+    try:   # 內容沒變（只差「更新：」時間）就不重寫，免得每小時觸發「權限」派報（Claude 11-27）
+        old = open(PERM_PAGE, encoding="utf-8").read()
+        strip = lambda s: re.sub(r"^更新：[^｜\n]*", "", s, count=1, flags=re.M)
+        if strip(old) == strip(new):
+            return
+    except OSError:
+        pass
     with open(PERM_PAGE, "w", encoding="utf-8") as f:
-        f.write("\n".join(out) + "\n")
+        f.write(new)
 
 
 CORRECTION_RE = re.compile(r"^(我是指|我是說|我指的是|不是這個意思|你(們)?誤會|你(們)?搞錯|你(們)?理解錯|我的意思是|不是啦|不對，)|誤會了|搞錯了|歪錯重點")   # 使用者更正的說法（16:36 待補註解）
