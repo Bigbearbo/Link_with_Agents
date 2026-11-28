@@ -5,6 +5,7 @@
 終端機端（Claude Code 用 Monitor 執行）：
     python terminal_bridge.py watch      持續寫心跳，每有新請求就印一行通知
     python terminal_bridge.py show <id>  印出請求內容
+    python terminal_bridge.py heartbeat auto   心跳；Claude Code 重開／--continue 後自動換綁最新的 CLI pid
     （回覆：把文字寫進 terminal/outbox/<id>.txt）
 """
 import json
@@ -148,23 +149,97 @@ def watch():
         time.sleep(5)
 
 
-def heartbeat(pid):
-    """獨立的心跳：只要終端機那個 Claude Code（pid）還開著就持續寫心跳。
-    不跟 Monitor 綁在一起，Claude 忙著做別的事或 Monitor 重開的空檔，房間也不會誤判它離線而叫備援。"""
-    import ctypes
-    _ensure()
-    k32 = ctypes.windll.kernel32
+HB_LOG = os.path.join(HERE, "logs", "終端機心跳.log")
+HB_RUNNER = os.path.join(BASE, "heartbeat_runner.pid")
+CLI_EXE = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe").lower()
 
-    def alive():
-        h = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
+
+def _hb_log(msg):
+    try:
+        with open(HB_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%m-%d %H:%M:%S')}\t{msg}\n")
+    except OSError:
+        pass
+
+
+def _proc_info(pid):
+    """回傳 (是否還活著, 執行檔路徑小寫, 建立時間)；打不開回 (False, '', 0)。"""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    h = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return False, "", 0
+    try:
         code = ctypes.c_ulong()
         ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+        buf = ctypes.create_unicode_buffer(1024)
+        n = wintypes.DWORD(1024)
+        path = buf.value.lower() if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)) else ""
+        ft = [wintypes.FILETIME() for _ in range(4)]
+        k32.GetProcessTimes(h, *[ctypes.byref(x) for x in ft])
+        created = (ft[0].dwHighDateTime << 32) | ft[0].dwLowDateTime
+        return bool(ok) and code.value == 259, path, created  # 259 = STILL_ACTIVE
+    finally:
         k32.CloseHandle(h)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
 
-    while alive():
+
+def _newest_cli_claude():
+    """找最新開的 Claude Code CLI（~/.local/bin/claude.exe；自動更新後執行中的會變成 claude.exe.old.<數字>，也算；桌面 App 的 Claude.exe 路徑不同，不算）。"""
+    import subprocess
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq claude.exe", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return None
+    best = None
+    for line in out.splitlines():
+        parts = [p.strip('"') for p in line.split('","')]
+        if len(parts) < 2 or not parts[1].strip('"').isdigit():
+            continue
+        pid = int(parts[1].strip('"'))
+        alive, path, created = _proc_info(pid)
+        if alive and path.startswith(CLI_EXE) and (best is None or created > best[1]):
+            best = (pid, created)
+    return best[0] if best else None
+
+
+def heartbeat(pid):
+    """獨立的心跳：只要終端機那個 Claude Code 還開著就持續寫心跳。
+    不跟 Monitor 綁在一起，Claude 忙著做別的事或 Monitor 重開的空檔，房間也不會誤判它離線而叫備援。
+    pid 可給 auto（或任何數字）：綁定的程序結束後不退出，改找最新的 Claude Code CLI 重綁。
+    11-28 07:41 使用者 `claude --continue` 重開，心跳還綁舊 pid 23056 → 07:40 起停，07:54 才發現沒連到主討論（流程優化員 11-28）。
+    同時只留一個心跳程序（heartbeat_runner.pid）；斷超過 2 分的空檔記 logs\\終端機心跳.log 給流程體檢數。"""
+    _ensure()
+    me = os.getpid()
+    try:
+        old = int(open(HB_RUNNER, encoding="utf-8").read().split()[0])
+        if old != me and _proc_info(old)[0] and "python" in _proc_info(old)[1]:
+            print(f"已有心跳程序 pid={old} 在跑（會自動換綁新的 Claude Code），這個不重開。", flush=True)
+            return
+    except (OSError, ValueError, IndexError):
+        pass
+    with open(HB_RUNNER, "w", encoding="utf-8") as f:
+        f.write(str(me))
+    try:
+        gap = time.time() - os.path.getmtime(HEARTBEAT)
+        if gap > 120:
+            _hb_log(f"心跳程序重開，前一段斷了 {gap / 60:.0f} 分")
+    except OSError:
+        pass
+    pid = None if str(pid).lower() == "auto" else int(pid)
+    lost_at = None
+    while True:
+        if pid is None or not _proc_info(pid)[0]:
+            new = _newest_cli_claude()
+            if new is None:
+                lost_at = lost_at or time.time()
+                time.sleep(5)
+                continue
+            if pid != new:
+                gap = time.time() - lost_at if lost_at else 0
+                _hb_log(f"綁定 Claude Code pid {pid or '（自動）'} → {new}" + (f"，斷了 {gap:.0f} 秒" if gap else ""))
+            pid, lost_at = new, None
         with open(HEARTBEAT, "w", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M:%S") + f" pid={pid}")
         time.sleep(20)

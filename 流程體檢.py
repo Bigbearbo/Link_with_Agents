@@ -54,6 +54,23 @@ def metrics(day):
         m["叫醒失敗"] = sum(1 for l in wake if "叫不醒" in l or "不再自動叫" in l)   # Gemini「沒有開視窗或不支援，只留單」是設計如此，不算
     except OSError:
         m["叫醒失敗"] = 0
+    # 終端機心跳斷超過 2 分（流程優化員 11-28：07:41 --continue 重開後心跳綁舊 pid，斷 14 分沒人發現）
+    try:
+        n = 0
+        for l in open(os.path.join(HERE, "logs", "終端機心跳.log"), encoding="utf-8"):
+            if not l.startswith(md):
+                continue
+            g = re.search(r"斷了 (\d+) (秒|分)", l)
+            if g and int(g.group(1)) * (60 if g.group(2) == "分" else 1) > 120:
+                n += 1
+    except OSError:
+        n = 0
+    try:
+        stale = time.time() - os.path.getmtime(os.path.join(HERE, "terminal", "heartbeat.txt"))
+    except OSError:
+        stale = None
+    now = "" if stale is not None and stale <= 120 else ("（現在沒有心跳檔）" if stale is None else f"（現在已停 {stale / 60:.0f} 分）")
+    m["終端機心跳斷>2分"] = f"{n}{now}" if now else n
     return m, logs
 
 
