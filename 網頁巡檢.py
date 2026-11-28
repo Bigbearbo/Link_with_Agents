@@ -22,9 +22,23 @@ def shoot(url, path, size):
     k = open(os.path.join(r"H:\金鑰", "web-key.txt"), encoding="utf-8").read().strip()
     sep = "&" if "?" in url else "?"
     full = f"http://127.0.0.1:8765{url}{sep}k={k}"
-    subprocess.run([EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--window-size={size}",
-                    "--virtual-time-budget=6000", f"--screenshot={path}", full],
-                   capture_output=True, timeout=90, creationflags=0x08000000)
+    w, h = (int(x) for x in size.split(","))
+    wrap = None
+    if w < 500:
+        # Edge 無頭視窗最小約 492 寬：直接開 390 會照 492 排版再裁成 390，看起來像「右邊被切」（11-28 #29 查到）。
+        # 改成包一層同尺寸 iframe，裡面才是真的 390 視窗；截圖仍是 390 寬，剛好只拍到 iframe。
+        wrap = os.path.join(OUT, "_手機框.html")
+        open(wrap, "w", encoding="utf-8").write(
+            "<!doctype html><style>html,body{margin:0}iframe{border:0;display:block;"
+            f"width:{w}px;height:{h}px}}</style><iframe src=\"{full}\"></iframe>")
+        full = "file:///" + wrap.replace("\\", "/")
+    try:
+        subprocess.run([EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--window-size={size}",
+                        "--virtual-time-budget=6000", f"--screenshot={path}", full],
+                       capture_output=True, timeout=90, creationflags=0x08000000)
+    finally:
+        if wrap and os.path.exists(wrap):
+            os.remove(wrap)                    # 檔裡有網頁金鑰，用完就刪
     return os.path.exists(path)
 
 

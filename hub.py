@@ -2465,12 +2465,12 @@ def changes_page(q):
     sel = lambda v: " selected" if kind == v else ""
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>共用區變動</title><style>
-:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da}}
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#666;--line:#e4e1da}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:1100px;margin:0 auto;padding:16px}}
 @media(max-width:640px){{body{{padding:8px;overflow-x:hidden}} p{{display:flex;flex-wrap:wrap;gap:6px}} button{{white-space:nowrap}} input,textarea{{max-width:100%;box-sizing:border-box}} .tblwrap{{overflow-x:auto}} td{{word-break:normal;overflow-wrap:anywhere}} td:first-child{{white-space:nowrap}}}}
 form{{display:flex;flex-wrap:wrap;gap:8px;align-items:center}} input,select{{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}}
-table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,th{{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}
+table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}} td,th{{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}} td:first-child,td:nth-child(4){{white-space:nowrap}}
 .mute{{color:var(--mute);font-size:13px}}
 </style></head><body><h2>共用區變動</h2>
 <form><input type="hidden" name="k" value="{_h.escape(key)}">
@@ -2548,7 +2548,7 @@ def decisions_page(key):
 <title>待討論</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script><style>
-:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#666;--line:#e4e1da;--acc:#c96442}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:860px;margin:0 auto;padding:16px}}
 @media(max-width:640px){{body{{padding:8px;overflow-x:hidden}} p{{display:flex;flex-wrap:wrap;gap:6px}} button{{white-space:nowrap}} input,textarea{{max-width:100%;box-sizing:border-box}} .tblwrap{{overflow-x:auto}} td{{word-break:normal;overflow-wrap:anywhere}} td:first-child{{white-space:nowrap}}}}
@@ -2680,7 +2680,7 @@ def research_page(key):
 <title>研究與待辦</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script><style>
-:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#666;--line:#e4e1da;--acc:#c96442}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:16px}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0}}
@@ -2773,7 +2773,7 @@ def settings_page(key):
     info.append("<li>贈點：Claude $100（12-22 到期）、OpenAI $76（用量條看估算花費）</li>")
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>設定</title><style>
-:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#777;--line:#e4e1da;--acc:#c96442}}
+:root{{--bg:#faf9f6;--card:#fff;--ink:#222;--mute:#666;--line:#e4e1da;--acc:#c96442}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#1d1c1a;--card:#262522;--ink:#eee;--mute:#999;--line:#3a3834;--acc:#e08a6a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:0 auto;padding:16px;overflow-x:hidden}}
 section{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:12px 0;overflow-x:auto}}
